@@ -54,7 +54,7 @@ struct REALTIMEDESTRUCTION_API FDestructionOpId
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	int64 Value = 0;
 };
 
@@ -63,25 +63,25 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector ImpactPoint = FVector::ZeroVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector ImpactNormal = FVector::UpVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	float Depth = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	int32 RandomSeed = 0;
 
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = {};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	EDestructionToolShape ToolShape = EDestructionToolShape::Cylinder;
-	
+
 	/** Tool Shape 파라미터 (네트워크 직렬화용) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FDestructionToolShapeParams ShapeParams;
 
 	/** RTT 측정용 클라이언트 전송 시간 (클라이언트에서만 설정) */
@@ -94,16 +94,16 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionOp
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FDestructionOpId OpId;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FRealtimeDestructionRequest Request;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	int32 Sequence = 0; // Destruction Operation 순서. 서버에서 정하며, 0, 1, 2, 3, ... 순서로 수행해야 합니다.
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	bool bIsPenetration = false;
 };
 
@@ -156,11 +156,30 @@ struct REALTIMEDESTRUCTION_API FRealtimeMeshSnapshot
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	int32 Version = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	TArray<uint8> Payload;
+};
+
+USTRUCT()
+struct FRealtimeDestructibleMeshComponentInstanceData : public FActorComponentInstanceData
+{
+	GENERATED_BODY()
+
+public:
+	FRealtimeDestructibleMeshComponentInstanceData() = default;
+	FRealtimeDestructibleMeshComponentInstanceData(const URealtimeDestructibleMeshComponent* SourceComponent);
+
+	virtual void ApplyToComponent(UActorComponent* Component, const ECacheApplyPhase CacheApplyPhase) override;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> SavedSourceStaticMesh;
+
+	// 필요한 다른 프로퍼티도 저장 가능
+	UPROPERTY()
+	bool bSavedIsInitialized = false;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -176,11 +195,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDestructError, FName, ErrorCode,
 // Class Declaration
 //////////////////////////////////////////////////////////////////////////
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class REALTIMEDESTRUCTION_API URealtimeDestructibleMeshComponent : public UDynamicMeshComponent
 {
 	GENERATED_BODY()
-	
+
+	friend struct FRealtimeDestructibleMeshComponentInstanceData;
 public:
 	URealtimeDestructibleMeshComponent();
 	URealtimeDestructibleMeshComponent(FVTableHelper& Helper);
@@ -188,55 +208,58 @@ public:
 
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
 
-	// Initialization	
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UE_DEPRECATED(5.7, "Function has been deprecated. Do not Initalize this component directly form static mesh")
+		UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",
+			meta = (DeprecatedFunction, DeprecationMessage = "Function has been deprecated. Do not Initalize this component directly form static mesh"))
 	bool InitializeFromStaticMesh(UStaticMesh* InMesh);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UE_DEPRECATED(5.7, "Function has been deprecated. Do not Initalize this component directly form static mesh")
+		UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",
+			meta = (DeprecatedFunction, DeprecationMessage = "Function has been deprecated. Do not Initalize this component directly form static mesh"))
 	bool InitializeFromStaticMeshComponent(UStaticMeshComponent* InComp);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	void ResetToSourceMesh();
 
 	// Destruction queue
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	FDestructionOpId EnqueueRequestLocal(const FRealtimeDestructionRequest& Request, bool bPenetration, UDecalComponent* TemporaryDecal = nullptr);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	int32 EnqueueBatch(const TArray<FRealtimeDestructionRequest>& Requests);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
-	int32 ProcessPendingOps(int32 MaxOpsThisFrame);	
-	
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
+	int32 ProcessPendingOps(int32 MaxOpsThisFrame);
+
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	bool RequestDestruction(const FRealtimeDestructionRequest& Request);
 
 	// Options
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetBooleanOptions(const FGeometryScriptMeshBooleanOptions& Options);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetSphereResolution(int32 StepsPhi, int32 StepsTheta);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetMaxOpsPerFrame(int32 MaxOps);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetAsyncEnabled(bool bEnabled);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetCollisionUpdateMode(ERealtimeCollisionUpdateMode Mode);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetRenderUpdateMode(ERealtimeRenderUpdateMode Mode);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Options")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetMaxHoleCount(int32 MaxCount);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Status")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
 	int32 GetHoleCount() const;
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Status")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
 	int32 GetPendingOpCount() const;
 
 	// Replication
@@ -250,10 +273,10 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastApplyOpsCompact(const TArray<FCompactDestructionOp>& CompactOps);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Replication")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	void SetReplicationMode(ERealtimeDestructionReplicationMode Mode);
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Replication")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	void ApplyOpsDeterministic(const TArray<FRealtimeDestructionOp>& Ops);
 
 	/**
@@ -271,21 +294,22 @@ public:
 	//////////////////////////////////////////////////////////////////////////
 	// Server Batching Settings (서버 → 클라이언트 배칭)
 	//////////////////////////////////////////////////////////////////////////
+	/// 
 
 	/**
 	 * 서버 배칭 사용 여부
 	 * true: 여러 클라이언트의 요청을 모아서 한 번에 Multicast (헤더 오버헤드 절감)
 	 * false: 요청마다 개별 Multicast
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|ServerBatching")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerBatching")
 	bool bUseServerBatching = true;
 
 	/** 서버 배치 전송 간격 (초) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|ServerBatching", meta=(ClampMin="0.008", ClampMax="0.5"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerBatching", meta = (ClampMin = "0.008", ClampMax = "0.5"))
 	float ServerBatchInterval = 0.016f;  // 16ms = 1프레임 (60fps 기준)
 
 	/** 최대 서버 배치 크기 (이 개수에 도달하면 즉시 전송) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|ServerBatching", meta=(ClampMin="1", ClampMax="100"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerBatching", meta = (ClampMin = "1", ClampMax = "100"))
 	int32 MaxServerBatchSize = 20;
 
 	/**
@@ -293,28 +317,31 @@ public:
 	 * true: 압축된 FCompactDestructionOp 사용 (~102 bits/요청)
 	 * false: 기존 FRealtimeDestructionOp 사용 (~320 bits/요청)
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|ServerBatching")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerBatching")
 	bool bUseCompactMulticast = true;
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Replication")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	bool BuildMeshSnapshot(FRealtimeMeshSnapshot& Out) const;
 
-	UFUNCTION(BlueprintCallable, Category="RealtimeDestructibleMesh|Replication")
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	bool ApplyMeshSnapshot(const FRealtimeMeshSnapshot& In);
 
 	// Events
-	UPROPERTY(BlueprintAssignable, Category="RealtimeDestructibleMesh|Events")
+	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructMeshInitialized OnInitialized;
 
-	UPROPERTY(BlueprintAssignable, Category="RealtimeDestructibleMesh|Events")
+	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructOpApplied OnOpApplied;
 
-	UPROPERTY(BlueprintAssignable, Category="RealtimeDestructibleMesh|Events")
+	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructBatchCompleted OnBatchCompleted;
 
-	UPROPERTY(BlueprintAssignable, Category="RealtimeDestructibleMesh|Events")
+	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructError OnError;
-	 
+
+public:
+	/** 데이터 유지를 위한 함수 */
+	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
 public:
 	/*
 	 * 에디터에 노출하지 않는 함수
@@ -332,22 +359,22 @@ public:
 	double GetSubtractDurationLimit() const { return SubtractDurationLimit; }
 	int32 GetMaxOpCount() const { return MaxOpCount; }
 	void SetCurrentHoleCount(int32 Count) { CurrentHoleCount = Count; }
-	bool IsInitialized() const { return bIsInitialized; }
-	
+
 	void ApplyRenderUpdate();
 	void ApplyCollisionUpdate();
 
 	bool CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration);
 
 	void GetParallelSettings(int32& OutThreshold, int32& OutMaxThreads);
-	
-	void SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker) ;
 
+	void SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker);
+
+	bool IsInitialized() { return bIsInitialized;  }
 protected:
 	//////////////////////////////////////////////////////////////////////////
 	// Mesh Settings
 	//////////////////////////////////////////////////////////////////////////
-	
+
 	/**
 	 * Dynamic Mesh로 변환할 원본 Static Mesh
 	 *
@@ -359,23 +386,23 @@ protected:
 	 * - UV, Normal, Tangent 보존
 	 * - Collision 설정 복사
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Source")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Source")
 	TObjectPtr<UStaticMesh> SourceStaticMesh;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Destruction Settings
 	//////////////////////////////////////////////////////////////////////////
-	
-	/** 관통 처리가 늦어진다면, 눈속임용 데칼*/ 
+
+	/** 관통 처리가 늦어진다면, 눈속임용 데칼*/
 
 	UDecalComponent* SpawnTemporaryDecal(const FRealtimeDestructionRequest& Request);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|HoleDecal")
-	TObjectPtr<UMaterialInterface> HoleDecal = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
+	UMaterialInterface* HoleDecal = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|HoleDecal")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	FVector DecalSize = FVector(10.0f, 10.0f, 10.0f);
-	 
+
 
 	/**
 	 * 이 메시가 받을 수 있는 최대 구멍 개수
@@ -389,7 +416,7 @@ protected:
 	 * - 큰 오브젝트: 50-100
 	 * - 성능 우선: 20 이하
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1, ClampMax=1000))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1, ClampMax = 1000))
 	int32 MaxHoleCount = 100;
 
 	/**
@@ -398,7 +425,7 @@ protected:
 	 * CreateBulletHole()이 성공할 때마다 1씩 증가합니다.
 	 * MaxHoleCount에 도달하면 더 이상 구멍을 생성할 수 없습니다.
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="RealtimeDestructibleMesh|Status")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|Status")
 	int32 CurrentHoleCount = 0;
 
 	/**
@@ -407,13 +434,13 @@ protected:
 	 * true: Static Mesh → Dynamic Mesh 변환 완료, 구멍 생성 가능
 	 * false: 아직 초기화 안 됨, CreateBulletHole() 호출 시 실패
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="RealtimeDestructibleMesh|Status")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|Status")
 	bool bIsInitialized = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=0, ClampMax=500))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0, ClampMax = 500))
 	float ThicknessOffset = 5.0f;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
 
 	/*
@@ -422,55 +449,55 @@ protected:
 	 * Projectile의 ToolMesh는 Runtime에서 변하지 않을 듯
 	 */
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> SphereTemplatePtr;
-	
+
 	FDynamicMesh3 SphereTemplate;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=3, ClampMax=64))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 3, ClampMax = 64))
 	int32 SphereStepsPhi = 8;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=3, ClampMax=128))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 3, ClampMax = 128))
 	int32 SphereStepsTheta = 16;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxOpsPerFrame = 16;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxBatchSize = 8;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 ParallelThreshold = 12;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1))
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxParallelThreads = 12;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=1))
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	bool bEnableParallel = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	bool bAsyncEnabled = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	bool bEnableMultiWorkers = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	ERealtimeCollisionUpdateMode CollisionUpdateMode = ERealtimeCollisionUpdateMode::Batch;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	ERealtimeRenderUpdateMode RenderUpdateMode = ERealtimeRenderUpdateMode::Auto;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Replication")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Replication")
 	ERealtimeDestructionReplicationMode ReplicationMode = ERealtimeDestructionReplicationMode::None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Replication")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Replication")
 	bool bDebugPenetration = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=0.001))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0.001))
 	float AngleThreshold = 0.001f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=0.0))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0.0))
 	double SubtractDurationLimit = 0.0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options", meta=(ClampMin=0))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0))
 	int32 MaxOpCount = 0;
 
 	/**
@@ -483,7 +510,7 @@ protected:
 	 * - Optimized: *_CopyInWorker_Optimized, *_CacheAndSetMesh_Optimized
 	 * - Legacy: *_CopyMesh_GT_Legacy, *_SetMesh_Legacy
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	bool bUseCachedMeshOptimization = true;
 
 	//////////////////////////////////////////////////////////////////////////
@@ -491,7 +518,7 @@ protected:
 	//////////////////////////////////////////////////////////////////////////
 
 	/** Cell별 메시 분리 모드 활성화 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|CellMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	bool bUseCellMeshes = false;
 
 	/**
@@ -499,12 +526,18 @@ protected:
 	 * Fracture Mode로 생성한 GC를 여기에 할당하면
 	 * 런타임에 DynamicMesh로 추출하여 사용
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|CellMesh",
-		meta=(EditCondition="bUseCellMeshes"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh",
+		meta = (EditCondition = "bUseCellMeshes"))
 	TObjectPtr<UGeometryCollection> FracturedGeometryCollection;
 
+	//[deprecated]
 	/** Cell별 분리된 메시 */
-	TArray<TSharedPtr<UE::Geometry::FDynamicMesh3>> CellMeshes;
+	//TArray<TSharedPtr<UE::Geometry::FDynamicMesh3>> CellMeshes;
+
+
+	/** Cell별 분리된 메시 */
+	TArray<TObjectPtr<UDynamicMeshComponent>> CellMeshComponents;
+
 
 	/** Cell별 바운딩 박스 (빠른 충돌 체크용) */
 	TArray<FBox> CellBounds;
@@ -518,31 +551,39 @@ public:
 	 * 에디터에서 Fracture Mode로 미리 분할해둔 GC 사용
 	 * @return 추출된 메시 개수
 	 */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category="RealtimeDestructibleMesh|CellMesh", meta=(DisplayName="Build Cell Meshes From GC"))
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh", meta = (DisplayName = "Build Cell Meshes From GC"))
 	int32 BuildCellMeshesFromGeometryCollection();
 
 	/** Cell 메시 유효 여부 */
-	UFUNCTION(BlueprintPure, Category="RealtimeDestructibleMesh|CellMesh")
+	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
 	bool IsCellMeshesValid() const { return bCellMeshesValid; }
 
+	//[deprecated]
 	/** Cell 개수 반환 */
-	UFUNCTION(BlueprintPure, Category="RealtimeDestructibleMesh|CellMesh")
-	int32 GetCellMeshCount() const { return CellMeshes.Num(); }
+	//UFUNCTION(BlueprintPure, Category="RealtimeDestructibleMesh|CellMesh")
+	//int32 GetCellMeshCount() const { return CellMeshes.Num(); }
+	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
+	int32 GetCellMeshCount() const { return CellMeshComponents.Num(); }
 
 	/** Cell 메시 디버그 시각화 (각 Cell을 다른 색상으로 표시) */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category="RealtimeDestructibleMesh|CellMesh")
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh")
 	void DrawCellMeshesDebug();
-	 
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	FIntVector SliceCount;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	float SliceAngleVariation = 0.3f;
-	 
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh")
-	void AutoFractureAndAssign(); 
 
+#if WITH_EDITOR
+	/**
+	 * SourceStatic 메쉬로부터 GC를 생성, FracturedGeometryCollection에 저장합니다.
+	 * 이후 GC가 DynamicMesh로 변환될 수 있도록 BuildCellMeshesFromGeometryCollection 메소드 호출까지 담당합니다.
+	 */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh")
+	void AutoFractureAndAssign();
+#endif
 protected:
 
 
@@ -552,19 +593,19 @@ protected:
 	//////////////////////////////////////////////////////////////////////////
 
 	/** 액터 위에 디버그 정보 텍스트 표시 여부 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowDebugText = false;
 
 	/** 디버그 텍스트 표시 위치 오프셋 (액터 위치 기준) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 250.0f);
 
 	/** 디버그 텍스트 색상 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	FColor DebugTextColor = FColor::Yellow;
 
 	/** Cell 메시 와이어프레임 디버그 표시 (PIE에서 자동으로 그려짐) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowCellMeshDebug = false;
 
 protected:
@@ -609,10 +650,10 @@ private:
 
 	// 파괴 요청 함수
 	bool ApplyOpImmediate(const FRealtimeDestructionRequest& Request);
-	
+
 	void CopyMaterialsFromStaticMesh(UStaticMesh* InMesh);
 	void CopyMaterialsFromStaticMeshComponent(UStaticMeshComponent* InComp);
-	void CopyCollisionFromStaticMeshComponent(UStaticMeshComponent* InComp);	
+	void CopyCollisionFromStaticMeshComponent(UStaticMeshComponent* InComp);
 
 	// UActorComponent overrides
 	virtual void OnRegister() override;

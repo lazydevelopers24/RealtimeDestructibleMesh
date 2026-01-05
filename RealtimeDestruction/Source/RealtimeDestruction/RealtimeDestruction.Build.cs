@@ -80,7 +80,8 @@ public class RealtimeDestruction : ModuleRules
 				{
 					"UnrealEd",
 					"FractureEngine",
-					"GeometryCollectionEditor",
+					"FractureEditor",
+                    "GeometryCollectionEditor",
 					"DataflowCore",
 				}
 			);
