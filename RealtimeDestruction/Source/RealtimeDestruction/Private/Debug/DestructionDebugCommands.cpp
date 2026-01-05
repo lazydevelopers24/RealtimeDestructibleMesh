@@ -19,6 +19,8 @@
 // - destruction.summary             : 세션 요약 출력
 
 #include "Debug/DestructionDebugger.h"
+#include "Debug/DestructionProfiler.h"
+#include "Testing/NetworkTestSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
@@ -565,6 +567,128 @@ static FAutoConsoleCommand GDestructionHelpCmd(
 		UE_LOG(LogTemp, Log, TEXT("  destruction.export history [path] - Export history to CSV"));
 		UE_LOG(LogTemp, Log, TEXT("  destruction.export stats [path]   - Export stats to CSV"));
 		UE_LOG(LogTemp, Log, TEXT(""));
+		UE_LOG(LogTemp, Log, TEXT("=== Network Test ==="));
+		UE_LOG(LogTemp, Log, TEXT("  Destruction.NetPreset [preset]    - Set network preset (off/good/normal/bad/worst)"));
+		UE_LOG(LogTemp, Log, TEXT("  Destruction.NetStatus             - Print current network test status"));
+		UE_LOG(LogTemp, Log, TEXT(""));
+		UE_LOG(LogTemp, Log, TEXT("=== Profiling ==="));
+		UE_LOG(LogTemp, Log, TEXT("  Destruction.ProfileStats          - Print profiler statistics"));
+		UE_LOG(LogTemp, Log, TEXT("  Destruction.ProfileReset          - Reset profiler statistics"));
+		UE_LOG(LogTemp, Log, TEXT("  Destruction.ProfileExport [path]  - Export profiler stats to CSV"));
+		UE_LOG(LogTemp, Log, TEXT(""));
 		UE_LOG(LogTemp, Log, TEXT("================================================="));
+	})
+);
+
+//=============================================================================
+// 네트워크 테스트 명령어
+//=============================================================================
+
+//-------------------------------------------------------------------
+// Destruction.NetPreset - 네트워크 프리셋 설정
+//-------------------------------------------------------------------
+static FAutoConsoleCommandWithWorldAndArgs GDestructionNetPresetCmd(
+	TEXT("Destruction.NetPreset"),
+	TEXT("Set network simulation preset. Usage: Destruction.NetPreset [off|good|normal|bad|worst]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Destruction.NetPreset: No world available"));
+			return;
+		}
+
+		UNetworkTestSubsystem* NetTest = World->GetSubsystem<UNetworkTestSubsystem>();
+		if (!NetTest)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Destruction.NetPreset: NetworkTestSubsystem not found (only available in non-shipping builds)"));
+			return;
+		}
+
+		if (Args.Num() == 0)
+		{
+			// 인자 없으면 현재 상태와 프리셋 목록 출력
+			NetTest->PrintCurrentStatus();
+			NetTest->PrintAvailablePresets();
+			return;
+		}
+
+		if (!NetTest->ApplyPresetByName(Args[0]))
+		{
+			NetTest->PrintAvailablePresets();
+		}
+	})
+);
+
+//-------------------------------------------------------------------
+// Destruction.NetStatus - 네트워크 상태 출력
+//-------------------------------------------------------------------
+static FAutoConsoleCommandWithWorld GDestructionNetStatusCmd(
+	TEXT("Destruction.NetStatus"),
+	TEXT("Print current network simulation status"),
+	FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+	{
+		if (!World)
+		{
+			return;
+		}
+
+		UNetworkTestSubsystem* NetTest = World->GetSubsystem<UNetworkTestSubsystem>();
+		if (NetTest)
+		{
+			NetTest->PrintCurrentStatus();
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Destruction.NetStatus: NetworkTestSubsystem not found"));
+		}
+	})
+);
+
+//=============================================================================
+// 프로파일링 명령어
+//=============================================================================
+
+//-------------------------------------------------------------------
+// Destruction.ProfileStats - 프로파일 통계 출력
+//-------------------------------------------------------------------
+static FAutoConsoleCommand GDestructionProfileStatsCmd(
+	TEXT("Destruction.ProfileStats"),
+	TEXT("Print destruction profiler statistics"),
+	FConsoleCommandDelegate::CreateLambda([]()
+	{
+		FDestructionProfilerStats::Get().PrintStats();
+	})
+);
+
+//-------------------------------------------------------------------
+// Destruction.ProfileReset - 프로파일 통계 리셋
+//-------------------------------------------------------------------
+static FAutoConsoleCommand GDestructionProfileResetCmd(
+	TEXT("Destruction.ProfileReset"),
+	TEXT("Reset destruction profiler statistics"),
+	FConsoleCommandDelegate::CreateLambda([]()
+	{
+		FDestructionProfilerStats::Get().ResetStats();
+	})
+);
+
+//-------------------------------------------------------------------
+// Destruction.ProfileExport - 프로파일 CSV 내보내기
+//-------------------------------------------------------------------
+static FAutoConsoleCommandWithWorldAndArgs GDestructionProfileExportCmd(
+	TEXT("Destruction.ProfileExport"),
+	TEXT("Export profiler stats to CSV. Usage: Destruction.ProfileExport [optional_path]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* /*World*/)
+	{
+		FString Path = Args.Num() > 0 ? Args[0] : TEXT("");
+		if (FDestructionProfilerStats::Get().ExportToCSV(Path))
+		{
+			UE_LOG(LogTemp, Log, TEXT("Destruction.ProfileExport: Exported successfully"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Destruction.ProfileExport: Export failed"));
+		}
 	})
 );

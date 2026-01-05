@@ -473,6 +473,31 @@ public:
 	void PrintHistory(int32 Count = 10) const;
 	void PrintSessionSummary() const;
 
+	//-------------------------------------------------------------------
+	// 배칭/시퀀스 상태 (HUD 표시용)
+	//-------------------------------------------------------------------
+
+	/** 대기 중인 서버 배치 Op 수 가져오기 */
+	UFUNCTION(BlueprintPure, Category = "Destruction|Debug")
+	int32 GetPendingBatchOpCount() const { return PendingBatchOpCount; }
+
+	/** 서버 시퀀스 번호 가져오기 */
+	UFUNCTION(BlueprintPure, Category = "Destruction|Debug")
+	int32 GetServerSequence() const { return ServerSequence; }
+
+	/** 로컬 시퀀스 번호 가져오기 */
+	UFUNCTION(BlueprintPure, Category = "Destruction|Debug")
+	int32 GetLocalSequence() const { return LocalSequence; }
+
+	/** 대기 중인 배치 Op 수 설정 (RealtimeDestructibleMeshComponent에서 호출) */
+	void SetPendingBatchOpCount(int32 Count) { PendingBatchOpCount = Count; }
+
+	/** 서버 시퀀스 번호 설정 */
+	void SetServerSequence(int32 Seq) { ServerSequence = Seq; }
+
+	/** 로컬 시퀀스 번호 설정 */
+	void SetLocalSequence(int32 Seq) { LocalSequence = Seq; }
+
 protected:
 	void UpdateHUD();
 	void UpdateDestructionsPerSecond(float DeltaTime);
@@ -586,4 +611,17 @@ protected:
 
 	/** FTSTicker 핸들 */
 	FTSTicker::FDelegateHandle TickHandle;
+
+	//-------------------------------------------------------------------
+	// 배칭/시퀀스 상태 (HUD 표시용)
+	//-------------------------------------------------------------------
+
+	/** 대기 중인 서버 배치 Op 수 */
+	int32 PendingBatchOpCount = 0;
+
+	/** 서버 시퀀스 번호 */
+	int32 ServerSequence = 0;
+
+	/** 로컬 시퀀스 번호 */
+	int32 LocalSequence = 0;
 };

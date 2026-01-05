@@ -6,9 +6,11 @@
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformTime.h"
+#include "Testing/NetworkTestSubsystem.h"
 
 //-------------------------------------------------------------------
 // Subsystem Lifecycle
@@ -756,43 +758,90 @@ void UDestructionDebugger::UpdateHUD()
 		return;
 	}
 
+	UWorld* HUDWorld = GetWorld();
+
 	// 고유 키를 사용해서 화면에 고정 위치에 표시
-	const int32 BaseKey = 9900;  // DestructionDebugger용 키 시작점
+	// 키가 높을수록 위에 표시되므로, 높은 값에서 시작해서 내려감
+	const int32 BaseKey = 9999;  // DestructionDebugger용 키 시작점 (높은 값)
 	int32 KeyOffset = 0;
 	const float DisplayTime = 0.0f;  // 매 프레임 업데이트
 
 	// 헤더
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Cyan,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Cyan,
 		FString::Printf(TEXT("======== Destruction Debugger [%s] ========"), *GetNetModeString()));
 
+	//-------------------------------------------------------------------
+	// 네트워크 테스트 섹션
+	//-------------------------------------------------------------------
+#if !UE_BUILD_SHIPPING
+	if (HUDWorld)
+	{
+		if (UNetworkTestSubsystem* NetTestSubsystem = HUDWorld->GetSubsystem<UNetworkTestSubsystem>())
+		{
+			FNetworkTestPresetConfig Config = NetTestSubsystem->GetCurrentConfig();
+			if (Config.IsActive())
+			{
+				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
+					TEXT("--- Network Test ---"));
+
+				// 현재 Ping 조회
+				float CurrentPing = NetTestSubsystem->GetCurrentPing();
+
+				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Orange,
+					FString::Printf(TEXT("  Preset: %s | Ping: %.0f ms"),
+						*Config.PresetName, CurrentPing));
+				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Orange,
+					FString::Printf(TEXT("  Sim: Lag=%d ms Var=%d ms Loss=%d%%"),
+						Config.PktLag, Config.PktLagVariance, Config.PktLoss));
+			}
+		}
+	}
+#endif
+
+	//-------------------------------------------------------------------
+	// 시퀀스 & 배치 섹션
+	//-------------------------------------------------------------------
+	if (ServerSequence > 0 || LocalSequence > 0 || PendingBatchOpCount > 0)
+	{
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
+			TEXT("--- Sequence & Batch ---"));
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Turquoise,
+			FString::Printf(TEXT("  Server Seq: %d | Local Seq: %d"),
+				ServerSequence, LocalSequence));
+
+		FColor BatchColor = PendingBatchOpCount > 5 ? FColor::Red : (PendingBatchOpCount > 0 ? FColor::Yellow : FColor::Turquoise);
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, BatchColor,
+			FString::Printf(TEXT("  Pending Batch Ops: %d"), PendingBatchOpCount));
+	}
+
 	// 기본 통계
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::White,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
 		TEXT("--- Basic Stats ---"));
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Green,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Green,
 		FString::Printf(TEXT("  Total: %d | Per Sec: %.1f | Last Sec: %d"),
 			Stats.TotalDestructions, Stats.DestructionsPerSecond, Stats.DestructionsLastSecond));
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Green,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Green,
 		FString::Printf(TEXT("  Process Time - Avg: %.2f ms | Max: %.2f ms"),
 			Stats.AverageProcessingTimeMs, Stats.MaxProcessingTimeMs));
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Green,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Green,
 		FString::Printf(TEXT("  Avg Radius: %.1f"), Stats.AverageRadius));
 
 	// 네트워크 통계
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::White,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
 		TEXT("--- Network Stats ---"));
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Yellow,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Yellow,
 		FString::Printf(TEXT("  Server RPC: %d | Multicast: %d"),
 			NetworkStats.ServerRPCCount, NetworkStats.MulticastRPCCount));
 
 	// 검증 실패는 빨간색으로 강조
 	FColor ValidationColor = NetworkStats.ValidationFailures > 0 ? FColor::Red : FColor::Yellow;
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, ValidationColor,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, ValidationColor,
 		FString::Printf(TEXT("  Validation Failures: %d"), NetworkStats.ValidationFailures));
 
 	// RTT (클라이언트에서만 의미 있음)
 	if (NetworkStats.RTTSampleCount > 0)
 	{
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Yellow,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Yellow,
 			FString::Printf(TEXT("  RTT - Avg: %.1f ms | Min: %.1f | Max: %.1f"),
 				NetworkStats.AverageRTT,
 				NetworkStats.MinRTT < 999999.0f ? NetworkStats.MinRTT : 0.0f,
@@ -802,12 +851,12 @@ void UDestructionDebugger::UpdateHUD()
 	// 데이터 크기 통계
 	if (NetworkStats.TotalBytesSent > 0 || NetworkStats.TotalBytesReceived > 0)
 	{
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Yellow,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Yellow,
 			FString::Printf(TEXT("  Sent: %lld B | Recv: %lld B | Avg: %.0f B/RPC"),
 				NetworkStats.TotalBytesSent,
 				NetworkStats.TotalBytesReceived,
 				NetworkStats.AvgBytesPerRPC));
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Yellow,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Yellow,
 			FString::Printf(TEXT("  Compact: %d | Uncompressed: %d | Saved: %lld B"),
 				NetworkStats.CompactRPCCount,
 				NetworkStats.UncompressedRPCCount,
@@ -815,15 +864,15 @@ void UDestructionDebugger::UpdateHUD()
 	}
 
 	// 성능 통계
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::White,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
 		TEXT("--- Performance ---"));
 
 	// 프레임 드롭은 빨간색으로 강조
 	FColor DropColor = PerformanceStats.FrameDropCount > 0 ? FColor::Red : FColor::Magenta;
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, DropColor,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, DropColor,
 		FString::Printf(TEXT("  Frame Drops: %d | Max Frame: %.1f ms"),
 			PerformanceStats.FrameDropCount, PerformanceStats.MaxFrameTimeMs));
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Magenta,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Magenta,
 		FString::Printf(TEXT("  Max Destructions/Frame: %d | Current: %d"),
 			PerformanceStats.MaxDestructionsPerFrame, PerformanceStats.CurrentFrameDestructions));
 
@@ -832,7 +881,7 @@ void UDestructionDebugger::UpdateHUD()
 	{
 		float MinFPS = PerformanceStats.MinFPSDuringDestruction < 999999.0f ? PerformanceStats.MinFPSDuringDestruction : 0.0f;
 		FColor FPSColor = MinFPS < 30.0f ? FColor::Red : (MinFPS < 60.0f ? FColor::Orange : FColor::Magenta);
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FPSColor,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FPSColor,
 			FString::Printf(TEXT("  FPS - Before: %.0f | Min: %.0f | Drop(Avg/Max): %.1f/%.1f"),
 				PerformanceStats.AvgFPSBeforeDestruction, MinFPS, PerformanceStats.AvgFPSDrop, PerformanceStats.MaxFPSDrop));
 	}
@@ -841,25 +890,24 @@ void UDestructionDebugger::UpdateHUD()
 	if (PerformanceStats.BooleanSampleCount > 0)
 	{
 		FColor BoolColor = PerformanceStats.MaxBooleanTimeMs > 10.0f ? FColor::Orange : FColor::Magenta;
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, BoolColor,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, BoolColor,
 			FString::Printf(TEXT("  Boolean Op - Avg: %.2f ms | Max: %.2f ms"),
 				PerformanceStats.AvgBooleanTimeMs, PerformanceStats.MaxBooleanTimeMs));
 	}
 
 	// 클라이언트 통계 (서버에서만, 클라이언트가 있을 때만)
-	UWorld* World = GetWorld();
-	if (World && (World->GetNetMode() == NM_DedicatedServer || World->GetNetMode() == NM_ListenServer))
+	if (HUDWorld && (HUDWorld->GetNetMode() == NM_DedicatedServer || HUDWorld->GetNetMode() == NM_ListenServer))
 	{
 		if (ClientStatsMap.Num() > 0)
 		{
-			GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::White,
+			GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
 				TEXT("--- Clients ---"));
 
 			for (const auto& Pair : ClientStatsMap)
 			{
 				const FClientDestructionStats& CS = Pair.Value;
 				FColor ClientStatColor = CS.ValidationFailures > 0 ? FColor::Orange : FColor::Cyan;
-				GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, ClientStatColor,
+				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, ClientStatColor,
 					FString::Printf(TEXT("  [%d] %s: %d req (%.1f/s) | Fail: %d"),
 						CS.ClientId, *CS.PlayerName, CS.TotalRequests, CS.RequestsPerSecond, CS.ValidationFailures));
 			}
@@ -869,7 +917,7 @@ void UDestructionDebugger::UpdateHUD()
 	// 최근 히스토리 (마지막 3개)
 	if (History.Num() > 0)
 	{
-		GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::White,
+		GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
 			TEXT("--- Recent ---"));
 
 		const int32 ShowCount = FMath::Min(3, History.Num());
@@ -877,14 +925,14 @@ void UDestructionDebugger::UpdateHUD()
 		{
 			const FDestructionHistoryEntry& Entry = History[i];
 			FColor HistoryColor = Entry.bFromServer ? FColor::Green : FColor::Orange;
-			GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, HistoryColor,
+			GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, HistoryColor,
 				FString::Printf(TEXT("  [%.1fs] %s -> %s | R:%.0f"),
 					Entry.Timestamp, *Entry.InstigatorName.Left(15), *Entry.TargetActorName.Left(15), Entry.Radius));
 		}
 	}
 
 	// 푸터
-	GEngine->AddOnScreenDebugMessage(BaseKey + KeyOffset++, DisplayTime, FColor::Cyan,
+	GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Cyan,
 		TEXT("================================================"));
 }
 
