@@ -59,22 +59,11 @@ struct REALTIMEDESTRUCTION_API FStructuralIntegritySettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StructuralIntegrity|Anchor")
 	bool bAutoDetectFloorAnchors = true;
 
-	// Anchor 감지 높이 임계값
-	// 1.0 이하: VoxelSize의 배수 (0.5 = VoxelSize의 절반, 1.0 = VoxelSize 1개)
-	// 1.0 초과: 절대값 (단위: cm)
+	// Anchor 감지 높이 임계값 (단위: cm)
+	// 바닥 Z좌표로부터 이 높이 이내의 Cell들을 Anchor로 설정
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StructuralIntegrity|Anchor",
 		meta = (EditCondition = "bAutoDetectFloorAnchors", ClampMin = "0.0"))
-	float FloorHeightThreshold = 0.5f;
-
-	// Cell 기본 체력
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StructuralIntegrity|Damage",
-		meta = (ClampMin = "0.1"))
-	float DefaultCellHealth = 100.0f;
-
-	// 데미지 감쇠 (거리에 따른)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StructuralIntegrity|Damage",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DamageFalloff = 0.5f;
+	float FloorHeightThreshold = 10.0f;
 
 	// 연결성 체크를 비동기로 실행할 Cell 임계값
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StructuralIntegrity|Performance",
@@ -114,12 +103,6 @@ struct REALTIMEDESTRUCTION_API FStructuralIntegrityData
 	// 각 Cell의 상태
 	TArray<ECellStructuralState> CellStates;
 
-	// 각 Cell의 체력 (0.0 ~ MaxHealth)
-	TArray<float> CellHealth;
-
-	// 각 Cell의 최대 체력
-	float MaxHealth = 100.0f;
-
 	// 파괴된 Cell ID 집합 (빠른 조회용)
 	TSet<int32> DestroyedCellIds;
 
@@ -132,18 +115,13 @@ struct REALTIMEDESTRUCTION_API FStructuralIntegrityData
 	/**
 	 * 초기화
 	 * @param CellCount - 총 Cell 개수
-	 * @param InMaxHealth - Cell 최대 체력
 	 */
-	void Initialize(int32 CellCount, float InMaxHealth = 100.0f)
+	void Initialize(int32 CellCount)
 	{
-		MaxHealth = InMaxHealth;
-		CellStates.SetNumZeroed(CellCount);
-		CellHealth.SetNum(CellCount);
-
+		CellStates.SetNum(CellCount);
 		for (int32 i = 0; i < CellCount; ++i)
 		{
 			CellStates[i] = ECellStructuralState::Intact;
-			CellHealth[i] = MaxHealth;
 		}
 
 		AnchorCellIds.Reset();
@@ -156,11 +134,9 @@ struct REALTIMEDESTRUCTION_API FStructuralIntegrityData
 	{
 		AnchorCellIds.Reset();
 		CellStates.Reset();
-		CellHealth.Reset();
 		DestroyedCellIds.Reset();
 		ConnectedToAnchorCache.Reset();
 		bCacheValid = false;
-		MaxHealth = 100.0f;
 	}
 
 	int32 GetCellCount() const
@@ -171,15 +147,6 @@ struct REALTIMEDESTRUCTION_API FStructuralIntegrityData
 	bool IsValidCellId(int32 CellId) const
 	{
 		return CellId >= 0 && CellId < CellStates.Num();
-	}
-
-	float GetHealthNormalized(int32 CellId) const
-	{
-		if (!IsValidCellId(CellId) || MaxHealth <= 0.0f)
-		{
-			return 0.0f;
-		}
-		return FMath::Clamp(CellHealth[CellId] / MaxHealth, 0.0f, 1.0f);
 	}
 
 	void InvalidateCache()
@@ -197,17 +164,9 @@ struct REALTIMEDESTRUCTION_API FStructuralHitEvent
 {
 	GENERATED_BODY()
 
-	// 압축된 Hit 위치
+	// 파괴할 Cell ID 목록
 	UPROPERTY()
-	FVector_NetQuantize HitLocation;
-
-	// 데미지 양
-	UPROPERTY()
-	float Damage = 0.0f;
-
-	// 데미지 반경 (Cell 단위)
-	UPROPERTY()
-	uint8 DamageRadius = 0;
+	TArray<int32> DestroyedCellIds;
 
 	// 시퀀스 번호 (결정론적 순서 보장)
 	UPROPERTY()
@@ -215,10 +174,8 @@ struct REALTIMEDESTRUCTION_API FStructuralHitEvent
 
 	FStructuralHitEvent() = default;
 
-	FStructuralHitEvent(const FVector& InLocation, float InDamage, uint8 InRadius, uint16 InSequence)
-		: HitLocation(InLocation)
-		, Damage(InDamage)
-		, DamageRadius(InRadius)
+	FStructuralHitEvent(const TArray<int32>& InCellIds, uint16 InSequence)
+		: DestroyedCellIds(InCellIds)
 		, Sequence(InSequence)
 	{
 	}

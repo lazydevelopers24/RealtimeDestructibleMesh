@@ -9,7 +9,7 @@
 class FStructuralIntegritySystem;
 
 /**
- * 비동기 연결성 계산 Task
+ * 비동기 Cell 파괴 Task
  *
  * Cell 수가 많을 때 (>1000) 연결성 계산을 백그라운드에서 수행
  * FNonAbandonableTask를 사용하여 Task가 완료될 때까지 보장
@@ -21,13 +21,9 @@ class REALTIMEDESTRUCTION_API FStructuralIntegrityAsyncTask : public FNonAbandon
 public:
 	FStructuralIntegrityAsyncTask(
 		FStructuralIntegritySystem* InSystem,
-		int32 InHitCellId,
-		float InDamage,
-		int32 InDamageRadius)
+		const TArray<int32>& InCellIds)
 		: System(InSystem)
-		, HitCellId(InHitCellId)
-		, Damage(InDamage)
-		, DamageRadius(InDamageRadius)
+		, CellIdsToDestroy(InCellIds)
 	{
 	}
 
@@ -46,23 +42,21 @@ public:
 private:
 	// 입력 데이터
 	FStructuralIntegritySystem* System;
-	int32 HitCellId;
-	float Damage;
-	int32 DamageRadius;
+	TArray<int32> CellIdsToDestroy;
 
 	// 결과 데이터
 	FStructuralIntegrityResult Result;
 };
 
 /**
- * 비동기 Hit 결과 콜백 타입
+ * 비동기 파괴 결과 콜백 타입
  */
-DECLARE_DELEGATE_OneParam(FOnStructuralHitCompleteDelegate, const FStructuralIntegrityResult&);
+DECLARE_DELEGATE_OneParam(FOnStructuralDestroyCompleteDelegate, const FStructuralIntegrityResult&);
 
 /**
  * 비동기 작업 관리자
  *
- * 여러 비동기 Hit 처리를 관리하고 완료 시 콜백 호출
+ * 여러 비동기 Cell 파괴 처리를 관리하고 완료 시 콜백 호출
  */
 class REALTIMEDESTRUCTION_API FStructuralIntegrityAsyncManager
 {
@@ -75,20 +69,16 @@ public:
 	FStructuralIntegrityAsyncManager& operator=(const FStructuralIntegrityAsyncManager&) = delete;
 
 	/**
-	 * 비동기 Hit 처리 시작
+	 * 비동기 Cell 파괴 처리 시작
 	 * @param System - 구조적 무결성 시스템
-	 * @param HitCellId - 맞은 Cell ID
-	 * @param Damage - 데미지
-	 * @param DamageRadius - 데미지 반경
+	 * @param CellIds - 파괴할 Cell ID 목록
 	 * @param OnComplete - 완료 시 콜백
 	 * @return Task ID (추적용)
 	 */
-	int32 ProcessHitAsync(
+	int32 DestroyCellsAsync(
 		FStructuralIntegritySystem* System,
-		int32 HitCellId,
-		float Damage,
-		int32 DamageRadius,
-		FOnStructuralHitCompleteDelegate OnComplete);
+		const TArray<int32>& CellIds,
+		FOnStructuralDestroyCompleteDelegate OnComplete);
 
 	/**
 	 * 대기 중인 작업 완료 체크 (Tick에서 호출)
@@ -123,7 +113,7 @@ private:
 	{
 		int32 TaskId;
 		TUniquePtr<FAsyncTask<FStructuralIntegrityAsyncTask>> AsyncTask;
-		FOnStructuralHitCompleteDelegate Callback;
+		FOnStructuralDestroyCompleteDelegate Callback;
 		bool bCancelled = false;
 	};
 
@@ -140,22 +130,18 @@ private:
 namespace StructuralIntegrityUtils
 {
 	/**
-	 * Cell 수에 따라 동기/비동기 자동 선택하여 Hit 처리
+	 * Cell 수에 따라 동기/비동기 자동 선택하여 파괴 처리
 	 * @param System - 구조적 무결성 시스템
 	 * @param AsyncManager - 비동기 매니저 (nullptr이면 항상 동기)
-	 * @param HitCellId - 맞은 Cell ID
-	 * @param Damage - 데미지
-	 * @param DamageRadius - 데미지 반경
+	 * @param CellIds - 파괴할 Cell ID 목록
 	 * @param OnComplete - 완료 시 콜백 (비동기 시에만 사용)
 	 * @param OutResult - 동기 처리 시 결과 (출력)
 	 * @return true면 동기 처리됨, false면 비동기 처리 시작됨
 	 */
-	REALTIMEDESTRUCTION_API bool ProcessHitAutomatic(
+	REALTIMEDESTRUCTION_API bool DestroyCellsAutomatic(
 		FStructuralIntegritySystem* System,
 		FStructuralIntegrityAsyncManager* AsyncManager,
-		int32 HitCellId,
-		float Damage,
-		int32 DamageRadius,
-		FOnStructuralHitCompleteDelegate OnComplete,
+		const TArray<int32>& CellIds,
+		FOnStructuralDestroyCompleteDelegate OnComplete,
 		FStructuralIntegrityResult& OutResult);
 }

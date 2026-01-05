@@ -1,4 +1,4 @@
-#include "CellStructure/RealDestructCellGraph.h"
+#include "StructuralIntegrity/RealDestructCellGraph.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 

@@ -1547,7 +1547,7 @@ void URealtimeDestructibleMeshComponent::DrawCellMeshesDebug()
 		// 각 Triangle의 엣지를 그림
 		for (int32 TriId : Mesh->TriangleIndicesItr())
 		{
-			FIndex3i Tri = Mesh->GetTriangle(TriId);
+			UE::Geometry::FIndex3i Tri = Mesh->GetTriangle(TriId);
 
 			FVector V0 = CompTransform.TransformPosition(FVector(Mesh->GetVertex(Tri.A)));
 			FVector V1 = CompTransform.TransformPosition(FVector(Mesh->GetVertex(Tri.B)));

@@ -7,51 +7,44 @@
 // 초기화
 //=========================================================================
 
-void FStructuralIntegritySystem::Initialize(const FCellStructureData& CellData, const FStructuralIntegritySettings& InSettings)
+void FStructuralIntegritySystem::Initialize(const FStructuralIntegrityInitData& InitData, const FStructuralIntegritySettings& InSettings)
 {
 	FWriteScopeLock WriteLock(DataLock);
 
-	CellDataPtr = &CellData;
+	if (!InitData.IsValid())
+	{
+		return;
+	}
+
+	// 데이터 복사
+	CellNeighbors = InitData.CellNeighbors;
+	CellPositions = InitData.CellPositions;
+	CellTriangles = InitData.CellTriangles;
+
 	Settings = InSettings;
 
-	const int32 CellCount = CellData.CellSeedVoxels.Num();
-	Data.Initialize(CellCount, Settings.DefaultCellHealth);
+	const int32 CellCount = InitData.GetCellCount();
+	Data.Initialize(CellCount);
 
 	NextGroupId = 0;
 	bInitialized = true;
 
 	// 자동 Anchor 감지
-	if (Settings.bAutoDetectFloorAnchors)
+	if (Settings.bAutoDetectFloorAnchors && CellCount > 0)
 	{
-		// Lock 이미 잡혀있으므로 내부 버전 호출 불필요
-		// AutoDetectFloorAnchors는 별도 Lock을 잡으므로 여기서 직접 처리
-
-		if (!CellDataPtr || CellCount == 0)
-		{
-			return;
-		}
-
 		// 가장 낮은 Z 좌표 찾기
 		float MinZ = MAX_flt;
 		for (int32 CellId = 0; CellId < CellCount; ++CellId)
 		{
-			const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-			const FVector WorldPos = VoxelToWorld(SeedVoxel);
-			MinZ = FMath::Min(MinZ, WorldPos.Z);
+			MinZ = FMath::Min(MinZ, CellPositions[CellId].Z);
 		}
 
-		// 임계값 이내의 Cell을 Anchor로 설정
-		// FloorHeightThreshold가 1.0 이하면 VoxelSize의 배수로 해석
-		const float ActualThreshold = (Settings.FloorHeightThreshold <= 1.0f)
-			? CellDataPtr->VoxelSize * Settings.FloorHeightThreshold
-			: Settings.FloorHeightThreshold;
+		// FloorHeightThreshold를 절대값으로 해석 (이제 VoxelSize 개념 없음)
+		const float ActualThreshold = Settings.FloorHeightThreshold;
 
 		for (int32 CellId = 0; CellId < CellCount; ++CellId)
 		{
-			const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-			const FVector WorldPos = VoxelToWorld(SeedVoxel);
-
-			if (WorldPos.Z - MinZ <= ActualThreshold)
+			if (CellPositions[CellId].Z - MinZ <= ActualThreshold)
 			{
 				Data.AnchorCellIds.Add(CellId);
 			}
@@ -66,7 +59,9 @@ void FStructuralIntegritySystem::Reset()
 	FWriteScopeLock WriteLock(DataLock);
 
 	Data.Reset();
-	CellDataPtr = nullptr;
+	CellNeighbors.Reset();
+	CellPositions.Reset();
+	CellTriangles.Reset();
 	bInitialized = false;
 	NextGroupId = 0;
 }
@@ -128,37 +123,26 @@ void FStructuralIntegritySystem::AutoDetectFloorAnchors(float HeightThreshold)
 {
 	FWriteScopeLock WriteLock(DataLock);
 
-	if (!CellDataPtr || Data.GetCellCount() == 0)
+	const int32 CellCount = Data.GetCellCount();
+	if (CellCount == 0 || CellPositions.Num() != CellCount)
 	{
 		return;
 	}
-
-	const int32 CellCount = Data.GetCellCount();
 
 	// 가장 낮은 Z 좌표 찾기
 	float MinZ = MAX_flt;
 	for (int32 CellId = 0; CellId < CellCount; ++CellId)
 	{
-		const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-		const FVector WorldPos = VoxelToWorld(SeedVoxel);
-		MinZ = FMath::Min(MinZ, WorldPos.Z);
+		MinZ = FMath::Min(MinZ, CellPositions[CellId].Z);
 	}
 
 	// 기존 Anchor 초기화
 	Data.AnchorCellIds.Reset();
 
 	// 임계값 이내의 Cell을 Anchor로 설정
-	// HeightThreshold가 1.0 이하면 VoxelSize의 배수로 해석
-	const float ActualThreshold = (HeightThreshold <= 1.0f)
-		? CellDataPtr->VoxelSize * HeightThreshold
-		: HeightThreshold;
-
 	for (int32 CellId = 0; CellId < CellCount; ++CellId)
 	{
-		const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-		const FVector WorldPos = VoxelToWorld(SeedVoxel);
-
-		if (WorldPos.Z - MinZ <= ActualThreshold)
+		if (CellPositions[CellId].Z - MinZ <= HeightThreshold)
 		{
 			Data.AnchorCellIds.Add(CellId);
 		}
@@ -186,39 +170,39 @@ int32 FStructuralIntegritySystem::GetAnchorCount() const
 }
 
 //=========================================================================
-// Hit 처리
+// Cell 파괴
 //=========================================================================
 
-FStructuralIntegrityResult FStructuralIntegritySystem::ProcessHit(int32 HitCellId, float Damage, int32 DamageRadius)
+FStructuralIntegrityResult FStructuralIntegritySystem::DestroyCells(const TArray<int32>& CellIds)
 {
 	FStructuralIntegrityResult Result;
 
 	FWriteScopeLock WriteLock(DataLock);
 
-	if (!bInitialized || !Data.IsValidCellId(HitCellId))
+	if (!bInitialized)
 	{
 		return Result;
 	}
 
-	// 이미 파괴된 Cell에 맞았으면 무시
-	if (Data.DestroyedCellIds.Contains(HitCellId))
+	// Cell들 파괴 처리
+	for (int32 CellId : CellIds)
 	{
-		return Result;
+		if (DestroyCellInternal(CellId))
+		{
+			Result.NewlyDestroyedCellIds.Add(CellId);
+		}
 	}
 
-	// 1. 데미지 적용
-	ApplyDamage(HitCellId, Damage, DamageRadius, Result.NewlyDestroyedCellIds);
-
-	// 2. 새로 파괴된 Cell이 없으면 연결성 체크 불필요
+	// 새로 파괴된 Cell이 없으면 연결성 체크 불필요
 	if (Result.NewlyDestroyedCellIds.Num() == 0)
 	{
 		return Result;
 	}
 
-	// 3. 연결성 업데이트 및 분리 그룹 찾기
+	// 연결성 업데이트 및 분리 그룹 찾기
 	Result.DetachedGroups = UpdateConnectivityAndFindDetached();
 
-	// 4. 전체 붕괴 체크 (모든 Anchor가 파괴됨)
+	// 전체 붕괴 체크 (모든 Anchor가 파괴됨)
 	bool bAllAnchorsDestroyed = true;
 	for (int32 AnchorId : Data.AnchorCellIds)
 	{
@@ -235,51 +219,11 @@ FStructuralIntegrityResult FStructuralIntegritySystem::ProcessHit(int32 HitCellI
 	return Result;
 }
 
-int32 FStructuralIntegritySystem::FindCellAtLocation(const FVector& WorldLocation) const
+FStructuralIntegrityResult FStructuralIntegritySystem::DestroyCell(int32 CellId)
 {
-	FReadScopeLock ReadLock(DataLock);
-
-	if (!CellDataPtr || !CellDataPtr->IsValid())
-	{
-		return INDEX_NONE;
-	}
-
-	// 월드 좌표를 Voxel 좌표로 변환
-	const FVector LocalPos = WorldLocation - CellDataPtr->GridOrigin;
-	const float VoxelSize = CellDataPtr->VoxelSize;
-
-	const int32 VoxelX = FMath::FloorToInt(LocalPos.X / VoxelSize);
-	const int32 VoxelY = FMath::FloorToInt(LocalPos.Y / VoxelSize);
-	const int32 VoxelZ = FMath::FloorToInt(LocalPos.Z / VoxelSize);
-
-	// 범위 체크
-	if (VoxelX < 0 || VoxelX >= CellDataPtr->VoxelResolution.X ||
-		VoxelY < 0 || VoxelY >= CellDataPtr->VoxelResolution.Y ||
-		VoxelZ < 0 || VoxelZ >= CellDataPtr->VoxelResolution.Z)
-	{
-		return INDEX_NONE;
-	}
-
-	const int32 VoxelIndex = CellDataPtr->GetVoxelIndex(FIntVector(VoxelX, VoxelY, VoxelZ));
-
-	if (VoxelIndex < 0 || VoxelIndex >= CellDataPtr->VoxelCellIds.Num())
-	{
-		return INDEX_NONE;
-	}
-
-	return CellDataPtr->VoxelCellIds[VoxelIndex];
-}
-
-FStructuralIntegrityResult FStructuralIntegritySystem::ProcessHitAtLocation(const FVector& WorldLocation, float Damage, int32 DamageRadius)
-{
-	const int32 CellId = FindCellAtLocation(WorldLocation);
-
-	if (CellId == INDEX_NONE)
-	{
-		return FStructuralIntegrityResult();
-	}
-
-	return ProcessHit(CellId, Damage, DamageRadius);
+	TArray<int32> SingleCell;
+	SingleCell.Add(CellId);
+	return DestroyCells(SingleCell);
 }
 
 //=========================================================================
@@ -296,24 +240,6 @@ ECellStructuralState FStructuralIntegritySystem::GetCellState(int32 CellId) cons
 	}
 
 	return Data.CellStates[CellId];
-}
-
-float FStructuralIntegritySystem::GetCellHealth(int32 CellId) const
-{
-	FReadScopeLock ReadLock(DataLock);
-
-	if (!Data.IsValidCellId(CellId))
-	{
-		return 0.0f;
-	}
-
-	return Data.CellHealth[CellId];
-}
-
-float FStructuralIntegritySystem::GetCellHealthNormalized(int32 CellId) const
-{
-	FReadScopeLock ReadLock(DataLock);
-	return Data.GetHealthNormalized(CellId);
 }
 
 bool FStructuralIntegritySystem::IsCellConnectedToAnchor(int32 CellId) const
@@ -338,7 +264,7 @@ bool FStructuralIntegritySystem::IsCellConnectedToAnchor(int32 CellId) const
 
 	// 캐시가 무효하면 전체 재계산 필요 (쓰기 작업)
 	// 읽기 전용 메서드이므로 여기서는 계산하지 않고 보수적으로 true 반환
-	// 실제 계산은 ProcessHit에서 수행됨
+	// 실제 계산은 DestroyCells에서 수행됨
 	return true;
 }
 
@@ -358,13 +284,12 @@ FVector FStructuralIntegritySystem::GetCellWorldPosition(int32 CellId) const
 {
 	FReadScopeLock ReadLock(DataLock);
 
-	if (!CellDataPtr || !Data.IsValidCellId(CellId))
+	if (!Data.IsValidCellId(CellId) || CellId >= CellPositions.Num())
 	{
 		return FVector::ZeroVector;
 	}
 
-	const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-	return VoxelToWorld(SeedVoxel);
+	return CellPositions[CellId];
 }
 
 //=========================================================================
@@ -381,7 +306,6 @@ TArray<FDetachedCellGroup> FStructuralIntegritySystem::ForceSetDestroyedCells(co
 		if (Data.IsValidCellId(CellId))
 		{
 			Data.CellStates[CellId] = ECellStructuralState::Destroyed;
-			Data.CellHealth[CellId] = 0.0f;
 			Data.DestroyedCellIds.Add(CellId);
 		}
 	}
@@ -402,56 +326,7 @@ void FStructuralIntegritySystem::SetSettings(const FStructuralIntegritySettings&
 // 내부 알고리즘
 //=========================================================================
 
-void FStructuralIntegritySystem::ApplyDamage(int32 CenterCellId, float Damage, int32 Radius, TArray<int32>& OutNewlyDestroyed)
-{
-	// 반경 내 Cell들 찾기
-	TArray<TPair<int32, int32>> CellsWithDistance;
-	BFSFindCellsInRadius(CenterCellId, Radius, CellsWithDistance);
-
-	// 결정론적 순서 보장: CellId 기준 정렬
-	CellsWithDistance.Sort([](const TPair<int32, int32>& A, const TPair<int32, int32>& B)
-	{
-		return A.Key < B.Key;
-	});
-
-	// 데미지 적용
-	for (const auto& Pair : CellsWithDistance)
-	{
-		const int32 CellId = Pair.Key;
-		const int32 Distance = Pair.Value;
-
-		// 이미 파괴됨
-		if (Data.DestroyedCellIds.Contains(CellId))
-		{
-			continue;
-		}
-
-		// 거리에 따른 데미지 감쇠
-		float AppliedDamage = Damage;
-		if (Distance > 0 && Settings.DamageFalloff > 0.0f)
-		{
-			AppliedDamage *= FMath::Pow(1.0f - Settings.DamageFalloff, static_cast<float>(Distance));
-		}
-
-		// 체력 감소
-		Data.CellHealth[CellId] = FMath::Max(0.0f, Data.CellHealth[CellId] - AppliedDamage);
-
-		// 파괴 처리
-		if (Data.CellHealth[CellId] <= 0.0f)
-		{
-			if (DestroyCell(CellId))
-			{
-				OutNewlyDestroyed.Add(CellId);
-			}
-		}
-		else if (Data.CellStates[CellId] == ECellStructuralState::Intact)
-		{
-			Data.CellStates[CellId] = ECellStructuralState::Damaged;
-		}
-	}
-}
-
-bool FStructuralIntegritySystem::DestroyCell(int32 CellId)
+bool FStructuralIntegritySystem::DestroyCellInternal(int32 CellId)
 {
 	if (!Data.IsValidCellId(CellId))
 	{
@@ -464,7 +339,6 @@ bool FStructuralIntegritySystem::DestroyCell(int32 CellId)
 	}
 
 	Data.CellStates[CellId] = ECellStructuralState::Destroyed;
-	Data.CellHealth[CellId] = 0.0f;
 	Data.DestroyedCellIds.Add(CellId);
 	Data.InvalidateCache();
 
@@ -475,7 +349,7 @@ TArray<FDetachedCellGroup> FStructuralIntegritySystem::UpdateConnectivityAndFind
 {
 	// Lock은 호출자가 이미 잡았다고 가정
 
-	if (!CellDataPtr)
+	if (CellNeighbors.Num() == 0)
 	{
 		return TArray<FDetachedCellGroup>();
 	}
@@ -514,7 +388,7 @@ TSet<int32> FStructuralIntegritySystem::FindAllConnectedToAnchors_Internal() con
 {
 	TSet<int32> ConnectedCells;
 
-	if (!CellDataPtr || Data.AnchorCellIds.Num() == 0)
+	if (CellNeighbors.Num() == 0 || Data.AnchorCellIds.Num() == 0)
 	{
 		return ConnectedCells;
 	}
@@ -543,9 +417,9 @@ TSet<int32> FStructuralIntegritySystem::FindAllConnectedToAnchors_Internal() con
 		const int32 CurrentCellId = Queue[QueueIndex++];
 
 		// 이웃 순회 (CellNeighbors는 이미 결정론적 순서)
-		if (CurrentCellId < CellDataPtr->CellNeighbors.Num())
+		if (CurrentCellId < CellNeighbors.Num())
 		{
-			const TArray<int32>& Neighbors = CellDataPtr->CellNeighbors[CurrentCellId];
+			const TArray<int32>& Neighbors = CellNeighbors[CurrentCellId];
 
 			for (int32 NeighborId : Neighbors)
 			{
@@ -566,7 +440,7 @@ TArray<FDetachedCellGroup> FStructuralIntegritySystem::BuildDetachedGroups(const
 {
 	TArray<FDetachedCellGroup> Groups;
 
-	if (DetachedCellIds.Num() == 0 || !CellDataPtr)
+	if (DetachedCellIds.Num() == 0 || CellNeighbors.Num() == 0)
 	{
 		return Groups;
 	}
@@ -601,9 +475,9 @@ TArray<FDetachedCellGroup> FStructuralIntegritySystem::BuildDetachedGroups(const
 			Group.CellIds.Add(CurrentId);
 
 			// 이웃 중 분리된 Cell 찾기
-			if (CurrentId < CellDataPtr->CellNeighbors.Num())
+			if (CurrentId < CellNeighbors.Num())
 			{
-				const TArray<int32>& Neighbors = CellDataPtr->CellNeighbors[CurrentId];
+				const TArray<int32>& Neighbors = CellNeighbors[CurrentId];
 
 				for (int32 NeighborId : Neighbors)
 				{
@@ -630,7 +504,7 @@ TArray<FDetachedCellGroup> FStructuralIntegritySystem::BuildDetachedGroups(const
 
 FVector FStructuralIntegritySystem::CalculateCenterOfMass(const TArray<int32>& CellIds) const
 {
-	if (CellIds.Num() == 0 || !CellDataPtr)
+	if (CellIds.Num() == 0 || CellPositions.Num() == 0)
 	{
 		return FVector::ZeroVector;
 	}
@@ -639,10 +513,9 @@ FVector FStructuralIntegritySystem::CalculateCenterOfMass(const TArray<int32>& C
 
 	for (int32 CellId : CellIds)
 	{
-		if (CellId >= 0 && CellId < CellDataPtr->CellSeedVoxels.Num())
+		if (CellId >= 0 && CellId < CellPositions.Num())
 		{
-			const FIntVector& SeedVoxel = CellDataPtr->CellSeedVoxels[CellId];
-			Sum += VoxelToWorld(SeedVoxel);
+			Sum += CellPositions[CellId];
 		}
 	}
 
@@ -653,16 +526,16 @@ TArray<int32> FStructuralIntegritySystem::CollectTriangleIds(const TArray<int32>
 {
 	TArray<int32> TriangleIds;
 
-	if (!CellDataPtr)
+	if (CellTriangles.Num() == 0)
 	{
 		return TriangleIds;
 	}
 
 	for (int32 CellId : CellIds)
 	{
-		if (CellId >= 0 && CellId < CellDataPtr->CellTriangles.Num())
+		if (CellId >= 0 && CellId < CellTriangles.Num())
 		{
-			const TArray<int32>& CellTris = CellDataPtr->CellTriangles[CellId];
+			const TArray<int32>& CellTris = CellTriangles[CellId];
 			TriangleIds.Append(CellTris);
 		}
 	}
@@ -682,71 +555,4 @@ TArray<int32> FStructuralIntegritySystem::CollectTriangleIds(const TArray<int32>
 	TriangleIds.SetNum(WriteIndex);
 
 	return TriangleIds;
-}
-
-void FStructuralIntegritySystem::BFSFindCellsInRadius(int32 StartCellId, int32 MaxDistance,
-	TArray<TPair<int32, int32>>& OutCellsWithDistance) const
-{
-	OutCellsWithDistance.Reset();
-
-	if (!CellDataPtr || !Data.IsValidCellId(StartCellId))
-	{
-		return;
-	}
-
-	// BFS 큐: (CellId, Distance)
-	TArray<TPair<int32, int32>> Queue;
-	TSet<int32> Visited;
-
-	Queue.Add(TPair<int32, int32>(StartCellId, 0));
-	Visited.Add(StartCellId);
-
-	int32 QueueIndex = 0;
-	while (QueueIndex < Queue.Num())
-	{
-		const auto& Current = Queue[QueueIndex++];
-		const int32 CellId = Current.Key;
-		const int32 Distance = Current.Value;
-
-		OutCellsWithDistance.Add(Current);
-
-		// 최대 거리에 도달하면 이웃 탐색 중지
-		if (Distance >= MaxDistance)
-		{
-			continue;
-		}
-
-		// 이웃 탐색
-		if (CellId < CellDataPtr->CellNeighbors.Num())
-		{
-			const TArray<int32>& Neighbors = CellDataPtr->CellNeighbors[CellId];
-
-			for (int32 NeighborId : Neighbors)
-			{
-				if (!Visited.Contains(NeighborId))
-				{
-					Visited.Add(NeighborId);
-					Queue.Add(TPair<int32, int32>(NeighborId, Distance + 1));
-				}
-			}
-		}
-	}
-}
-
-FVector FStructuralIntegritySystem::VoxelToWorld(const FIntVector& VoxelCoord) const
-{
-	if (!CellDataPtr)
-	{
-		return FVector::ZeroVector;
-	}
-
-	const float VoxelSize = CellDataPtr->VoxelSize;
-	const FVector& GridOrigin = CellDataPtr->GridOrigin;
-
-	// Voxel 중심 좌표
-	return GridOrigin + FVector(
-		(static_cast<float>(VoxelCoord.X) + 0.5f) * VoxelSize,
-		(static_cast<float>(VoxelCoord.Y) + 0.5f) * VoxelSize,
-		(static_cast<float>(VoxelCoord.Z) + 0.5f) * VoxelSize
-	);
 }

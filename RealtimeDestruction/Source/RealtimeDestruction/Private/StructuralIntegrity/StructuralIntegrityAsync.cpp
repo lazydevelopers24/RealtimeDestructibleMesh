@@ -11,7 +11,7 @@ void FStructuralIntegrityAsyncTask::DoWork()
 {
 	if (System && System->IsInitialized())
 	{
-		Result = System->ProcessHit(HitCellId, Damage, DamageRadius);
+		Result = System->DestroyCells(CellIdsToDestroy);
 	}
 }
 
@@ -24,19 +24,16 @@ FStructuralIntegrityAsyncManager::~FStructuralIntegrityAsyncManager()
 	WaitForAllTasks();
 }
 
-int32 FStructuralIntegrityAsyncManager::ProcessHitAsync(
+int32 FStructuralIntegrityAsyncManager::DestroyCellsAsync(
 	FStructuralIntegritySystem* System,
-	int32 HitCellId,
-	float Damage,
-	int32 DamageRadius,
-	FOnStructuralHitCompleteDelegate OnComplete)
+	const TArray<int32>& CellIds,
+	FOnStructuralDestroyCompleteDelegate OnComplete)
 {
 	FScopeLock Lock(&TaskLock);
 
 	FPendingTask NewTask;
 	NewTask.TaskId = NextTaskId++;
-	NewTask.AsyncTask = MakeUnique<FAsyncTask<FStructuralIntegrityAsyncTask>>(
-		System, HitCellId, Damage, DamageRadius);
+	NewTask.AsyncTask = MakeUnique<FAsyncTask<FStructuralIntegrityAsyncTask>>(System, CellIds);
 	NewTask.Callback = MoveTemp(OnComplete);
 
 	// 백그라운드 스레드에서 실행 시작
@@ -129,13 +126,11 @@ bool FStructuralIntegrityAsyncManager::IsAllTasksComplete() const
 
 namespace StructuralIntegrityUtils
 {
-	bool ProcessHitAutomatic(
+	bool DestroyCellsAutomatic(
 		FStructuralIntegritySystem* System,
 		FStructuralIntegrityAsyncManager* AsyncManager,
-		int32 HitCellId,
-		float Damage,
-		int32 DamageRadius,
-		FOnStructuralHitCompleteDelegate OnComplete,
+		const TArray<int32>& CellIds,
+		FOnStructuralDestroyCompleteDelegate OnComplete,
 		FStructuralIntegrityResult& OutResult)
 	{
 		if (!System || !System->IsInitialized())
@@ -155,13 +150,13 @@ namespace StructuralIntegrityUtils
 		if (bShouldUseAsync)
 		{
 			// 비동기 처리 시작
-			AsyncManager->ProcessHitAsync(System, HitCellId, Damage, DamageRadius, OnComplete);
+			AsyncManager->DestroyCellsAsync(System, CellIds, OnComplete);
 			return false;
 		}
 		else
 		{
 			// 동기 처리
-			OutResult = System->ProcessHit(HitCellId, Damage, DamageRadius);
+			OutResult = System->DestroyCells(CellIds);
 			return true;
 		}
 	}
