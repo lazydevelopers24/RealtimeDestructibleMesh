@@ -225,6 +225,8 @@ protected:
 	/** 파괴 요청 처리 */
 	void ProcessDestructionRequest(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit);
 
+	void ProcessDestructionRequestForCell(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit);
+
 private:
 	bool EnsureToolMesh();
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = nullptr;

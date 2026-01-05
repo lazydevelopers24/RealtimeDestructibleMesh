@@ -199,14 +199,26 @@ FDestructionOpId URealtimeDestructibleMeshComponent::EnqueueRequestLocal(const F
 	Op.Request = Request;
 	Op.bIsPenetration = bIsPenetration;
 
-	// Add operation to queue
-	BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal);
-
-	// Tick마다 하는 걸로 변경
-	// Start Boolean Operation
-	if (!bEnableMultiWorkers)
+	// 기존 단일 메시 로직
+	if (ChunkMeshes.Num() == 0)
 	{
-		BooleanProcessor->KickProcessIfNeeded();
+		// Add operation to queue
+		BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal);
+
+		// Tick마다 하는 걸로 변경
+		// Start Boolean Operation
+		if (!bEnableMultiWorkers)
+		{
+			BooleanProcessor->KickProcessIfNeeded();
+		}
+	}
+	else
+	{
+		/*
+		* 기존 구조는 BooleanProcessor에 캐싱된 OwnerComponent에서 FDynamicMesh3를 가져와서 연산하는 방식이었음
+		* 파괴 요청 시 CellMesh 넘겨줘야함
+		*/
+		BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal, ChunkMeshes[Op.Request.ChunkIndex].Get());
 	}
 
 	return Op.OpId;
@@ -927,7 +939,18 @@ void URealtimeDestructibleMeshComponent::ApplyRenderUpdate()
 void URealtimeDestructibleMeshComponent::ApplyCollisionUpdate()
 {
 	UpdateCollision();
-	RecreatePhysicsState();
+	
+	/*
+	 * deprecated_realdestruction
+	 * UpdateCollision 내부에서 RecreatePhysicsState함수 호출
+	 */
+	// RecreatePhysicsState();
+}
+
+void URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync()
+{
+	UE_LOG(LogTemp, Display, TEXT("Call Collision Update %f"), FPlatformTime::Seconds());
+	UpdateCollision(true);
 }
 
 bool URealtimeDestructibleMeshComponent::CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration)
@@ -1012,6 +1035,150 @@ void URealtimeDestructibleMeshComponent::SettingAsyncOption(bool& OutParallelEna
 	OutParallelEnabled = bEnableParallel;
 	OutMultiWorker = bEnableMultiWorkers;
 }
+
+int32 URealtimeDestructibleMeshComponent::GetChunkIndex(const UPrimitiveComponent* ChunkMesh)
+{	
+	if (int32* Index = ChunkIndexMap.Find(ChunkMesh))
+	{
+		return *Index;
+	}
+
+	return INDEX_NONE;
+}
+
+bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 CellIndex)
+{
+	// 비트 배열의 인덱스
+	// 0 ~ 63(0), 64 ~ 127(1) ...
+	const int32 BitIndex = CellIndex / 64;
+	if (!ChunkBusyBits.IsValidIndex(BitIndex))
+	{
+		// 유효하지 않은 CellIndex의 경우 로그를 출력하고 true를 반환해서 작업하지 못하게 한다.
+		UE_LOG(LogTemp, Warning, TEXT("Invalid Cell Index: %d"), CellIndex);
+		return true;
+	}
+
+	// 해당 비트 마스크에서 비트 위치
+	const int32 BitOffset = CellIndex % 64;
+	const int64 BitMask = 1ULL << BitOffset;
+
+	const bool bIsBusy = (ChunkBusyBits[BitIndex] & BitMask) != 0;
+	if (!bIsBusy)
+	{
+		ChunkBusyBits[BitIndex] |= BitMask;
+	}
+	
+	return bIsBusy;
+}
+
+void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, bool bEnableCollisionUpdate)
+{
+	if(UDynamicMesh* Mesh = GetDynamicMesh())
+	{
+		/*
+		 * EditMesh 내부에서 RenderState 갱신
+		 */
+		Mesh->EditMesh([&](FDynamicMesh3& InternalMesh)
+		{
+			InternalMesh = MoveTemp(NewMesh);
+		});
+	}
+
+	if (bEnableCollisionUpdate)
+	{
+		RequestDelayedCollisionUpdate();
+	}
+}
+
+void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate()
+{
+	// InRate 이내에 호출되는 경우 타이머 리셋
+	if (UWorld* World = GetWorld())
+	{
+		UE_LOG(LogTemp, Display, TEXT("Set Collision Timer %f"), FPlatformTime::Seconds());
+		World->GetTimerManager().SetTimer(
+			CollisionUpdateTimerHandle,
+			this,
+			&URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync,
+			0.05f,
+			false);
+	}
+}
+
+void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
+{
+#if !UE_BUILD_SHIPPING
+	if (!GetWorld())
+	{
+		return;
+	}
+	
+	// 메시 정보 가져오기
+	int32 VertexCount = 0;
+	int32 TriangleCount = 0;
+
+	if (UDynamicMesh* DynMesh = GetDynamicMesh())
+	{
+		DynMesh->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Mesh)
+		{
+			VertexCount = Mesh.VertexCount();
+			TriangleCount = Mesh.TriangleCount();
+		});
+	}
+
+	// 대기 중인 Op 수
+	int32 PendingCount = PendingOps.Num();
+
+	// BooleanProcessor의 hole count 가져오기 (비동기 처리 시 여기서 관리됨)
+	int32 HoleCount = BooleanProcessor.IsValid() ? BooleanProcessor->GetCurrentHoleCount() : CurrentHoleCount;
+
+	// 네트워크 모드 가져오기
+	FString NetModeStr = TEXT("Unknown");
+	if (UWorld* World = GetWorld())
+	{
+		switch (World->GetNetMode())
+		{
+		case NM_Standalone:
+			NetModeStr = TEXT("Standalone");
+			break;
+		case NM_DedicatedServer:
+			NetModeStr = TEXT("Dedicated Server");
+			break;
+		case NM_ListenServer:
+			NetModeStr = TEXT("Listen Server");
+			break;
+		case NM_Client:
+			NetModeStr = TEXT("Client");
+			break;
+		default:
+			NetModeStr = TEXT("Unknown");
+			break;
+		}
+	}
+
+	// 서버 배칭 상태
+	FString BatchingStr = bUseServerBatching ? TEXT("ON") : TEXT("OFF");
+	int32 BatchQueueSize = bUseCompactMulticast ? PendingServerBatchOpsCompact.Num() : PendingServerBatchOps.Num();
+
+	// 디버그 텍스트 생성
+	DebugText = FString::Printf(
+		TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nPending Ops: %d\nInitialized: %s\n--- Network ---\nMode: %s\nBatching: %s (Queue: %d)"),
+		VertexCount,
+		TriangleCount,
+		HoleCount,
+		MaxHoleCount,
+		PendingCount,
+		bIsInitialized ? TEXT("Yes") : TEXT("No"),
+		*NetModeStr,
+		*BatchingStr,
+		BatchQueueSize
+	);
+
+	TogleDebugUpdate();
+	
+#endif
+}
+
 void URealtimeDestructibleMeshComponent::OnRegister()
 {
 	Super::OnRegister();
@@ -1089,11 +1256,25 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 		}
 	}
 
+	for (int32 i = 0; i < ChunkMeshes.Num(); i++)
+	{
+		ChunkIndexMap.Add(ChunkMeshes[i].Get(), i);
+	}
+
+	int32 NumBits = (ChunkMeshes.Num() + 63) / 64;
+	ChunkBusyBits.Init(0ULL, NumBits);
 }
 
 void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+#if !UE_BUILD_SHIPPING
+	if (bShowDebugText && bShouldDebugUpdate)
+	{
+		UpdateDebugInfo();
+	}
+#endif
 
 	if (bEnableMultiWorkers)
 	{
@@ -1117,75 +1298,6 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	if (bShowCellMeshDebug)
 	{
 		DrawCellMeshesDebug();
-	}
-
-	// 디버그 텍스트 표시
-	if (bShowDebugText && GetWorld())
-	{
-		// 메시 정보 가져오기
-		int32 VertexCount = 0;
-		int32 TriangleCount = 0;
-
-		if (UDynamicMesh* DynMesh = GetDynamicMesh())
-		{
-			DynMesh->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Mesh)
-				{
-					VertexCount = Mesh.VertexCount();
-					TriangleCount = Mesh.TriangleCount();
-				});
-		}
-
-		// 대기 중인 Op 수
-		int32 PendingCount = PendingOps.Num();
-
-		// BooleanProcessor의 hole count 가져오기 (비동기 처리 시 여기서 관리됨)
-		int32 HoleCount = BooleanProcessor.IsValid() ? BooleanProcessor->GetCurrentHoleCount() : CurrentHoleCount;
-
-		// 네트워크 모드 가져오기
-		FString NetModeStr = TEXT("Unknown");
-		if (UWorld* World = GetWorld())
-		{
-			switch (World->GetNetMode())
-			{
-			case NM_Standalone:
-				NetModeStr = TEXT("Standalone");
-				break;
-			case NM_DedicatedServer:
-				NetModeStr = TEXT("Dedicated Server");
-				break;
-			case NM_ListenServer:
-				NetModeStr = TEXT("Listen Server");
-				break;
-			case NM_Client:
-				NetModeStr = TEXT("Client");
-				break;
-			default:
-				NetModeStr = TEXT("Unknown");
-				break;
-			}
-		}
-
-		// 서버 배칭 상태
-		FString BatchingStr = bUseServerBatching ? TEXT("ON") : TEXT("OFF");
-		int32 BatchQueueSize = bUseCompactMulticast ? PendingServerBatchOpsCompact.Num() : PendingServerBatchOps.Num();
-
-		// 디버그 텍스트 생성
-		FString DebugText = FString::Printf(
-			TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nPending Ops: %d\nInitialized: %s\n--- Network ---\nMode: %s\nBatching: %s (Queue: %d)"),
-			VertexCount,
-			TriangleCount,
-			HoleCount,
-			MaxHoleCount,
-			PendingCount,
-			bIsInitialized ? TEXT("Yes") : TEXT("No"),
-			*NetModeStr,
-			*BatchingStr,
-			BatchQueueSize
-		);
-
-		// 액터 위치 + 오프셋에 텍스트 표시
-		FVector TextLocation = GetComponentLocation() + DebugTextOffset;
-		DrawDebugString(GetWorld(), TextLocation, DebugText, nullptr, DebugTextColor, 0.0f, true);
 	}
 
 	// 서버 배칭 처리

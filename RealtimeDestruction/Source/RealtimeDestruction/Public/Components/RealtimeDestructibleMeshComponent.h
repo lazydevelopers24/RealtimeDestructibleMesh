@@ -362,6 +362,7 @@ public:
 
 	void ApplyRenderUpdate();
 	void ApplyCollisionUpdate();
+	void ApplyCollisionUpdateAsync();
 
 	bool CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration);
 
@@ -370,6 +371,27 @@ public:
 	void SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker);
 
 	bool IsInitialized() { return bIsInitialized;  }
+
+	void TogleDebugUpdate() { bShouldDebugUpdate = !bShouldDebugUpdate; }
+
+	int32 GetChunkIndex(const UPrimitiveComponent* ChunkMesh);
+
+	bool CheckAndSetChunkBusy(int32 CellIndex);
+
+	/*
+	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
+	 * 검증 완료되면 유지
+	 */
+	/*************************************************/
+	// 변형된 메시의 시각적(렌더링) 처리 즉시 업데이트하는 함수
+	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, bool bEnableCollisionUpdate);
+	// 타겟메시의 idle이나 원하는 딜레이를 주고 Async로 collision 갱신하는 함수
+	void RequestDelayedCollisionUpdate();
+
+	// 나중에 private으로 이동
+	FTimerHandle CollisionUpdateTimerHandle;
+
+	/*************************************************/
 protected:
 	//////////////////////////////////////////////////////////////////////////
 	// Mesh Settings
@@ -538,6 +560,10 @@ protected:
 	/** Cell별 분리된 메시 */
 	TArray<TObjectPtr<UDynamicMeshComponent>> CellMeshComponents;
 
+	// PrimComp으로 Key값 설정, FHitResult의 GetComponent는 PrimitiveComp* 반환
+	TMap<UPrimitiveComponent*, int32> ChunkIndexMap;
+
+	TArray<uint64> ChunkBusyBits;
 
 	/** Cell별 바운딩 박스 (빠른 충돌 체크용) */
 	TArray<FBox> CellBounds;
@@ -592,6 +618,8 @@ protected:
 	// Debug Display Settings (액터 위 디버그 텍스트 표시)
 	//////////////////////////////////////////////////////////////////////////
 
+	void UpdateDebugInfo();
+
 	/** 액터 위에 디버그 정보 텍스트 표시 여부 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowDebugText = false;
@@ -601,12 +629,16 @@ protected:
 	FVector DebugTextOffset = FVector(0.0f, 0.0f, 250.0f);
 
 	/** 디버그 텍스트 색상 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	FColor DebugTextColor = FColor::Yellow;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
+	FLinearColor DebugTextColor = FLinearColor::Yellow;
 
 	/** Cell 메시 와이어프레임 디버그 표시 (PIE에서 자동으로 그려짐) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="RealtimeDestructibleMesh|Debug")
 	bool bShowCellMeshDebug = false;
+
+	bool bShouldDebugUpdate = true;
+
+	FString DebugText;	
 
 protected:
 #if WITH_EDITOR

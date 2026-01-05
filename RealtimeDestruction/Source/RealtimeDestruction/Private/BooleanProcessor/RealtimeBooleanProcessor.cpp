@@ -194,7 +194,7 @@ TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> FRealtimeBooleanProcessor::GetCac
 }
 
 
-void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UDecalComponent* TemporaryDecal)
+void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UDecalComponent* TemporaryDecal, UDynamicMeshComponent* ChunkMesh)
 {
 	if (!OwnerComponent.IsValid())
 	{
@@ -207,9 +207,18 @@ void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UD
 		return;
 	}
 
-	const FTransform ComponentToWorld = OwnerComponent->GetComponentTransform();
+	/*
+	 * 0105 기준 검증단계니까 CellMesh가 없으면 기존 로직 수행
+	 * 나중에 CellMesh 불리언 연산이 안정화 되면 기존 로직 제거
+	 */
+	FBulletHole Op = {};
+	Op.ChunkIndex = Operation.Request.ChunkIndex;
+	Op.TargetMesh = ChunkMesh ? ChunkMesh : OwnerComponent.Get();	
+	FTransform ComponentToWorld = Op.TargetMesh->GetComponentTransform();
+
 	const FVector LocalImpact = ComponentToWorld.InverseTransformPosition(Operation.Request.ImpactPoint);
-	const FVector LocalNormal = ComponentToWorld.InverseTransformVector(Operation.Request.ImpactNormal).GetSafeNormal();
+	const FVector LocalNormal = ComponentToWorld.InverseTransformVector(Operation.Request.ImpactNormal).
+												 GetSafeNormal();
 	FQuat ToolRotation = FRotationMatrix::MakeFromZ(LocalNormal).ToQuat(); // cylinder, cone일 경우 방향에 맞게 회전이 필요하다.
 
 	// 스케일 보정: 회전된 좌표계 기준으로 각 축의 스케일 계산
@@ -231,26 +240,15 @@ void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UD
 		1.0f / FMath::Max(KINDA_SMALL_NUMBER, ScaledAxisY.Size()),
 		1.0f / FMath::Max(KINDA_SMALL_NUMBER, ScaledAxisZ.Size())
 	);
-
-	FBulletHole Op = {};
+	
 	Op.ToolTransform = FTransform(ToolRotation, LocalImpact, AdjustedScale);
 
 	Op.bIsPenetration = Operation.bIsPenetration; 
 	Op.TemporaryDecal = TemporaryDecal;
 	Op.ToolMeshPtr = Operation.Request.ToolMeshPtr;
-	/*
-	 * deprecated_realdestruction
-	 */
-	// Op.ToolShape = Operation.Request.ToolShape;
-	// Op.ShapeParams = Operation.Request.ShapeParams;
 
 	UE_LOG(LogTemp, Warning, TEXT("High Queue Size: %d"), DebugHighQueueCount);
 	UE_LOG(LogTemp, Warning, TEXT("Normal Queue Size: %d"), DebugNormalQueueCount);
-	/*
-	 * deprecated_realdestruction
-	 */
-	// Op.ToolShape = Operation.Request.ToolShape;
-	// Op.ShapeParams = Operation.Request.ShapeParams;
 
 	if (Op.bIsPenetration)
 	{
@@ -711,6 +709,99 @@ void FRealtimeBooleanProcessor::KickProcessIfNeeded()
 		else
 		{
 			StartBooleanWorkerAsync(MoveTemp(Batch), Gen);	
+		}
+	}
+	
+}
+
+void FRealtimeBooleanProcessor::KickProcessIfNeededPerChunk()
+{
+	if (!bEnableMultiWorkers)
+	{
+		return;
+	}
+
+	if (IsHoleMax())
+	{ 
+		FBulletHole Temp;
+		while (HighPriorityQueue.Dequeue(Temp)) {}
+		while (NormalPriorityQueue.Dequeue(Temp)) {}
+		return;
+	}
+
+	/*
+	 * 우선 순위별 TMap 생성
+	 * Chunk의 주소를 Key로 해서 Chunk별 연산 수집
+	 */
+	TMap<UDynamicMeshComponent*, FBulletHoleBatch> HighPriorityBatch;
+	TMap<UDynamicMeshComponent*, FBulletHoleBatch> NormalPriorityBatch;
+	{
+		FBulletHole Op = {};
+		while (HighPriorityQueue.Dequeue(Op))
+		{
+			if (OwnerComponent.IsValid() && !OwnerComponent->CheckAndSetChunkBusy(Op.ChunkIndex))
+			{
+				UDynamicMeshComponent* TargetMesh = Op.TargetMesh.Get();
+				if (!TargetMesh)
+				{
+					continue;
+				}
+
+				if (auto* Batch = HighPriorityBatch.Find(TargetMesh))
+				{
+					Batch->Add(MoveTemp(Op));
+				}
+				else
+				{
+					FBulletHoleBatch NewBatch;
+					NewBatch.Reserve(MaxBatchSize);
+					NewBatch.Add(MoveTemp(Op));
+				}
+			}
+		}
+
+		Op = {};		
+		while (NormalPriorityQueue.Dequeue(Op))
+		{
+			if (OwnerComponent.IsValid() && !OwnerComponent->CheckAndSetChunkBusy(Op.ChunkIndex))
+			{
+				UDynamicMeshComponent* TargetMesh = Op.TargetMesh.Get();
+				if (!TargetMesh)
+				{
+					continue;
+				}
+
+				if (auto* Batch = NormalPriorityBatch.Find(TargetMesh))
+				{
+					Batch->Add(MoveTemp(Op));
+				}
+				else
+				{
+					FBulletHoleBatch NewBatch;
+					NewBatch.Reserve(MaxBatchSize);
+					NewBatch.Add(MoveTemp(Op));
+				}
+			}
+		}
+	}
+
+	for (auto& Chunk : HighPriorityBatch)
+	{
+		UDynamicMeshComponent* TargetMesh = Chunk.Key;
+		FBulletHoleBatch& BatchToProcess = Chunk.Value;
+		if (BatchToProcess.Num() == 0)
+		{
+			continue;
+		}
+
+		if (bEnableMultiWorkers)
+		{
+			
+		}
+		else
+		{
+			// 청크 별 세대 관리로 변경 필요
+			const int32 Gen = ++BooleanGeneration;
 		}
 	}
 	

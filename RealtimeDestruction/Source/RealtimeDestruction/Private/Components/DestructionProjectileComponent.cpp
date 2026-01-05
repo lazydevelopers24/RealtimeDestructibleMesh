@@ -154,6 +154,152 @@ void UDestructionProjectileComponent::ProcessDestructionRequest(
 	FRealtimeDestructionRequest Request;
 	Request.ImpactPoint = Hit.ImpactPoint;
 	Request.ImpactNormal = Hit.ImpactNormal;
+	Request.ChunkIndex = DestructComp->GetChunkIndex(Hit.GetComponent());	
+
+	if (!ToolMeshPtr.IsValid())
+	{
+		if (!EnsureToolMesh())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
+		}	
+	}	
+	Request.ToolMeshPtr = ToolMeshPtr;
+	Request.ToolShape = ToolShape;
+
+	switch (Request.ToolShape)
+	{
+	case EDestructionToolShape::Cylinder:
+		Request.Depth = CylinderHeight;
+		break;
+	case EDestructionToolShape::Sphere:
+		Request.Depth = SphereRadius;
+		break;
+	default:
+		Request.Depth = CylinderHeight;
+		break;
+	}
+
+	// Shape별로 파라미터 채우기 (네트워크 전송용)
+	switch (ToolShape)
+	{
+	case EDestructionToolShape::Cylinder:
+		Request.ShapeParams.Radius = CylinderRadius;
+		Request.ShapeParams.Height = CylinderHeight;
+		Request.ShapeParams.RadiusSteps = RadialSteps;
+		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
+		Request.ShapeParams.bCapped = bCapped;
+		break;
+
+	case EDestructionToolShape::Sphere:
+		Request.ShapeParams.Radius = SphereRadius;
+		Request.ShapeParams.StepsPhi = SphereStepsPhi;
+		Request.ShapeParams.StepsTheta = SphereStepsTheta;
+		break;
+
+	default:
+		Request.ShapeParams.Radius = CylinderRadius;
+		Request.ShapeParams.Height = CylinderHeight;
+		Request.ShapeParams.RadiusSteps = RadialSteps;
+		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
+		Request.ShapeParams.bCapped = bCapped;
+		break;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Server] ToolShape: %d, ShapeParams - Radius: %.2f, Height: %.2f, RadiusSteps: %d"),
+		static_cast<int32>(Request.ToolShape),
+		Request.ShapeParams.Radius,
+		Request.ShapeParams.Height,
+		Request.ShapeParams.RadiusSteps); 
+
+	// 처리 시간 측정 시작
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double StartTime = FPlatformTime::Seconds();
+
+	// FPS 영향 측정을 위한 파괴 전 FPS 기록
+	float FPSBefore = 0.0f;
+	if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
+	{
+		FPSBefore = Debugger->GetCurrentFPS();
+	}
+
+	// Instigator(Pawn) → PlayerController → NetworkComp 찾기
+	APawn* InstigatorPawn = Owner->GetInstigator();
+	APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
+	UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
+
+	if (NetworkComp)
+	{
+		// NetworkComp가 서버/클라이언트/스탠드얼론 모두 처리
+		NetworkComp->RequestDestruction(DestructComp, Request);
+	}
+	else
+	{
+		// NetworkComp가 없으면 로컬에서 직접 처리 (스탠드얼론 또는 설정 오류)
+		DestructComp->RequestDestruction(Request);
+	}
+
+	// 처리 시간 측정 종료 (밀리초 단위)
+	const float ProcessTimeMs = static_cast<float>((FPlatformTime::Seconds() - StartTime) * 1000.0);
+
+	// FPS 영향 기록 (파괴 후 FPS와 비교)
+	if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
+	{
+		float FPSAfter = Debugger->GetCurrentFPS();
+		Debugger->RecordFPSImpact(FPSBefore, FPSAfter);
+	}
+
+	// 즉시 피드백 표시 (데칼, 파티클) - 모든 네트워크 모드에서 로컬로 스폰
+	if (bShowImmediateFeedback)
+	{
+		SpawnImmediateFeedback(Hit);
+	}
+
+	// 디버거에 파괴 기록
+	if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
+	{
+		Debugger->RecordDestruction(
+			Hit.ImpactPoint,
+			Hit.ImpactNormal,
+			HoleRadius,
+			Owner->GetInstigator(),
+			Hit.GetActor(),
+			ProcessTimeMs
+		);
+	}
+
+	// 이벤트 브로드캐스트
+	OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
+
+	// 투사체 제거
+	if (bDestroyOnHit)
+	{
+		Owner->Destroy();
+	}
+}
+
+void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtimeDestructibleMeshComponent* DestructComp,
+	const FHitResult& Hit)
+{
+	if (!DestructComp)
+	{
+		return;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	// 파괴 요청 생성
+	FRealtimeDestructionRequest Request;
+	Request.ImpactPoint = Hit.ImpactPoint;
+	Request.ImpactNormal = Hit.ImpactNormal;
 
 	if (!ToolMeshPtr.IsValid())
 	{

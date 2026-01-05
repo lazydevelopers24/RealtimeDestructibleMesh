@@ -50,6 +50,10 @@ struct FBulletHole
 
 	TSharedPtr<UE::Geometry::FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = nullptr;
 
+	TWeakObjectPtr<UDynamicMeshComponent> TargetMesh = nullptr;
+
+	int32 ChunkIndex = INDEX_NONE;
+
 	bool CanRetry() const { return Attempts <= MaxAttempts; }
 };
 
@@ -149,11 +153,13 @@ public:
 	bool Initialize(URealtimeDestructibleMeshComponent* Owner);
 	void Shutdown();
 
-	void EnqueueOp(FRealtimeDestructionOp&& Operation, UDecalComponent* TemporaryDecal);
+	void EnqueueOp(FRealtimeDestructionOp&& Operation, UDecalComponent* TemporaryDecal, UDynamicMeshComponent* ChunkMesh = nullptr);
 	void EnqueueRemaining(FBulletHole&& Operation);
 
 	// 큐가 쌓이면 불리언 연산 시작
 	void KickProcessIfNeeded();
+
+	void KickProcessIfNeededPerChunk();
 
 	bool IsOwnerCompValid() const { return OwnerComponent.IsValid(); }
 
