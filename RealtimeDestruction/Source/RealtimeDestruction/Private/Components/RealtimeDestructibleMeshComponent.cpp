@@ -1303,6 +1303,8 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	UE_LOG(LogTemp, Display, TEXT("CellMesh Num %d"), CellMeshComponents.Num());
+
 	// Trace 채널 활성화 (비-쉬핑 빌드에서만)
 #if !UE_BUILD_SHIPPING
 	if (!bIsTraceEnabled)
@@ -1824,7 +1826,10 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		//CellComp->SetRelativeTransform(FTransform::Identity);
 			 
 		// Collision 설정
-		CellComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		CellComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		CellComp->SetCollisionProfileName(TEXT("BlockAll"));
+		CellComp->SetComplexAsSimpleCollisionEnabled(true);
+		
 
 		// Tick 활성화   
 		CellComp->PrimaryComponentTick.bCanEverTick = false;

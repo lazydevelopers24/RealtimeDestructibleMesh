@@ -700,8 +700,7 @@ void FRealtimeBooleanProcessor::KickProcessIfNeeded()
 
 		/** Union Worker 시작 */
 		StartUnionWorker(MoveTemp(Batch), CurrentBatchID, Gen);
-	}
-	
+	}	
 	else
 	{
 		const int32 Gen = ++BooleanGeneration;
@@ -720,11 +719,6 @@ void FRealtimeBooleanProcessor::KickProcessIfNeeded()
 
 void FRealtimeBooleanProcessor::KickProcessIfNeededPerChunk()
 {
-	if (!bEnableMultiWorkers)
-	{
-		return;
-	}
-
 	if (IsHoleMax())
 	{ 
 		FBulletHole Temp;

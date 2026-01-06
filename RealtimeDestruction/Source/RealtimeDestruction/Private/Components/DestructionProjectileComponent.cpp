@@ -121,7 +121,17 @@ void UDestructionProjectileComponent::OnProjectileHit(
 	if (DestructComp)
 	{
 		// 파괴 가능한 오브젝트에 충돌
-		ProcessDestructionRequest(DestructComp, Hit);
+		int32 ChunkNum = DestructComp->GetChunkNum();
+		if (ChunkNum == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequest %d"), ChunkNum);
+			ProcessDestructionRequest(DestructComp, Hit);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequestForCell %d"), ChunkNum);
+			ProcessDestructionRequestForCell(DestructComp, Hit);
+		}
 	}
 	else
 	{
@@ -153,8 +163,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequest(
 	// 파괴 요청 생성
 	FRealtimeDestructionRequest Request;
 	Request.ImpactPoint = Hit.ImpactPoint;
-	Request.ImpactNormal = Hit.ImpactNormal;
-	Request.ChunkIndex = DestructComp->GetChunkIndex(Hit.GetComponent());	
+	Request.ImpactNormal = Hit.ImpactNormal;	
 
 	if (!ToolMeshPtr.IsValid())
 	{
@@ -251,7 +260,8 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtime
 	{
 		return;
 	}
-	
+
+	// 여기까지 진입
 // 경계(Seam)부분 처리 코드
 #pragma region
 	// float ToolRadius = ToolShape == EDestructionToolShape::Cylinder ? CylinderRadius : SphereRadius;
@@ -362,6 +372,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtime
 	FRealtimeDestructionRequest Request;
 	Request.ImpactPoint = Hit.ImpactPoint;
 	Request.ImpactNormal = Hit.ImpactNormal;
+	Request.ChunkIndex = DestructComp->GetChunkIndex(Hit.GetComponent());
 
 	if (!ToolMeshPtr.IsValid())
 	{
@@ -381,7 +392,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtime
 	{
 		return;
 	}
-
+	
 	const double StartTime = FPlatformTime::Seconds();
 
 	// FPS 영향 측정을 위한 파괴 전 FPS 기록

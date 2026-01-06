@@ -449,6 +449,8 @@ public:
 
 	int32 GetChunkIndex(const UPrimitiveComponent* ChunkMesh);
 
+	int32 GetChunkNum() const { return CellMeshComponents.Num(); }
+
 	UDynamicMeshComponent* GetChunkMeshComponent(int32 ChunkIndex) const;
 
 	bool GetChunkMesh(FDynamicMesh3& OutMesh, int32 ChunkIndex) const;
@@ -641,6 +643,7 @@ protected:
 
 
 	/** Cell별 분리된 메시 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|CellMesh")
 	TArray<TObjectPtr<UDynamicMeshComponent>> CellMeshComponents;
 
 	// PrimComp으로 Key값 설정, FHitResult의 GetComponent는 PrimitiveComp* 반환
