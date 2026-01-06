@@ -58,8 +58,14 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerApplyDestructionCompact(URealtimeDestructibleMeshComponent* DestructComp, const FCompactDestructionOp& CompactOp);
 
-	/** 파괴 요청 검증 (서버에서 호출) */
-	bool ValidateDestructionRequest(URealtimeDestructibleMeshComponent* DestructComp, const FRealtimeDestructionRequest& Request) const;
+	/**
+	 * 파괴 요청 검증 (서버에서 호출)
+	 * RealtimeDestructibleMeshComponent의 ValidateDestructionRequest 호출
+	 */
+	bool ValidateDestructionRequest(
+		URealtimeDestructibleMeshComponent* DestructComp,
+		const FRealtimeDestructionRequest& Request,
+		EDestructionRejectReason& OutReason) const;
 
 protected:
 	/** 최대 허용 파괴 반경 (치트 방지) */

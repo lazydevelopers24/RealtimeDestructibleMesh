@@ -6,15 +6,14 @@
 #include "Materials/MaterialInstanceDynamic.h"
 
 // GeometryCollection
-#include "GeometryCollection/GeometryCollectionObject.h" 
-#include "GeometryCollection/GeometryCollectionComponent.h"  
-#include "GeometryCollection/GeometryCollectionConversion.h"
-
-//Fracturing 
-#include "FractureSettings.h"
-#include "FractureEngineFracturing.h"
+#include "GeometryCollection/GeometryCollectionObject.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
 
 #if WITH_EDITOR
+#include "GeometryCollection/GeometryCollectionConversion.h"
+//Fracturing
+#include "FractureSettings.h"
+#include "FractureEngineFracturing.h"
 #include "Editor.h"
 #endif
 
@@ -28,7 +27,7 @@
 
 bool URealtimeDestructibleMeshComponent::bIsTraceEnabled = false;
 
-FCompactDestructionOp FCompactDestructionOp::Compress(const FRealtimeDestructionRequest& Request, int32 Seq)
+FCompactDestructionOp FCompactDestructionOp::Compress(const FRealtimeDestructionRequest& Request, int32 Seq, const TArray<uint8>& InAffectedChunkIds)
 {
 	FCompactDestructionOp Compact;
 
@@ -45,6 +44,9 @@ FCompactDestructionOp FCompactDestructionOp::Compress(const FRealtimeDestruction
 	// ToolShape와 ShapeParams 복사
 	Compact.ToolShape = Request.ToolShape;
 	Compact.ShapeParams = Request.ShapeParams;
+
+	// 영향받는 Chunk ID 복사
+	Compact.AffectedChunkIds = InAffectedChunkIds;
 
 	return Compact;
 }
@@ -1640,36 +1642,28 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 	const TManagedArray<FIntVector>& Indices = GC.Indices;
 	const TManagedArray<FVector3f>* Normals = GC.FindAttribute<FVector3f>("Normal", FGeometryCollection::VerticesGroup);
 
-	// UV 찾기 - FindAttribute로 다양한 이름 시도
-	const TManagedArray<FVector2f>* FinalUVs = nullptr;
-
-	// 가능한 UV 속성 이름들
-	const TCHAR* UVAttributeNames[] = {
-		TEXT("UVs"),
-		TEXT("UV"),
-		TEXT("UV0"),
-		TEXT("TexCoord"),
-		TEXT("TexCoords")
-	};
-
-	for (const TCHAR* AttrName : UVAttributeNames)
+	// 디버깅: GeometryCollection의 모든 속성 이름 출력
+	UE_LOG(LogTemp, Log, TEXT("=== GeometryCollection Attributes ==="));
+	for (const FName& GroupName : GC.GroupNames())
 	{
-		FinalUVs = GC.FindAttribute<FVector2f>(AttrName, FGeometryCollection::VerticesGroup);
-		if (FinalUVs && FinalUVs->Num() > 0)
+		UE_LOG(LogTemp, Log, TEXT("Group: %s"), *GroupName.ToString());
+		for (const FName& AttrName : GC.AttributeNames(GroupName))
 		{
-			UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGC: Found UV attribute '%s', %d UVs"), AttrName, FinalUVs->Num());
-			break;
+			UE_LOG(LogTemp, Log, TEXT("  - %s"), *AttrName.ToString());
 		}
 	}
+	UE_LOG(LogTemp, Log, TEXT("====================================="));
 
-	if (!FinalUVs || FinalUVs->Num() == 0)
+	// UV 찾기 - UVLayer0 속성 사용
+	const TManagedArray<FVector2f>* UVsArray = GC.FindAttribute<FVector2f>("UVLayer0", FGeometryCollection::VerticesGroup);
+
+	if (UVsArray && UVsArray->Num() > 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGC: No UV data found in GeometryCollection! Vertices: %d"), Vertices.Num());
+		UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGC: Found UVLayer0 with %d elements"), UVsArray->Num());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGC: UV data found with %d elements, Vertices: %d"),
-			FinalUVs->Num(), Vertices.Num());
+		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGC: No UV data found in GeometryCollection! Vertices: %d"), Vertices.Num());
 	}
 
 	// MaterialID 가져오기 (FacesGroup에 저장됨)
@@ -1776,7 +1770,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		{
 			LocalNormals.Reserve(MyVertexIndices.Num());
 		}
-		if (FinalUVs)
+		if (UVsArray)
 		{
 			LocalUVs.Reserve(MyVertexIndices.Num());
 		}
@@ -1788,7 +1782,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 
 			LocalVertices.Add(Vertices[GlobalIdx]);
 			if (Normals) LocalNormals.Add((*Normals)[GlobalIdx]);
-			if (FinalUVs) LocalUVs.Add((*FinalUVs)[GlobalIdx]);
+			if (UVsArray) LocalUVs.Add((*UVsArray)[GlobalIdx]);
 		}
 
 		// Triangle 인덱스 로컬로 변환
@@ -1903,17 +1897,26 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		CellComp->SetRelativeTransform(FTransform::Identity);
 
 
-		// 등록 
-		CellComp->RegisterComponent();
-
 		// 메시 변경 알림
 		CellComp->NotifyMeshUpdated();
+// CellMeshComponent에 머티리얼 설정 (GC에서 복사)
+		const TArray<UMaterialInterface*>& GCMaterials = FracturedGeometryCollection->Materials;
+		if (GCMaterials.Num() > 0)
+		{
+			
+			// ConfigureMaterialSet으로 메테리얼 배열 설정 (다중 메테리얼 지원)
+			CellComp->ConfigureMaterialSet(GCMaterials);
+		}
+		CellComp->MarkRenderStateDirty();
+		// 등록 
+		CellComp->RegisterComponent();
 #if WITH_EDITOR
 		// 에디터에게 이 컴포넌트 관리를 위임
 		if (AActor* Owner = GetOwner())
 		{
-			Owner->AddInstanceComponent(CellComp);
+	Owner->AddInstanceComponent(CellComp);
 		}
+		
 #endif
 		//CellComp->AttachToComponent(this, FAttachmentTransformRules::SnapToTargetIncludingScale);
 //		if (AActor* Owner = GetOwner())
@@ -2421,6 +2424,141 @@ void FRealtimeDestructibleMeshComponentInstanceData::ApplyToComponent(
 			DestructComp->InitializeFromStaticMesh(SavedSourceStaticMesh);
 		}
 	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Server Validation (서버 검증)
+//////////////////////////////////////////////////////////////////////////
+
+TArray<uint8> URealtimeDestructibleMeshComponent::FindAffectedChunks(const FVector& ImpactPoint, float Radius) const//코드 확인 필요
+{
+	TArray<uint8> AffectedChunks;
+
+	// Cell 메시가 없으면 빈 배열 반환
+	if (!bUseCellMeshes || CellMeshComponents.Num() == 0)
+	{
+		return AffectedChunks;
+	}
+
+	// 파괴 영역 Sphere
+	const FSphere DestructionSphere(ImpactPoint, Radius);
+
+	// 각 Chunk(CellMeshComponent)와 충돌 검사
+	for (int32 i = 0; i < CellMeshComponents.Num(); i++)
+	{
+		if (!CellMeshComponents[i])
+		{
+			continue;
+		}
+
+		// CellBounds 사용 (있으면)
+		FBox ChunkBounds;
+		if (CellBounds.IsValidIndex(i))
+		{
+			// 로컬 바운드를 월드 좌표로 변환
+			ChunkBounds = CellBounds[i].TransformBy(GetComponentTransform());
+		}
+		else
+		{
+			// CellBounds 없으면 컴포넌트 바운드 사용
+			ChunkBounds = CellMeshComponents[i]->Bounds.GetBox();
+		}
+
+		// Sphere-AABB 충돌 검사
+		if (FMath::SphereAABBIntersection(DestructionSphere, ChunkBounds))
+		{
+			AffectedChunks.Add(static_cast<uint8>(i));
+		}
+	}
+
+	return AffectedChunks;
+}
+
+bool URealtimeDestructibleMeshComponent::ValidateDestructionRequest(
+	const FRealtimeDestructionRequest& Request,
+	APlayerController* RequestingPlayer,
+	EDestructionRejectReason& OutReason)
+{
+	OutReason = EDestructionRejectReason::None;
+
+	// 플레이어가 없으면 검증 스킵 (서버 직접 호출 등)
+	if (!RequestingPlayer)
+	{
+		return true;
+	}
+
+	// 1. 최대 구멍 수 체크
+	if (CurrentHoleCount >= MaxHoleCount)
+	{
+		OutReason = EDestructionRejectReason::MaxHoleReached;
+		return false;
+	}
+
+	// 2. 사거리 체크
+	if (APawn* Pawn = RequestingPlayer->GetPawn())
+	{
+		const float Distance = FVector::Dist(Pawn->GetActorLocation(), Request.ImpactPoint);
+		if (Distance > MaxDestructionRange)
+		{
+			OutReason = EDestructionRejectReason::OutOfRange;
+			return false;
+		}
+	}
+
+	// 3. 시야 체크 (LineTrace)
+	if (bEnableLineOfSightCheck)
+	{
+		if (APawn* Pawn = RequestingPlayer->GetPawn())
+		{
+			FHitResult HitResult;
+			FCollisionQueryParams QueryParams;
+			QueryParams.AddIgnoredActor(Pawn);
+
+			const FVector Start = Pawn->GetActorLocation();
+			const FVector End = Request.ImpactPoint;
+
+			if (GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, QueryParams))
+			{
+				// 히트한 컴포넌트가 이 컴포넌트가 아니면 시야 차단
+				if (HitResult.GetComponent() != this && HitResult.GetComponent() != nullptr)
+				{
+					// Cell 메시 중 하나인지 확인
+					bool bHitOurCell = false;
+					for (const auto& CellComp : CellMeshComponents)
+					{
+						if (HitResult.GetComponent() == CellComp)
+						{
+							bHitOurCell = true;
+							break;
+						}
+					}
+
+					if (!bHitOurCell)
+					{
+						OutReason = EDestructionRejectReason::LineOfSightBlocked;
+						return false;
+					}
+				}
+			}
+		}
+	}
+
+	// 4. 연사 제한 (TODO: 플레이어별 추적 필요)
+	// 현재는 단순 구현 - 추후 TMap<APlayerController*, FRateLimitInfo> 사용
+
+	// 5. 유효한 위치 체크 (메시 내부인지)
+	// TODO: 필요시 구현
+
+	return true;
+}
+
+void URealtimeDestructibleMeshComponent::ClientDestructionRejected_Implementation(uint16 Sequence, EDestructionRejectReason Reason)
+{
+	// 클라이언트에서 거부 처리
+	UE_LOG(LogTemp, Warning, TEXT("[Destruction] Request rejected - Seq: %d, Reason: %d"), Sequence, static_cast<uint8>(Reason));
+
+	// TODO: 거부 피드백 (UI, 사운드 등)
+	// OnDestructionRejected 델리게이트 브로드캐스트 등
 }
 
 TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::GetComponentInstanceData() const

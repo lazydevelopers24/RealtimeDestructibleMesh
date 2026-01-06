@@ -773,30 +773,32 @@ void UDestructionDebugger::UpdateHUD()
 	//-------------------------------------------------------------------
 	// 네트워크 테스트 섹션
 	//-------------------------------------------------------------------
-#if !UE_BUILD_SHIPPING
+// [주석처리] 쉬핑 빌드 제외 - 복구 시 아래 주석 해제
+//#if !UE_BUILD_SHIPPING
 	if (HUDWorld)
 	{
 		if (UNetworkTestSubsystem* NetTestSubsystem = HUDWorld->GetSubsystem<UNetworkTestSubsystem>())
 		{
 			FNetworkTestPresetConfig Config = NetTestSubsystem->GetCurrentConfig();
+
+			// Ping은 항상 표시
+			float CurrentPing = NetTestSubsystem->GetCurrentPing();
+
+			GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
+				TEXT("--- Network ---"));
+			GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Orange,
+				FString::Printf(TEXT("  Ping: %.0f ms"), CurrentPing));
+
+			// 시뮬레이션 활성화 시 추가 정보 표시
 			if (Config.IsActive())
 			{
-				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::White,
-					TEXT("--- Network Test ---"));
-
-				// 현재 Ping 조회
-				float CurrentPing = NetTestSubsystem->GetCurrentPing();
-
 				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Orange,
-					FString::Printf(TEXT("  Preset: %s | Ping: %.0f ms"),
-						*Config.PresetName, CurrentPing));
-				GEngine->AddOnScreenDebugMessage(BaseKey - KeyOffset++, DisplayTime, FColor::Orange,
-					FString::Printf(TEXT("  Sim: Lag=%d ms Var=%d ms Loss=%d%%"),
-						Config.PktLag, Config.PktLagVariance, Config.PktLoss));
+					FString::Printf(TEXT("  Sim: %s (Lag=%d ms Var=%d ms Loss=%d%%)"),
+						*Config.PresetName, Config.PktLag, Config.PktLagVariance, Config.PktLoss));
 			}
 		}
 	}
-#endif
+//#endif
 
 	//-------------------------------------------------------------------
 	// 시퀀스 & 배치 섹션

@@ -152,9 +152,10 @@ void UDestructionNetworkComponent::ServerApplyDestruction_Implementation(
 	}
 
 	// 요청 검증
-	if (bEnableValidation && !ValidateDestructionRequest(DestructComp, Request))
+	EDestructionRejectReason RejectReason;
+	if (bEnableValidation && !ValidateDestructionRequest(DestructComp, Request, RejectReason))
 	{
-		NET_LOG_COMPONENT_WARNING(this, "파괴 요청 검증 실패 - 요청 거부됨");
+		NET_LOG_COMPONENT_WARNING(this, "파괴 요청 검증 실패 - 요청 거부됨, 사유: %d", static_cast<uint8>(RejectReason));
 
 		// 디버거에 검증 실패 기록
 		if (UDestructionDebugger* Debugger = World ? World->GetSubsystem<UDestructionDebugger>() : nullptr)
@@ -163,6 +164,9 @@ void UDestructionNetworkComponent::ServerApplyDestruction_Implementation(
 			int32 ClientId = PC ? PC->GetUniqueID() : -1;
 			Debugger->RecordValidationFailure(ClientId);
 		}
+
+		// 클라이언트에 거부 알림 (Sequence는 0 - 비압축 버전에서는 시퀀스 없음)
+		DestructComp->ClientDestructionRejected(0, RejectReason);
 		return;
 	}
 
@@ -175,6 +179,9 @@ void UDestructionNetworkComponent::ServerApplyDestruction_Implementation(
 			ModifiedRequest.ShapeParams
 		);
 	}
+
+	// 영향받는 Chunk 계산
+	TArray<uint8> AffectedChunks = DestructComp->FindAffectedChunks(ModifiedRequest.ImpactPoint, ModifiedRequest.ShapeParams.Radius);
 
 	// 리슨서버만: 호스트 화면에 파괴 표시
 	if (World && World->GetNetMode() == NM_ListenServer)
@@ -203,7 +210,8 @@ void UDestructionNetworkComponent::ServerApplyDestruction_Implementation(
 		if (DestructComp->bUseCompactMulticast)
 		{
 			TArray<FCompactDestructionOp> CompactOps;
-			CompactOps.Add(FCompactDestructionOp::Compress(Op.Request, 0));
+			// AffectedChunks 포함하여 압축
+			CompactOps.Add(FCompactDestructionOp::Compress(Op.Request, 0, AffectedChunks));
 			DestructComp->MulticastApplyOpsCompact(CompactOps);
 		}
 		else
@@ -245,9 +253,13 @@ void UDestructionNetworkComponent::ServerApplyDestructionCompact_Implementation(
 	FRealtimeDestructionRequest Request = CompactOp.Decompress();
 
 	// 요청 검증
-	if (bEnableValidation && !ValidateDestructionRequest(DestructComp, Request))
+	EDestructionRejectReason RejectReason;
+	if (bEnableValidation && !ValidateDestructionRequest(DestructComp, Request, RejectReason))
 	{
-		NET_LOG_COMPONENT_WARNING(this, "파괴 요청 검증 실패 (Compact) - 요청 거부됨");
+		NET_LOG_COMPONENT_WARNING(this, "파괴 요청 검증 실패 (Compact) - 요청 거부됨, 사유: %d", static_cast<uint8>(RejectReason));
+
+		// 클라이언트에 거부 알림
+		DestructComp->ClientDestructionRejected(CompactOp.Sequence, RejectReason);
 		return;
 	}
 
@@ -259,6 +271,9 @@ void UDestructionNetworkComponent::ServerApplyDestructionCompact_Implementation(
 			Request.ShapeParams
 		);
 	}
+
+	// 영향받는 Chunk 계산
+	TArray<uint8> AffectedChunks = DestructComp->FindAffectedChunks(Request.ImpactPoint, Request.ShapeParams.Radius);
 
 	// 리슨서버만: 호스트 화면에 파괴 표시
 	if (World && World->GetNetMode() == NM_ListenServer)
@@ -287,7 +302,8 @@ void UDestructionNetworkComponent::ServerApplyDestructionCompact_Implementation(
 		if (DestructComp->bUseCompactMulticast)
 		{
 			TArray<FCompactDestructionOp> CompactOps;
-			CompactOps.Add(FCompactDestructionOp::Compress(Op.Request, 0));
+			// AffectedChunks 포함하여 압축
+			CompactOps.Add(FCompactDestructionOp::Compress(Op.Request, 0, AffectedChunks));
 			DestructComp->MulticastApplyOpsCompact(CompactOps);
 		}
 		else
@@ -303,19 +319,33 @@ void UDestructionNetworkComponent::ServerApplyDestructionCompact_Implementation(
 
 bool UDestructionNetworkComponent::ValidateDestructionRequest(
 	URealtimeDestructibleMeshComponent* DestructComp,
-	const FRealtimeDestructionRequest& Request) const
+	const FRealtimeDestructionRequest& Request,
+	EDestructionRejectReason& OutReason) const
 {
-	// 반경 검증
-	//if (Request.HoleRadius > MaxAllowedRadius)
-	//{
-	//	UE_LOG(LogTemp, Warning,
-	//		TEXT("DestructionNetworkComponent: 요청된 반경(%.1f)이 최대 허용값(%.1f)을 초과"),
-	//		Request.HoleRadius, MaxAllowedRadius);
-	//	return false;
-	//}
+	OutReason = EDestructionRejectReason::None;
 
-	// 추가 검증 로직을 여기에 구현 가능
-	// 예: 플레이어와 충돌 지점 거리 검증, 쿨다운 등
+	if (!DestructComp)
+	{
+		OutReason = EDestructionRejectReason::InvalidPosition;
+		return false;
+	}
+
+	// 반경 검증
+	if (Request.ShapeParams.Radius > MaxAllowedRadius)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("DestructionNetworkComponent: 요청된 반경(%.1f)이 최대 허용값(%.1f)을 초과"),
+			Request.ShapeParams.Radius, MaxAllowedRadius);
+		OutReason = EDestructionRejectReason::InvalidPosition;
+		return false;
+	}
+
+	// RealtimeDestructibleMeshComponent의 검증 호출
+	APlayerController* PC = Cast<APlayerController>(GetOwner());
+	if (!DestructComp->ValidateDestructionRequest(Request, PC, OutReason))
+	{
+		return false;
+	}
 
 	return true;
 }

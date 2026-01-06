@@ -151,8 +151,12 @@ struct REALTIMEDESTRUCTION_API FCompactDestructionOp
 	UPROPERTY()
 	FDestructionToolShapeParams ShapeParams;
 
+	// 영향받는 Chunk ID 목록 (서버가 계산, 보통 1-4개)
+	UPROPERTY()
+	TArray<uint8> AffectedChunkIds;
+
 	// 압축
-	static FCompactDestructionOp Compress(const FRealtimeDestructionRequest& Request, int32 Seq);
+	static FCompactDestructionOp Compress(const FRealtimeDestructionRequest& Request, int32 Seq, const TArray<uint8>& InAffectedChunkIds = TArray<uint8>());
 
 	// 압축 해제
 	FRealtimeDestructionRequest Decompress() const;
@@ -293,6 +297,10 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastApplyOpsCompact(const TArray<FCompactDestructionOp>& CompactOps);
 
+	/** 파괴 요청 거부 RPC (서버 → 요청한 클라이언트) */
+	UFUNCTION(Client, Reliable)
+	void ClientDestructionRejected(uint16 Sequence, EDestructionRejectReason Reason);
+
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	void SetReplicationMode(ERealtimeDestructionReplicationMode Mode);
 
@@ -310,6 +318,40 @@ public:
 	 * 서버에서만 호출됨
 	 */
 	void FlushServerBatch();
+
+	//////////////////////////////////////////////////////////////////////////
+	// Server Validation (서버 검증)
+	//////////////////////////////////////////////////////////////////////////
+
+	/**
+	 * 파괴 요청 검증 (서버에서 호출)
+	 * @param Request 파괴 요청
+	 * @param RequestingPlayer 요청한 플레이어 (nullptr이면 검증 스킵)
+	 * @param OutReason 거부 사유 (실패 시)
+	 * @return 검증 통과 여부
+	 */
+	bool ValidateDestructionRequest(const FRealtimeDestructionRequest& Request, APlayerController* RequestingPlayer, EDestructionRejectReason& OutReason);
+
+	/**
+	 * 영향받는 Chunk ID 목록 계산
+	 * @param ImpactPoint 충돌 위치 (월드 좌표)
+	 * @param Radius 파괴 반경
+	 * @return 영향받는 Chunk ID 배열
+	 */
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Network")
+	TArray<uint8> FindAffectedChunks(const FVector& ImpactPoint, float Radius) const;
+
+	/** 서버 검증: 사거리 설정 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation")
+	float MaxDestructionRange = 5000.0f;
+
+	/** 서버 검증: 연사 제한 (초당 최대 파괴 횟수) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation")
+	float MaxDestructionsPerSecond = 10.0f;
+
+	/** 서버 검증: 시야 체크 활성화 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation")
+	bool bEnableLineOfSightCheck = true;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Server Batching Settings (서버 → 클라이언트 배칭)
@@ -452,7 +494,7 @@ protected:
 	UDecalComponent* SpawnTemporaryDecal(const FRealtimeDestructionRequest& Request);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
-	UMaterialInterface* HoleDecal = nullptr;
+	TObjectPtr<UMaterialInterface> HoleDecal = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	FVector DecalSize = FVector(10.0f, 10.0f, 10.0f);

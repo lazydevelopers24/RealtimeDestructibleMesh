@@ -25,12 +25,12 @@ void UNetworkTestSubsystem::Deinitialize()
 
 bool UNetworkTestSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	// 쉬핑 빌드에서는 생성하지 않음
-#if UE_BUILD_SHIPPING
-	return false;
-#else
+	// [주석처리] 쉬핑 빌드에서는 생성하지 않음 - 복구 시 아래 주석 해제
+//#if UE_BUILD_SHIPPING
+//	return false;
+//#else
 	return true;
-#endif
+//#endif
 }
 
 void UNetworkTestSubsystem::InitializePresetConfigs()

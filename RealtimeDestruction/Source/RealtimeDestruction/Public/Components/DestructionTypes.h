@@ -9,6 +9,21 @@ enum class EDestructionToolShape : uint8
     Sphere      UMETA(DisplayName = "Sphere"),
     Cylinder    UMETA(DisplayName = "Cylinder")
 };
+/**
+ * 서버 파괴 요청 거부 사유
+ */
+UENUM(BlueprintType)
+enum class EDestructionRejectReason : uint8
+{
+    None               UMETA(DisplayName = "None"),
+    OutOfRange         UMETA(DisplayName = "Out of Range"),          // 사거리 초과
+    LineOfSightBlocked UMETA(DisplayName = "Line of Sight Blocked"), // 시야 차단
+    RateLimited        UMETA(DisplayName = "Rate Limited"),          // 연사 제한
+    InvalidPosition    UMETA(DisplayName = "Invalid Position"),      // 유효하지 않은 위치
+    Indestructible     UMETA(DisplayName = "Indestructible"),        // 파괴 불가
+    MaxHoleReached     UMETA(DisplayName = "Max Hole Reached")       // 최대 구멍 수 도달
+};
+
 
 USTRUCT(BlueprintType)
 struct REALTIMEDESTRUCTION_API FDestructionToolShapeParams
@@ -175,3 +190,4 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     }
      
 };
+
