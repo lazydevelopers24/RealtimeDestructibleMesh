@@ -434,8 +434,8 @@ public:
 	void SetCurrentHoleCount(int32 Count) { CurrentHoleCount = Count; }
 
 	void ApplyRenderUpdate();
-	void ApplyCollisionUpdate();
-	void ApplyCollisionUpdateAsync();
+	void ApplyCollisionUpdate(UDynamicMeshComponent* TargetComp);
+	void ApplyCollisionUpdateAsync(UDynamicMeshComponent* TargetComp);
 
 	bool CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration);
 
@@ -449,7 +449,16 @@ public:
 
 	int32 GetChunkIndex(const UPrimitiveComponent* ChunkMesh);
 
-	bool CheckAndSetChunkBusy(int32 CellIndex);
+	UDynamicMeshComponent* GetChunkMeshComponent(int32 ChunkIndex) const;
+
+	bool GetChunkMesh(FDynamicMesh3& OutMesh, int32 ChunkIndex) const;
+
+	bool CheckAndSetChunkBusy(int32 ChunkIndex);
+
+	// 비트 연산은 원자적이지 않아서 GT 외에 호출할 때는 로직 수정 필요함
+	void ClearChunkBusy(int32 ChunkIndex);
+
+	void ClearAllChunkBusyBits();
 
 	/*
 	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
@@ -457,9 +466,9 @@ public:
 	 */
 	/*************************************************/
 	// 변형된 메시의 시각적(렌더링) 처리 즉시 업데이트하는 함수
-	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, bool bEnableCollisionUpdate);
+	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, const int32 ChunkIndex, bool bDelayedCollisionUpdate);
 	// 타겟메시의 idle이나 원하는 딜레이를 주고 Async로 collision 갱신하는 함수
-	void RequestDelayedCollisionUpdate();
+	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);
 
 	// 나중에 private으로 이동
 	FTimerHandle CollisionUpdateTimerHandle;

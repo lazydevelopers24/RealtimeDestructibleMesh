@@ -229,5 +229,8 @@ protected:
 
 private:
 	bool EnsureToolMesh();
+
+	void SetShapeParameters(FRealtimeDestructionRequest& OutRequest);
+	
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = nullptr;
 };

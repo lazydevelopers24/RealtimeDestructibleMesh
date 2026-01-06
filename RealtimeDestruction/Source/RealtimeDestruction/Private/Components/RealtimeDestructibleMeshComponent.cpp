@@ -227,6 +227,11 @@ FDestructionOpId URealtimeDestructibleMeshComponent::EnqueueRequestLocal(const F
 		* 파괴 요청 시 CellMesh 넘겨줘야함
 		*/
 		BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal, CellMeshComponents[Op.Request.ChunkIndex].Get());
+
+		if (!bEnableMultiWorkers)
+		{
+			BooleanProcessor->KickProcessIfNeededPerChunk();
+		}
 	}
 
 	return Op.OpId;
@@ -270,8 +275,8 @@ int32 URealtimeDestructibleMeshComponent::ProcessPendingOps(int32 MaxOpsThisFram
 				if (RenderUpdateMode == ERealtimeRenderUpdateMode::Auto)
 				{
 					ApplyRenderUpdate();
-				}
-				ApplyCollisionUpdate();
+				}				
+				ApplyCollisionUpdate(this);
 			}
 		}
 	}
@@ -284,7 +289,7 @@ int32 URealtimeDestructibleMeshComponent::ProcessPendingOps(int32 MaxOpsThisFram
 		{
 			ApplyRenderUpdate();
 		}
-		ApplyCollisionUpdate();
+		ApplyCollisionUpdate(this);
 	}
 
 	if (AppliedCount > 0)
@@ -313,7 +318,7 @@ bool URealtimeDestructibleMeshComponent::ApplyOpImmediate(const FRealtimeDestruc
 	{
 		ApplyRenderUpdate();
 	}
-	ApplyCollisionUpdate();
+	ApplyCollisionUpdate(this);
 	OnBatchCompleted.Broadcast(1);
 
 	return true;
@@ -371,7 +376,6 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 		}
 		return true;
 	}
-
 	else
 	{
 		return ApplyOpImmediate(Request);
@@ -949,9 +953,9 @@ void URealtimeDestructibleMeshComponent::ApplyRenderUpdate()
 
 }
 
-void URealtimeDestructibleMeshComponent::ApplyCollisionUpdate()
+void URealtimeDestructibleMeshComponent::ApplyCollisionUpdate(UDynamicMeshComponent* TargetComp)
 {
-	UpdateCollision();
+	TargetComp->UpdateCollision();
 	
 	/*
 	 * deprecated_realdestruction
@@ -960,10 +964,10 @@ void URealtimeDestructibleMeshComponent::ApplyCollisionUpdate()
 	// RecreatePhysicsState();
 }
 
-void URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync()
+void URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync(UDynamicMeshComponent* TargetComp)
 {
 	UE_LOG(LogTemp, Display, TEXT("Call Collision Update %f"), FPlatformTime::Seconds());
-	UpdateCollision(true);
+	TargetComp->UpdateCollision(true);
 }
 
 bool URealtimeDestructibleMeshComponent::CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration)
@@ -1059,21 +1063,46 @@ int32 URealtimeDestructibleMeshComponent::GetChunkIndex(const UPrimitiveComponen
 	return INDEX_NONE;
 }
 
-bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 CellIndex)
+UDynamicMeshComponent* URealtimeDestructibleMeshComponent::GetChunkMeshComponent(int32 ChunkIndex) const
+{
+	if (ChunkIndex == INDEX_NONE)
+	{
+		return nullptr;
+	}
+
+	return CellMeshComponents[ChunkIndex].Get();
+}
+
+bool URealtimeDestructibleMeshComponent::GetChunkMesh(FDynamicMesh3& OutMesh, int32 ChunkIndex) const
+{
+	if (auto MeshComp = GetChunkMeshComponent(ChunkIndex))
+	{
+		MeshComp->ProcessMesh([&](const FDynamicMesh3& Source)
+		{
+			OutMesh = Source;
+		});
+
+		return true;
+	}
+
+	return false;
+}
+
+bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 ChunkIndex)
 {
 	// 비트 배열의 인덱스
 	// 0 ~ 63(0), 64 ~ 127(1) ...
-	const int32 BitIndex = CellIndex / 64;
+	const int32 BitIndex = ChunkIndex / 64;
 	if (!ChunkBusyBits.IsValidIndex(BitIndex))
 	{
 		// 유효하지 않은 CellIndex의 경우 로그를 출력하고 true를 반환해서 작업하지 못하게 한다.
-		UE_LOG(LogTemp, Warning, TEXT("Invalid Cell Index: %d"), CellIndex);
+		UE_LOG(LogTemp, Warning, TEXT("Invalid Cell Index: %d"), ChunkIndex);
 		return true;
 	}
 
 	// 해당 비트 마스크에서 비트 위치
-	const int32 BitOffset = CellIndex % 64;
-	const int64 BitMask = 1ULL << BitOffset;
+	const int32 BitOffset = ChunkIndex % 64;
+	const uint64 BitMask = 1ULL << BitOffset;
 
 	const bool bIsBusy = (ChunkBusyBits[BitIndex] & BitMask) != 0;
 	if (!bIsBusy)
@@ -1084,35 +1113,77 @@ bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 CellIndex)
 	return bIsBusy;
 }
 
-void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, bool bEnableCollisionUpdate)
+void URealtimeDestructibleMeshComponent::ClearChunkBusy(int32 ChunkIndex)
 {
-	if(UDynamicMesh* Mesh = GetDynamicMesh())
+	const int32 BitIndex = ChunkIndex / 64;
+	if (!ChunkBusyBits.IsValidIndex(BitIndex))
 	{
-		/*
-		 * EditMesh 내부에서 RenderState 갱신
-		 */
-		Mesh->EditMesh([&](FDynamicMesh3& InternalMesh)
-		{
-			InternalMesh = MoveTemp(NewMesh);
-		});
+		// 유효하지 않은 CellIndex의 경우 로그를 출력하고 true를 반환해서 작업하지 못하게 한다.
+		UE_LOG(LogTemp, Warning, TEXT("Invalid Cell Index: %d"), ChunkIndex);
+		return;
 	}
 
-	if (bEnableCollisionUpdate)
+	// 해당 비트 마스크에서 비트 위치
+	const int32 BitOffset = ChunkIndex % 64;
+
+	// 해당 위치의 비트를 1로 설정한 뒤 반전
+	// 반전된 결과를 AND 연산
+	// 원하는 위치의 비트는 0이 되고 나머지 비트는 기존의 값을 유지
+	ChunkBusyBits[BitIndex] &= ~(1ULL << BitOffset);
+}
+
+void URealtimeDestructibleMeshComponent::ClearAllChunkBusyBits()
+{
+	for (auto& BitMask : ChunkBusyBits)
 	{
-		RequestDelayedCollisionUpdate();
+		BitMask = 0ULL;
 	}
 }
 
-void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate()
+void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, const int32 ChunkIndex, bool bDelayedCollisionUpdate)
 {
+	if (ChunkIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	UDynamicMeshComponent* TargetComp = GetChunkMeshComponent(ChunkIndex);
+	if (!TargetComp)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TargetComp is invalid"));
+		return;
+	}
+
+	TargetComp->EditMesh([&](FDynamicMesh3& InternalMesh)
+	{
+		InternalMesh = MoveTemp(NewMesh);
+	});
+
+	if (bDelayedCollisionUpdate)
+	{
+		RequestDelayedCollisionUpdate(TargetComp);
+	}
+	else
+	{
+		ApplyCollisionUpdate(TargetComp);
+	}
+}
+
+void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp)
+{
+	if (!TargetComp)
+	{
+		return;
+	}
 	// InRate 이내에 호출되는 경우 타이머 리셋
 	if (UWorld* World = GetWorld())
 	{
+		FTimerDelegate CollsionTimerDelegate;
+		CollsionTimerDelegate.BindUObject(this, &URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync, TargetComp);
 		UE_LOG(LogTemp, Display, TEXT("Set Collision Timer %f"), FPlatformTime::Seconds());
 		World->GetTimerManager().SetTimer(
 			CollisionUpdateTimerHandle,
-			this,
-			&URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync,
+			CollsionTimerDelegate,			
 			0.05f,
 			false);
 	}
@@ -1663,7 +1734,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGC: No UV data found in GeometryCollection! Vertices: %d"), Vertices.Num());
+		UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGC: Found UVLayer0 with %d elements"), UVsArray->Num());
 	}
 
 	// MaterialID 가져오기 (FacesGroup에 저장됨)

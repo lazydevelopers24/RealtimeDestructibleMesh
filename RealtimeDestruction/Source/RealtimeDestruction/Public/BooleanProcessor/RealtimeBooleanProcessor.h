@@ -56,6 +56,17 @@ struct FBulletHole
 	int32 ChunkIndex = INDEX_NONE;
 
 	bool CanRetry() const { return Attempts <= MaxAttempts; }
+
+	void Reset()
+	{
+		ToolTransform = {};
+		Attempts = 0;
+		bIsPenetration = false;
+		TemporaryDecal = nullptr;
+		ToolMeshPtr = nullptr;
+		TargetMesh = nullptr;
+		ChunkIndex = INDEX_NONE;
+	}
 };
 
 struct FBulletHoleBatch
@@ -67,6 +78,7 @@ struct FBulletHoleBatch
 	TArray<TSharedPtr<UE::Geometry::FDynamicMesh3, ESPMode::ThreadSafe>> ToolMeshPtrs = {};
 
 	int32 Count = 0;
+	int32 ChunkIndex = INDEX_NONE;
 
 	FBulletHoleBatch() = default;
 	~FBulletHoleBatch() = default;	
@@ -108,6 +120,22 @@ struct FBulletHoleBatch
 		TemporaryDecals.Add(MoveTemp(Op.TemporaryDecal));
 		ToolMeshPtrs.Add(MoveTemp(Op.ToolMeshPtr));
 		Count++;
+	}
+
+	bool Get(FBulletHole& OutOp, int32 Index)
+	{
+		if (Index >= Count)
+		{
+			return false;
+		}
+
+		OutOp.ToolTransform = MoveTemp(ToolTransforms[Index]);
+		OutOp.Attempts = MoveTemp(Attempts[Index]);
+		OutOp.bIsPenetration = MoveTemp(bIsPenetrations[Index]);
+		OutOp.TemporaryDecal = MoveTemp(TemporaryDecals[Index]);
+		OutOp.ToolMeshPtr = MoveTemp(ToolMeshPtrs[Index]);
+
+		return true;
 	}
 
 	/*
@@ -189,6 +217,8 @@ public:
 private:
 	int32 DrainBatch(FBulletHoleBatch& InBatch);
 	void StartBooleanWorkerAsync(FBulletHoleBatch&& InBatch, int32 Gen);
+	
+	void StartBooleanWorkerAsyncForChunk(FBulletHoleBatch&& InBatch, int32 Gen);
 
 	void StartBooleanWorkerParallel(FBulletHoleBatch&& InBatch, int32 Gen);
 
@@ -197,6 +227,9 @@ private:
 	void UpdateSimplifyInterval(double CurrentSetMeshAvgCost);
 
 	bool TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 UnionCount);
+
+	void EnqueueRetryOps(TQueue<FBulletHole, EQueueMode::Mpsc>& Queue, FBulletHoleBatch&& InBatch,
+	                     UDynamicMeshComponent* TargetMesh, int32 ChunkIndex, int32& DebugCount);
 
 private:
 	TWeakObjectPtr<URealtimeDestructibleMeshComponent> OwnerComponent = nullptr;

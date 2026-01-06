@@ -166,50 +166,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequest(
 	Request.ToolMeshPtr = ToolMeshPtr;
 	Request.ToolShape = ToolShape;
 
-	switch (Request.ToolShape)
-	{
-	case EDestructionToolShape::Cylinder:
-		Request.Depth = CylinderHeight;
-		break;
-	case EDestructionToolShape::Sphere:
-		Request.Depth = SphereRadius;
-		break;
-	default:
-		Request.Depth = CylinderHeight;
-		break;
-	}
-
-	// Shape별로 파라미터 채우기 (네트워크 전송용)
-	switch (ToolShape)
-	{
-	case EDestructionToolShape::Cylinder:
-		Request.ShapeParams.Radius = CylinderRadius;
-		Request.ShapeParams.Height = CylinderHeight;
-		Request.ShapeParams.RadiusSteps = RadialSteps;
-		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
-		Request.ShapeParams.bCapped = bCapped;
-		break;
-
-	case EDestructionToolShape::Sphere:
-		Request.ShapeParams.Radius = SphereRadius;
-		Request.ShapeParams.StepsPhi = SphereStepsPhi;
-		Request.ShapeParams.StepsTheta = SphereStepsTheta;
-		break;
-
-	default:
-		Request.ShapeParams.Radius = CylinderRadius;
-		Request.ShapeParams.Height = CylinderHeight;
-		Request.ShapeParams.RadiusSteps = RadialSteps;
-		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
-		Request.ShapeParams.bCapped = bCapped;
-		break;
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[Server] ToolShape: %d, ShapeParams - Radius: %.2f, Height: %.2f, RadiusSteps: %d"),
-		static_cast<int32>(Request.ToolShape),
-		Request.ShapeParams.Radius,
-		Request.ShapeParams.Height,
-		Request.ShapeParams.RadiusSteps); 
+	SetShapeParameters(Request);
 
 	// 처리 시간 측정 시작
 	UWorld* World = GetWorld();
@@ -282,8 +239,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequest(
 	}
 }
 
-void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtimeDestructibleMeshComponent* DestructComp,
-	const FHitResult& Hit)
+void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit)
 {
 	if (!DestructComp)
 	{
@@ -295,6 +251,112 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtime
 	{
 		return;
 	}
+	
+// 경계(Seam)부분 처리 코드
+#pragma region
+	// float ToolRadius = ToolShape == EDestructionToolShape::Cylinder ? CylinderRadius : SphereRadius;
+	// // 오버랩 영역에 여유분 추가
+	// float OverlappedRadius = ToolRadius * 1.1f;
+	//
+	// TArray<UPrimitiveComponent*> OverlappedComp;
+	// TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
+	// ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic));
+	// // 분리된 파편 물리 연산 시 필요
+	// ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic));
+	//
+	// // 자신과 겹치는 경우 제외
+	// TArray<AActor*> ActorToIgnore;
+	// ActorToIgnore.Add(Owner);
+	//
+	// UKismetSystemLibrary::SphereOverlapComponents(
+	// 	this, Hit.ImpactPoint, OverlappedRadius, ObjectTypes,
+	// 	nullptr, ActorToIgnore, OverlappedComp);
+	//
+	// // 중복 방지용 Set
+	// TSet<int32> Targets;
+	// // 직접 피격된 청크 반드시 포함
+	// int32 HitChunkIndex = DestructComp->GetChunkIndex(Hit.GetComponent());
+	// if (HitChunkIndex != INDEX_NONE)
+	// {
+	// 	Targets.Add(HitChunkIndex);
+	// }
+	//
+	// const FBox ToolBounds = FBox::BuildAABB(Hit.ImpactPoint, FVector(OverlappedRadius));
+	// for (auto* PrimitiveComponent : OverlappedComp)
+	// {
+	// 	// 같은 액터가 아니면 생략
+	// 	if (PrimitiveComponent->GetOwner() != Owner)
+	// 	{
+	// 		continue;
+	// 	}
+	//
+	// 	// 오버랩된 청크 인덱스
+	// 	int32 OverlappedChunkIndex = DestructComp->GetChunkIndex(PrimitiveComponent);
+	// 	if (OverlappedChunkIndex == INDEX_NONE || Targets.Contains(OverlappedChunkIndex))
+	// 	{
+	// 		continue;
+	// 	}
+	//
+	// 	// 오버랩된 청크와 발사체의 Box끼리 검사
+	// 	// Box vs Box 검사, Box vs Spherer가 정확하지만 성능 우선 
+	// 	if (!PrimitiveComponent->Bounds.GetBox().Intersect(ToolBounds))
+	// 	{
+	// 		continue;
+	// 	}
+	//
+	// 	Targets.Add(OverlappedChunkIndex);
+	// }
+	//
+	// APawn* InstigatorPawn = Owner->GetInstigator();
+	// APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
+	// UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
+	// for (int32 TargetIndex : Targets)
+	// {
+	// 	FRealtimeDestructionRequest Request;
+	// 	Request.ImpactPoint = Hit.ImpactPoint;
+	// 	Request.ImpactNormal = Hit.ImpactNormal;
+	//
+	// 	if (!ToolMeshPtr.IsValid())
+	// 	{
+	// 		if (!EnsureToolMesh())
+	// 		{
+	// 			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
+	// 		}
+	// 	}
+	// 	Request.ToolMeshPtr = ToolMeshPtr;
+	// 	Request.ToolShape = ToolShape;
+	//
+	// 	SetShapeParameters(Request);
+	//
+	// 	
+	//
+	// 	if (NetworkComp)
+	// 	{
+	// 		// NetworkComp가 서버/클라이언트/스탠드얼론 모두 처리
+	// 		NetworkComp->RequestDestruction(DestructComp, Request);
+	// 	}
+	// 	else
+	// 	{
+	// 		// NetworkComp가 없으면 로컬에서 직접 처리 (스탠드얼론 또는 설정 오류)
+	// 		DestructComp->RequestDestruction(Request);
+	// 	}
+	//
+	// 	// 즉시 피드백 표시 (데칼, 파티클) - 모든 네트워크 모드에서 로컬로 스폰
+	// 	if (bShowImmediateFeedback)
+	// 	{
+	// 		SpawnImmediateFeedback(Hit);
+	// 	}
+	//
+	// 	// 이벤트 브로드캐스트
+	// 	OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
+	//
+	// 	// 투사체 제거
+	// 	if (bDestroyOnHit)
+	// 	{
+	// 		Owner->Destroy();
+	// 	}
+	// }
+#pragma endregion
 
 	// 파괴 요청 생성
 	FRealtimeDestructionRequest Request;
@@ -311,50 +373,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForCell(URealtime
 	Request.ToolMeshPtr = ToolMeshPtr;
 	Request.ToolShape = ToolShape;
 
-	switch (Request.ToolShape)
-	{
-	case EDestructionToolShape::Cylinder:
-		Request.Depth = CylinderHeight;
-		break;
-	case EDestructionToolShape::Sphere:
-		Request.Depth = SphereRadius;
-		break;
-	default:
-		Request.Depth = CylinderHeight;
-		break;
-	}
-
-	// Shape별로 파라미터 채우기 (네트워크 전송용)
-	switch (ToolShape)
-	{
-	case EDestructionToolShape::Cylinder:
-		Request.ShapeParams.Radius = CylinderRadius;
-		Request.ShapeParams.Height = CylinderHeight;
-		Request.ShapeParams.RadiusSteps = RadialSteps;
-		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
-		Request.ShapeParams.bCapped = bCapped;
-		break;
-
-	case EDestructionToolShape::Sphere:
-		Request.ShapeParams.Radius = SphereRadius;
-		Request.ShapeParams.StepsPhi = SphereStepsPhi;
-		Request.ShapeParams.StepsTheta = SphereStepsTheta;
-		break;
-
-	default:
-		Request.ShapeParams.Radius = CylinderRadius;
-		Request.ShapeParams.Height = CylinderHeight;
-		Request.ShapeParams.RadiusSteps = RadialSteps;
-		Request.ShapeParams.HeightSubdivisions = HeightSubdivisions;
-		Request.ShapeParams.bCapped = bCapped;
-		break;
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[Server] ToolShape: %d, ShapeParams - Radius: %.2f, Height: %.2f, RadiusSteps: %d"),
-		static_cast<int32>(Request.ToolShape),
-		Request.ShapeParams.Radius,
-		Request.ShapeParams.Height,
-		Request.ShapeParams.RadiusSteps); 
+	SetShapeParameters(Request);
 
 	// 처리 시간 측정 시작
 	UWorld* World = GetWorld();
@@ -475,6 +494,54 @@ bool UDestructionProjectileComponent::EnsureToolMesh()
 	});
 
 	return true;
+}
+
+void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionRequest& OutRequest)
+{
+	switch (OutRequest.ToolShape)
+	{
+	case EDestructionToolShape::Cylinder:
+		OutRequest.Depth = CylinderHeight;
+		break;
+	case EDestructionToolShape::Sphere:
+		OutRequest.Depth = SphereRadius;
+		break;
+	default:
+		OutRequest.Depth = CylinderHeight;
+		break;
+	}
+
+	// Shape별로 파라미터 채우기 (네트워크 전송용)
+	switch (ToolShape)
+	{
+	case EDestructionToolShape::Cylinder:
+		OutRequest.ShapeParams.Radius = CylinderRadius;
+		OutRequest.ShapeParams.Height = CylinderHeight;
+		OutRequest.ShapeParams.RadiusSteps = RadialSteps;
+		OutRequest.ShapeParams.HeightSubdivisions = HeightSubdivisions;
+		OutRequest.ShapeParams.bCapped = bCapped;
+		break;
+
+	case EDestructionToolShape::Sphere:
+		OutRequest.ShapeParams.Radius = SphereRadius;
+		OutRequest.ShapeParams.StepsPhi = SphereStepsPhi;
+		OutRequest.ShapeParams.StepsTheta = SphereStepsTheta;
+		break;
+
+	default:
+		OutRequest.ShapeParams.Radius = CylinderRadius;
+		OutRequest.ShapeParams.Height = CylinderHeight;
+		OutRequest.ShapeParams.RadiusSteps = RadialSteps;
+		OutRequest.ShapeParams.HeightSubdivisions = HeightSubdivisions;
+		OutRequest.ShapeParams.bCapped = bCapped;
+		break;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Server] ToolShape: %d, ShapeParams - Radius: %.2f, Height: %.2f, RadiusSteps: %d"),
+		static_cast<int32>(OutRequest.ToolShape),
+		OutRequest.ShapeParams.Radius,
+		OutRequest.ShapeParams.Height,
+		OutRequest.ShapeParams.RadiusSteps);
 }
 
 void UDestructionProjectileComponent::RequestDestructionManual(const FHitResult& HitResult)
