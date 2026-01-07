@@ -67,6 +67,25 @@ protected:
 		const FRealtimeDestructionRequest& Request,
 		EDestructionRejectReason& OutReason) const;
 
+	//////////////////////////////////////////////////////////////////////////
+	// Late Join (Op 히스토리 기반 동기화)
+	//////////////////////////////////////////////////////////////////////////
+
+	/**
+	 * 서버에 Op 히스토리 요청 (Server RPC)
+	 * Late Join 시 클라이언트에서 호출
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerRequestOpHistory(URealtimeDestructibleMeshComponent* DestructComp);
+
+	/**
+	 * 클라이언트에 Op 히스토리 전송 (Client RPC)
+	 * 서버에서 호출하면 요청한 클라이언트에서 실행됨
+	 * Op 개수가 많으면 여러 번 나눠서 전송 (64KB 제한)
+	 */
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveOpHistory(URealtimeDestructibleMeshComponent* DestructComp, const TArray<FCompactDestructionOp>& Ops, bool bIsLastBatch);
+
 protected:
 	/** 최대 허용 파괴 반경 (치트 방지) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction|Validation")

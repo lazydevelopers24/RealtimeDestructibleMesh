@@ -7,6 +7,8 @@
 #include "NetworkLogMacros.h"
 #include "Debug/DestructionDebugger.h"
 #include "HAL/PlatformTime.h"
+#include "EngineUtils.h"
+#include "TimerManager.h"
 
 //////////////////////////////////////////////////////////////////////////
 // UDestructionNetworkComponent 구현
@@ -31,6 +33,45 @@ void UDestructionNetworkComponent::BeginPlay()
 		UE_LOG(LogTemp, Warning,
 			TEXT("DestructionNetworkComponent: 이 컴포넌트는 PlayerController에 추가해야 합니다. 현재 Owner: %s"),
 			GetOwner() ? *GetOwner()->GetName() : TEXT("None"));
+	}
+
+	// Late Join: 클라이언트인 경우 서버에 Op 히스토리 요청
+	UWorld* World = GetWorld();
+	if (World && World->GetNetMode() == NM_Client)
+	{
+		// 약간의 딜레이 후 Op 히스토리 요청 (서버 준비 대기)
+		FTimerHandle TimerHandle;
+		World->GetTimerManager().SetTimer(TimerHandle, [WeakThis = TWeakObjectPtr<UDestructionNetworkComponent>(this)]()
+		{
+			if (!WeakThis.IsValid())
+			{
+				return;
+			}
+
+			UWorld* World = WeakThis->GetWorld();
+			if (!World)
+			{
+				return;
+			}
+
+			UE_LOG(LogTemp, Display, TEXT("[Late Join] 모든 파괴 메시에 대해 Op 히스토리 요청 시작"));
+
+			// 월드의 모든 RealtimeDestructibleMeshComponent 찾기
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				TArray<URealtimeDestructibleMeshComponent*> DestructComps;
+				It->GetComponents<URealtimeDestructibleMeshComponent>(DestructComps);
+
+				for (URealtimeDestructibleMeshComponent* DestructComp : DestructComps)
+				{
+					if (DestructComp)
+					{
+						UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 히스토리 요청: %s"), *DestructComp->GetName());
+						WeakThis->ServerRequestOpHistory(DestructComp);
+					}
+				}
+			}
+		}, 0.5f, false);
 	}
 }
 
@@ -342,5 +383,109 @@ bool UDestructionNetworkComponent::ValidateDestructionRequest(
 	}
 
 	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Late Join (Op 히스토리 기반 동기화)
+//////////////////////////////////////////////////////////////////////////
+
+void UDestructionNetworkComponent::ServerRequestOpHistory_Implementation(URealtimeDestructibleMeshComponent* DestructComp)
+{
+	if (!DestructComp)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Late Join] ServerRequestOpHistory: DestructComp가 null"));
+		return;
+	}
+
+	const TArray<FCompactDestructionOp>& OpHistory = DestructComp->GetAppliedOpHistory();
+
+	UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 히스토리 요청: %s (%d ops)"),
+		*DestructComp->GetName(), OpHistory.Num());
+
+	if (OpHistory.Num() == 0)
+	{
+		// Op가 없어도 빈 배치로 완료 알림
+		ClientReceiveOpHistory(DestructComp, TArray<FCompactDestructionOp>(), true);
+		return;
+	}
+
+	// 64KB 제한을 고려하여 배치 크기 결정 (FCompactDestructionOp 약 20바이트)
+	// 안전하게 2000개씩 나눠서 전송
+	constexpr int32 MaxOpsPerBatch = 2000;
+
+	const int32 TotalOps = OpHistory.Num();
+	int32 SentOps = 0;
+
+	while (SentOps < TotalOps)
+	{
+		const int32 BatchSize = FMath::Min(MaxOpsPerBatch, TotalOps - SentOps);
+		const bool bIsLastBatch = (SentOps + BatchSize >= TotalOps);
+
+		TArray<FCompactDestructionOp> BatchOps;
+		BatchOps.Reserve(BatchSize);
+
+		for (int32 i = 0; i < BatchSize; ++i)
+		{
+			BatchOps.Add(OpHistory[SentOps + i]);
+		}
+
+		UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 배치 전송: %d-%d / %d (Last: %s)"),
+			SentOps, SentOps + BatchSize - 1, TotalOps, bIsLastBatch ? TEXT("Yes") : TEXT("No"));
+
+		ClientReceiveOpHistory(DestructComp, BatchOps, bIsLastBatch);
+
+		SentOps += BatchSize;
+	}
+}
+
+void UDestructionNetworkComponent::ClientReceiveOpHistory_Implementation(
+	URealtimeDestructibleMeshComponent* DestructComp,
+	const TArray<FCompactDestructionOp>& Ops,
+	bool bIsLastBatch)
+{
+	if (!DestructComp)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Late Join] ClientReceiveOpHistory: DestructComp가 null"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 히스토리 수신: %s (%d ops, Last: %s)"),
+		*DestructComp->GetName(), Ops.Num(), bIsLastBatch ? TEXT("Yes") : TEXT("No"));
+
+	if (Ops.Num() == 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 히스토리 비어있음 - 동기화 완료"));
+		return;
+	}
+
+	// FCompactDestructionOp를 FRealtimeDestructionOp로 변환하여 적용
+	TArray<FRealtimeDestructionOp> DecompressedOps;
+	DecompressedOps.Reserve(Ops.Num());
+
+	for (const FCompactDestructionOp& CompactOp : Ops)
+	{
+		FRealtimeDestructionOp Op;
+		Op.Request = CompactOp.Decompress();
+		Op.Sequence = CompactOp.Sequence;
+
+		// ToolMeshPtr 재생성
+		if (!Op.Request.ToolMeshPtr.IsValid())
+		{
+			Op.Request.ToolMeshPtr = DestructComp->CreateToolMeshPtrFromShapeParams(
+				Op.Request.ToolShape,
+				Op.Request.ShapeParams
+			);
+		}
+
+		DecompressedOps.Add(Op);
+	}
+
+	// Op 적용
+	DestructComp->ApplyOpsDeterministic(DecompressedOps);
+
+	if (bIsLastBatch)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Late Join] Op 히스토리 적용 완료: %s"), *DestructComp->GetName());
+	}
 }
 

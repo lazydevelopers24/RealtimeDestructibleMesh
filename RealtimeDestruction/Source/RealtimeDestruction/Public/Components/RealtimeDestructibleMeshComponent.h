@@ -216,6 +216,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDestructMeshInitialized);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDestructOpApplied, const FRealtimeDestructionOp&, Op);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDestructBatchCompleted, int32, AppliedCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDestructError, FName, ErrorCode, const FString&, ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDestructionRejected, int32, Sequence, EDestructionRejectReason, Reason);
 
 //////////////////////////////////////////////////////////////////////////
 // Class Declaration
@@ -295,7 +296,7 @@ public:
 	int32 GetPendingOpCount() const;
 
 	// Replication
-	UFUNCTION(Server, Reliable)
+	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerEnqueueOps(const TArray<FRealtimeDestructionRequest>& Requests);
 
 	UFUNCTION(NetMulticast, Reliable)
@@ -349,9 +350,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation")
 	float MaxDestructionsPerSecond = 10.0f;
 
+	/** 서버 검증: 단일 RPC 최대 요청 수 (초과 시 킥) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation", meta = (ClampMin = "1", ClampMax = "200"))
+	int32 MaxRequestsPerRPC = 50;
+
+	/** 서버 검증: 최대 허용 파괴 반경 (초과 시 킥) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation", meta = (ClampMin = "1.0"))
+	float MaxAllowedRadius = 500.0f;
+
 	/** 서버 검증: 시야 체크 활성화 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Validation")
 	bool bEnableLineOfSightCheck = true;
+
+	/** 연사 제한 추적 정보 */
+	struct FRateLimitInfo
+	{
+		double WindowStartTime = 0.0;
+		int32 RequestCount = 0;
+	};
+
+	/** 플레이어별 연사 제한 추적 (서버에서만 사용) */
+	TMap<TWeakObjectPtr<APlayerController>, FRateLimitInfo> PlayerRateLimits;
+
+	/** 연사 제한 체크 (서버에서 호출) */
+	bool CheckRateLimit(APlayerController* Player);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Server Batching Settings (서버 → 클라이언트 배칭)
@@ -383,10 +405,20 @@ public:
 	bool bUseCompactMulticast = true;
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
-	bool BuildMeshSnapshot(FRealtimeMeshSnapshot& Out) const;
+	bool BuildMeshSnapshot(FRealtimeMeshSnapshot& Out);
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	bool ApplyMeshSnapshot(const FRealtimeMeshSnapshot& In);
+
+	//////////////////////////////////////////////////////////////////////////
+	// Late Join: Op 히스토리 기반 동기화
+	//////////////////////////////////////////////////////////////////////////
+
+	/** Op 히스토리 가져오기 (Late Join 동기화용, 서버에서만 유효) */
+	const TArray<FCompactDestructionOp>& GetAppliedOpHistory() const { return AppliedOpHistory; }
+
+	/** Op 히스토리 초기화 (메시 리셋 시 호출) */
+	void ClearOpHistory() { AppliedOpHistory.Empty(); }
 
 	// Events
 	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
@@ -401,7 +433,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructError OnError;
 
+	/** 파괴 요청이 서버에서 거부되었을 때 (클라이언트에서만 호출됨) */
+	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
+	FOnDestructionRejected OnDestructionRejected;
 
+	
 	/** Clustering 변수 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	TObjectPtr<UBulletClusterComponent> BulletClusterComponent;
@@ -423,7 +459,7 @@ public:
 
 	/** 데이터 유지를 위한 함수 */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
-
+public:
 	/*
 	 * 에디터에 노출하지 않는 함수
 	 */
@@ -685,7 +721,6 @@ protected:
 	/** 구조적 무결성 시스템 (Anchor 연결성 분석) */
 	FStructuralIntegritySystem IntegritySystem;
 
-
 public:
 	/**
 	 * GeometryCollection에서 DynamicMesh 추출
@@ -763,6 +798,8 @@ public:
 #endif
 protected:
 
+
+
 	//////////////////////////////////////////////////////////////////////////
 	// Debug Display Settings (액터 위 디버그 텍스트 표시)
 	//////////////////////////////////////////////////////////////////////////
@@ -815,6 +852,16 @@ private:
 	TArray<FCompactDestructionOp> PendingServerBatchOpsCompact;  // 압축용
 	float ServerBatchTimer = 0.0f;
 	int32 ServerBatchSequence = 0;  // 압축용 시퀀스
+
+	//////////////////////////////////////////////////////////////////////////
+	// Late Join: Op 히스토리 (서버에서만 유지)
+	//////////////////////////////////////////////////////////////////////////
+
+	/** 적용된 모든 Op 히스토리 (Late Join 동기화용) */
+	TArray<FCompactDestructionOp> AppliedOpHistory;
+
+	/** Op 히스토리 최대 크기 (메모리 제한) */
+	static constexpr int32 MaxOpHistorySize = 10000;
 
 	TUniquePtr<FRealtimeBooleanProcessor> BooleanProcessor;
 

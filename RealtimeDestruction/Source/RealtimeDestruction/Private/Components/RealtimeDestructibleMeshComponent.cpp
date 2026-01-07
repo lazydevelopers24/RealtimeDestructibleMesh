@@ -291,7 +291,7 @@ int32 URealtimeDestructibleMeshComponent::ProcessPendingOps(int32 MaxOpsThisFram
 				if (RenderUpdateMode == ERealtimeRenderUpdateMode::Auto)
 				{
 					ApplyRenderUpdate();
-				}
+				}				
 				ApplyCollisionUpdate(this);
 			}
 		}
@@ -385,7 +385,7 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 			/*
 			 * deprecated_realdestruction
 			 */
-			 // Cylinder 중심을 벽 중간으로 이동 (Normal 반대 방향으로 Height/2만큼)
+			// Cylinder 중심을 벽 중간으로 이동 (Normal 반대 방향으로 Height/2만큼)
 			FVector Offset = Request.ImpactNormal * (-AdjustPenetration * 0.5f);
 			PenetrationRequest.ImpactPoint = Request.ImpactPoint + Offset;
 			PenetrationRequest.ToolShape = EDestructionToolShape::Cylinder;
@@ -472,15 +472,90 @@ int32 URealtimeDestructibleMeshComponent::GetPendingOpCount() const
 	return PendingOps.Num();
 }
 
+bool URealtimeDestructibleMeshComponent::ServerEnqueueOps_Validate(const TArray<FRealtimeDestructionRequest>& Requests)
+{
+	// 1단계: 명백한 치트 검사 → 실패 시 클라이언트 킥
+
+	// 비정상적으로 많은 요청 (DoS 시도)
+	if (Requests.Num() > MaxRequestsPerRPC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerValidate] 비정상적 요청 수: %d (최대: %d) → 킥"),
+			Requests.Num(), MaxRequestsPerRPC);
+		return false;
+	}
+
+	// 각 요청의 기본 유효성 검사
+	for (const FRealtimeDestructionRequest& Request : Requests)
+	{
+		// 비정상적으로 큰 파괴 반경
+		if (Request.ShapeParams.Radius > MaxAllowedRadius)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ServerValidate] 비정상 반경: %.1f (최대: %.1f) → 킥"),
+				Request.ShapeParams.Radius, MaxAllowedRadius);
+			return false;
+		}
+
+		// 유효하지 않은 ChunkIndex
+		if (Request.ChunkIndex != INDEX_NONE &&
+			CellMeshComponents.Num() > 0 &&
+			Request.ChunkIndex >= CellMeshComponents.Num())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ServerValidate] 유효하지 않은 ChunkIndex: %d (최대: %d) → 킥"),
+				Request.ChunkIndex, CellMeshComponents.Num() - 1);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool URealtimeDestructibleMeshComponent::CheckRateLimit(APlayerController* Player)
+{
+	if (!Player)
+	{
+		return true;  // 플레이어 없으면 검증 스킵
+	}
+
+	const double CurrentTime = FPlatformTime::Seconds();
+	FRateLimitInfo& Info = PlayerRateLimits.FindOrAdd(Player);
+
+	// 1초 윈도우 리셋
+	if (CurrentTime - Info.WindowStartTime > 1.0)
+	{
+		Info.WindowStartTime = CurrentTime;
+		Info.RequestCount = 0;
+	}
+
+	Info.RequestCount++;
+
+	// 연사 제한 초과
+	if (Info.RequestCount > static_cast<int32>(MaxDestructionsPerSecond))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RateLimit] 플레이어 %s: 초당 %d회 (최대: %.0f)"),
+			*Player->GetName(), Info.RequestCount, MaxDestructionsPerSecond);
+		return false;
+	}
+
+	return true;
+}
+
 void URealtimeDestructibleMeshComponent::ServerEnqueueOps_Implementation(const TArray<FRealtimeDestructionRequest>& Requests)
 {
-	// 서버에서 즉시 처리하고 모든 클라이언트에 Multicast
-	UE_LOG(LogTemp, Warning, TEXT("ServerEnqueueOps: 서버에서 %d개 요청 수신"), Requests.Num());
+	UE_LOG(LogTemp, Display, TEXT("ServerEnqueueOps: 서버에서 %d개 요청 수신"), Requests.Num());
+
 	TArray<FRealtimeDestructionOp> Ops;
 	Ops.Reserve(Requests.Num());
 
 	for (const FRealtimeDestructionRequest& Request : Requests)
 	{
+		// 세부 검증 (킥은 안 하고 요청만 거부)
+		EDestructionRejectReason Reason;
+		if (!ValidateDestructionRequest(Request, nullptr, Reason))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ServerEnqueueOps] 요청 거부 - 사유: %d"), static_cast<int32>(Reason));
+			continue;
+		}
+
 		FRealtimeDestructionOp Op;
 		Op.OpId.Value = NextOpId++;
 		Op.Sequence = NextSequence++;
@@ -488,9 +563,11 @@ void URealtimeDestructibleMeshComponent::ServerEnqueueOps_Implementation(const T
 		Ops.Add(Op);
 	}
 
-	// 모든 클라이언트(서버 포함)에 Multicast하여 동기화
-	// UE_LOG(LogTemp, Warning, TEXT("ServerEnqueueOps: MulticastApplyOps 호출"));
-	MulticastApplyOps(Ops);
+	// 유효한 Op가 있으면 Multicast
+	if (Ops.Num() > 0)
+	{
+		MulticastApplyOps(Ops);
+	}
 }
 
 void URealtimeDestructibleMeshComponent::MulticastApplyOps_Implementation(const TArray<FRealtimeDestructionOp>& Ops)
@@ -603,14 +680,138 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 	}
 }
 
-bool URealtimeDestructibleMeshComponent::BuildMeshSnapshot(FRealtimeMeshSnapshot& Out) const
+bool URealtimeDestructibleMeshComponent::BuildMeshSnapshot(FRealtimeMeshSnapshot& Out)
 {
-	return false;
+	Out.Version = 1;
+	Out.Payload.Empty();
+
+	// Cell 메시 모드
+	if (bUseCellMeshes && CellMeshComponents.Num() > 0)
+	{
+		FMemoryWriter Ar(Out.Payload);
+
+		// Cell 개수 저장
+		int32 CellCount = CellMeshComponents.Num();
+		Ar << CellCount;
+
+		// 각 Cell 메시 직렬화
+		for (const auto& CellComp : CellMeshComponents)
+		{
+			if (CellComp && CellComp->GetDynamicMesh())
+			{
+				FDynamicMesh3 MeshCopy;
+				CellComp->GetDynamicMesh()->ProcessMesh([&MeshCopy](const FDynamicMesh3& ReadMesh)
+				{
+					MeshCopy = ReadMesh;
+				});
+				MeshCopy.Serialize(Ar);
+			}
+		}
+
+		// 현재 구멍 수 저장
+		int32 HoleCount = CurrentHoleCount;
+		Ar << HoleCount;
+
+		UE_LOG(LogTemp, Display, TEXT("[BuildMeshSnapshot] Cell 모드: %d cells, %d bytes"),
+			CellCount, Out.Payload.Num());
+		return true;
+	}
+
+	// 단일 메시 모드
+	UDynamicMesh* DynMesh = GetDynamicMesh();
+	if (!DynMesh)
+	{
+		return false;
+	}
+
+	FMemoryWriter Ar(Out.Payload);
+
+	// Cell 개수 0 = 단일 메시 모드
+	int32 CellCount = 0;
+	Ar << CellCount;
+
+	// 메시 직렬화
+	FDynamicMesh3 MeshCopy;
+	DynMesh->ProcessMesh([&MeshCopy](const FDynamicMesh3& ReadMesh)
+	{
+		MeshCopy = ReadMesh;
+	});
+	MeshCopy.Serialize(Ar);
+
+	// 현재 구멍 수 저장
+	int32 HoleCount = CurrentHoleCount;
+	Ar << HoleCount;
+
+	UE_LOG(LogTemp, Display, TEXT("[BuildMeshSnapshot] 단일 메시 모드: %d bytes"), Out.Payload.Num());
+	return true;
 }
 
 bool URealtimeDestructibleMeshComponent::ApplyMeshSnapshot(const FRealtimeMeshSnapshot& In)
 {
-	return false;
+	if (In.Payload.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ApplyMeshSnapshot] 빈 스냅샷"));
+		return false;
+	}
+
+	FMemoryReader Ar(In.Payload);
+
+	// Cell 개수 읽기
+	int32 CellCount = 0;
+	Ar << CellCount;
+
+	// Cell 메시 모드
+	if (CellCount > 0)
+	{
+		if (CellMeshComponents.Num() != CellCount)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ApplyMeshSnapshot] Cell 개수 불일치: 예상 %d, 실제 %d"),
+				CellCount, CellMeshComponents.Num());
+			return false;
+		}
+
+		// 각 Cell 메시 역직렬화
+		for (int32 i = 0; i < CellCount; ++i)
+		{
+			FDynamicMesh3 LoadedMesh;
+			LoadedMesh.Serialize(Ar);
+
+			if (CellMeshComponents[i] && CellMeshComponents[i]->GetDynamicMesh())
+			{
+				CellMeshComponents[i]->SetMesh(MoveTemp(LoadedMesh));
+			}
+		}
+
+		// 구멍 수 복원
+		int32 HoleCount = 0;
+		Ar << HoleCount;
+		CurrentHoleCount = HoleCount;
+
+		UE_LOG(LogTemp, Display, TEXT("[ApplyMeshSnapshot] Cell 모드 적용: %d cells, HoleCount: %d"),
+			CellCount, CurrentHoleCount);
+		return true;
+	}
+
+	// 단일 메시 모드
+	UDynamicMesh* DynMesh = GetDynamicMesh();
+	if (!DynMesh)
+	{
+		return false;
+	}
+
+	FDynamicMesh3 LoadedMesh;
+	LoadedMesh.Serialize(Ar);
+
+	// 메시 적용
+	SetMesh(MoveTemp(LoadedMesh));
+
+	// 구멍 수 복원
+	int32 HoleCount = 0;
+	Ar << HoleCount;
+	CurrentHoleCount = HoleCount;
+
+	UE_LOG(LogTemp, Display, TEXT("[ApplyMeshSnapshot] 단일 메시 모드 적용, HoleCount: %d"), CurrentHoleCount);
+	return true;
 }
 
 void URealtimeDestructibleMeshComponent::GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxOpsPerFrame, int32& OutMaxBatchSize)
@@ -1000,12 +1201,12 @@ void URealtimeDestructibleMeshComponent::ApplyRenderUpdate()
 void URealtimeDestructibleMeshComponent::ApplyCollisionUpdate(UDynamicMeshComponent* TargetComp)
 {
 	TargetComp->UpdateCollision();
-
+	
 	/*
 	 * deprecated_realdestruction
 	 * UpdateCollision 내부에서 RecreatePhysicsState함수 호출
 	 */
-	 // RecreatePhysicsState();
+	// RecreatePhysicsState();
 }
 
 void URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync(UDynamicMeshComponent* TargetComp)
@@ -1098,7 +1299,7 @@ void URealtimeDestructibleMeshComponent::SettingAsyncOption(bool& OutParallelEna
 }
 
 int32 URealtimeDestructibleMeshComponent::GetChunkIndex(const UPrimitiveComponent* ChunkMesh)
-{
+{	
 	if (int32* Index = ChunkIndexMap.Find(ChunkMesh))
 	{
 		return *Index;
@@ -1153,7 +1354,7 @@ bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 ChunkIndex)
 	{
 		ChunkBusyBits[BitIndex] |= BitMask;
 	}
-
+	
 	return bIsBusy;
 }
 
@@ -1273,7 +1474,7 @@ void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate(UDynamicM
 		UE_LOG(LogTemp, Display, TEXT("Set Collision Timer %f"), FPlatformTime::Seconds());
 		World->GetTimerManager().SetTimer(
 			CollisionUpdateTimerHandle,
-			CollsionTimerDelegate,
+			CollsionTimerDelegate,			
 			0.05f,
 			false);
 	}
@@ -1286,7 +1487,7 @@ void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
 	{
 		return;
 	}
-
+	
 	// 메시 정보 가져오기
 	int32 VertexCount = 0;
 	int32 TriangleCount = 0;
@@ -1349,7 +1550,7 @@ void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
 	);
 
 	TogleDebugUpdate();
-
+	
 #endif
 }
 
@@ -1358,15 +1559,15 @@ void URealtimeDestructibleMeshComponent::SetSourceMeshEnabled(bool bEnabled)
 	SetVisibility(bEnabled, false);
 	if (bEnabled)
 	{
-		SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-
+		SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); 
+		
 	}
 	else
 	{
-		SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SetCollisionEnabled(ECollisionEnabled::NoCollision); 
 	}
 	SetComponentTickEnabled(bEnabled);
-
+	
 	// 물리 상태 강제 갱신
 	RecreatePhysicsState();
 }
@@ -1382,7 +1583,7 @@ void URealtimeDestructibleMeshComponent::OnRegister()
 	if (SourceStaticMesh && !bIsInitialized)
 	{
 		InitializeFromStaticMeshInternal(SourceStaticMesh, false);
-	}
+	} 
 }
 
 void URealtimeDestructibleMeshComponent::InitializeComponent()
@@ -1648,6 +1849,18 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 			}
 		}
 
+		// Late Join: Op 히스토리에 기록 (서버에서만)
+		if (GetOwner() && GetOwner()->HasAuthority())
+		{
+			for (const FCompactDestructionOp& CompactOp : PendingServerBatchOpsCompact)
+			{
+				if (AppliedOpHistory.Num() < MaxOpHistorySize)
+				{
+					AppliedOpHistory.Add(CompactOp);
+				}
+			}
+		}
+
 		// 압축된 데이터로 전파
 		MulticastApplyOpsCompact(PendingServerBatchOpsCompact);
 
@@ -1670,6 +1883,18 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 			if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
 			{
 				Debugger->RecordMulticastRPCWithSize(PendingServerBatchOps.Num(), false);
+			}
+		}
+
+		// Late Join: Op 히스토리에 기록 (서버에서만)
+		if (GetOwner() && GetOwner()->HasAuthority())
+		{
+			for (const FRealtimeDestructionOp& Op : PendingServerBatchOps)
+			{
+				if (AppliedOpHistory.Num() < MaxOpHistorySize)
+				{
+					AppliedOpHistory.Add(FCompactDestructionOp::Compress(Op.Request, Op.Sequence));
+				}
 			}
 		}
 
@@ -1830,7 +2055,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGeometryCollection: No transforms in GeometryCollection."));
 		return 0;
 	}
-
+	 
 	// Geometry Group에서 실제 메시 데이터 가져오기
 	const TManagedArray<FVector3f>& Vertices = GC.Vertex;
 	const TManagedArray<int32>& BoneMap = GC.BoneMap;
@@ -1915,7 +2140,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 	{
 		const TArray<int32>& MyVertexIndices = VertexIndicesByTransform[TransformIdx];
 		const TArray<FTriangleData>& MyTriangles = TrianglesByTransform[TransformIdx];
-
+		 
 		// 빈 조각 + 첫 번째 스킵
 		if (TransformIdx == 0 || MyVertexIndices.Num() == 0 || MyTriangles.Num() == 0)
 		{
@@ -1946,12 +2171,12 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 			CellComp->SetupAttachment(Owner->GetRootComponent());
 		}
 		//CellComp->SetRelativeTransform(FTransform::Identity);
-
+			 
 		// Collision 설정
 		CellComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		CellComp->SetCollisionProfileName(TEXT("BlockAll"));
 		CellComp->SetComplexAsSimpleCollisionEnabled(true);
-
+		
 
 		// Tick 활성화   
 		CellComp->PrimaryComponentTick.bCanEverTick = false;
@@ -2118,18 +2343,40 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		const TArray<UMaterialInterface*>& GCMaterials = FracturedGeometryCollection->Materials;
 		if (GCMaterials.Num() > 0)
 		{
-
+			
 			// ConfigureMaterialSet으로 메테리얼 배열 설정 (다중 메테리얼 지원)
 			CellComp->ConfigureMaterialSet(GCMaterials);
 		}
+		CellComp->MarkRenderStateDirty();
+		// 등록 
+		CellComp->RegisterComponent();
 #if WITH_EDITOR
 		// 에디터에게 이 컴포넌트 관리를 위임
 		if (AActor* Owner = GetOwner())
 		{
 			Owner->AddInstanceComponent(CellComp);
 		}
-
+		
 #endif
+		//CellComp->AttachToComponent(this, FAttachmentTransformRules::SnapToTargetIncludingScale);
+//		if (AActor* Owner = GetOwner())
+//		{
+//			USceneComponent* AttachTarget = Owner->GetRootComponent();
+//			if (AttachTarget)
+//			{
+//				CellComp->AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepRelativeTransform);
+//				CellComp->SetRelativeTransform(FTransform::Identity);
+//			}
+//#if WITH_EDITOR
+//			// 에디터에서 인스턴스 컴포넌트로 등록 (Details 패널에 표시됨) 
+//			Owner->AddInstanceComponent(CellComp);
+//			 
+//			// 에디터에서 컴포넌트 트리 갱신
+//			//CellComp->MarkRenderStateDirty();
+//#endif
+//
+//		}
+
 		CellMeshComponents.Add(CellComp);
 		++ExtractedCount;
 	}
@@ -2667,7 +2914,6 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 		GeometryCollection->SetGeometryCollection(GCPtr);
 	}
 
-
 	// 2. Source Static Mesh를 GC에 추가 (단일 조각으로 시작)
 	TArray<UMaterialInterface*> Materials;
 	for (const FStaticMaterial& StaticMat : InStaticMesh->GetStaticMaterials())
@@ -2783,10 +3029,8 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 		UE_LOG(LogTemp, Log, TEXT("Failed to save GeometryCollectio: %s"), *PackageFileName);
 	}
 
-
 	// 컴포넌트에 자동 할당
 	FracturedGeometryCollection = GeometryCollection;
-
 
 	// Cell 메시 빌드
 	int32 CellCount = BuildCellMeshesFromGeometryCollection();
@@ -2839,7 +3083,7 @@ void URealtimeDestructibleMeshComponent::RevertFracture()
 	if (AActor* Owner = GetOwner())
 	{
 		Owner->RerunConstructionScripts();
-	}
+	} 
 
 }
 #endif
@@ -3014,10 +3258,11 @@ bool URealtimeDestructibleMeshComponent::ValidateDestructionRequest(
 void URealtimeDestructibleMeshComponent::ClientDestructionRejected_Implementation(uint16 Sequence, EDestructionRejectReason Reason)
 {
 	// 클라이언트에서 거부 처리
-	UE_LOG(LogTemp, Warning, TEXT("[Destruction] Request rejected - Seq: %d, Reason: %d"), Sequence, static_cast<uint8>(Reason));
+	UE_LOG(LogTemp, Warning, TEXT("[Destruction] Request rejected - Seq: %d, Reason: %s"),
+		Sequence, *UEnum::GetValueAsString(Reason));
 
-	// TODO: 거부 피드백 (UI, 사운드 등)
-	// OnDestructionRejected 델리게이트 브로드캐스트 등
+	// 블루프린트/C++ 이벤트 브로드캐스트
+	OnDestructionRejected.Broadcast(static_cast<int32>(Sequence), Reason);
 }
 
 TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::GetComponentInstanceData() const
@@ -3025,4 +3270,4 @@ TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::
 	UE_LOG(LogTemp, Warning, TEXT("GetComponentInstanceData"));
 
 	return MakeStructOnScope<FActorComponentInstanceData, FRealtimeDestructibleMeshComponentInstanceData>(this);
-}
+}	
