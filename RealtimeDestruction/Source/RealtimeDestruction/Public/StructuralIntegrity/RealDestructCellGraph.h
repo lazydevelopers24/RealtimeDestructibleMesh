@@ -66,6 +66,23 @@ struct FChunkCellCache
 	int32 MeshRevision = 0;                     // 메쉬 갱신 버전 (옵션)
 };
 
+// Old Cell -> New Cell(s) 매핑 정보
+struct FCellMapping
+{
+	int32 OldCellId = INDEX_NONE;       // 갱신 전 Cell ID
+	TArray<int32> NewCellIds;           // 갱신 후 Cell ID들 (분할 시 여러 개)
+	bool bDestroyed = false;            // 완전 소멸 여부
+};
+
+// Chunk 갱신 결과
+struct FChunkUpdateResult
+{
+	int32 ChunkId = INDEX_NONE;         // 갱신된 Chunk ID
+	TArray<FCellMapping> Mappings;      // Old -> New Cell 매핑 목록
+	FChunkCellCache OldCache;           // 갱신 전 캐시
+	FChunkCellCache NewCache;           // 갱신 후 캐시
+};
+
 // <추후 병목 발생시 도입 고려해볼 것들 메모>
 // - (ChunkId, CellId) -> NodeIndex 조회 캐시: 인접/갱신 시 선형 탐색 최소화
 // - Cell 매칭 결과 캐시: 재계산 후 Old/New CellId 매핑 유지
@@ -118,6 +135,35 @@ public:
 
 	/** 그래프 리셋 */
 	void Reset();
+
+	//=========================================================================
+	// 런타임 그래프 갱신
+	//=========================================================================
+
+	/**
+	 * 수정된 청크들의 Cell을 재계산하고 Old-New 매핑 생성
+	 *
+	 * @param ModifiedChunkIds - 수정된 청크 ID 집합
+	 * @param ChunkMeshes - 청크별 메시 포인터 배열 (인덱스 = ChunkId)
+	 * @return 청크별 갱신 결과 (Old->New Cell 매핑 포함)
+	 */
+	TArray<FChunkUpdateResult> UpdateModifiedChunks(
+		const TSet<int32>& ModifiedChunkIds,
+		const TArray<FDynamicMesh3*>& ChunkMeshes);
+
+	/**
+	 * 갱신된 청크들과 관련된 Division Plane의 연결을 재검사
+	 *
+	 * @param UpdateResults - UpdateModifiedChunks()의 결과
+	 * @param ChunkMeshes - 청크별 메시 포인터 배열
+	 * @param PlaneTolerance - 평면 거리 허용 오차 (단위: cm)
+	 * @param RectTolerance - 사각형 영역 확장 허용 오차 (단위: cm)
+	 */
+	void RebuildConnectionsForChunks(
+		const TArray<FChunkUpdateResult>& UpdateResults,
+		const TArray<FDynamicMesh3*>& ChunkMeshes,
+		float PlaneTolerance = 0.1f,
+		float RectTolerance = 0.1f);
 
 	//=========================================================================
 	// 경계 삼각형 및 연결 검사 (정적 유틸리티)
@@ -245,6 +291,36 @@ private:
 		int32 CellId,
 		const FDynamicMesh3& Mesh,
 		float FloorHeightThreshold) const;
+
+	/**
+	 * AABB 중첩 기반 Old -> New Cell 매핑 생성
+	 * @param OldCache - 갱신 전 캐시
+	 * @param NewCache - 갱신 후 캐시
+	 * @return Cell 매핑 배열
+	 */
+	TArray<FCellMapping> BuildCellMappings(
+		const FChunkCellCache& OldCache,
+		const FChunkCellCache& NewCache);
+
+	/**
+	 * 특정 Division Plane에 대한 연결 재구축
+	 * 해당 평면과 관련된 기존 연결을 제거하고 새로 검사
+	 */
+	void RebuildConnectionsOnPlane(
+		int32 PlaneIndex,
+		const TArray<FDynamicMesh3*>& ChunkMeshes,
+		float PlaneTolerance,
+		float RectTolerance);
+
+	/**
+	 * 특정 청크의 모든 노드 제거
+	 */
+	void RemoveNodesForChunk(int32 ChunkId);
+
+	/**
+	 * 청크의 새 Cell들에 대한 노드 추가
+	 */
+	void AddNodesForChunk(int32 ChunkId, const FChunkCellCache& NewCache);
 
 	//=========================================================================
 	// 데이터

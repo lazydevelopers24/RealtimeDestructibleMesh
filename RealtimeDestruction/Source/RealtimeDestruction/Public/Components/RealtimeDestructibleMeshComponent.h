@@ -205,7 +205,8 @@ public:
 	bool bSavedShowCellGraphDebug = false;
 
 	UPROPERTY()
-	TArray<TObjectPtr<UDynamicMeshComponent>> SavedCellComponents;
+	// 포인터 대신 컴포넌트 이름 저장 (PIE 복제 시 이름으로 찾기 위함)
+	TArray<FString> SavedCellComponentNames;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -456,10 +457,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float ClusterRaidusOffset = 1.0f;
-
+	
 	/** 데이터 유지를 위한 함수 */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
-public:
+
 	/*
 	 * 에디터에 노출하지 않는 함수
 	 */
@@ -512,6 +513,7 @@ public:
 	void ClearAllChunkSubtractBusyBits();
 
 	void SetChunkBits(int32 ChunkIndex, int32& BitIndex, int32& BitOffset);
+	
 
 	/*
 	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
@@ -713,6 +715,7 @@ protected:
 	TArray<FBox> CellBounds;
 
 	/** Cell 메시가 유효한지 (빌드 완료 여부) */
+	UPROPERTY()
 	bool bCellMeshesValid = false;
 
 	/** Cell 연결 그래프 (기하학적 연결성 관리) */
@@ -720,6 +723,10 @@ protected:
 
 	/** 구조적 무결성 시스템 (Anchor 연결성 분석) */
 	FStructuralIntegritySystem IntegritySystem;
+ 
+
+	/** 현재 배치에서 변경된 청크 ID 집합 (CellGraph 갱신용) */
+	TSet<int32> ModifiedChunkIds;
 
 public:
 	/**
@@ -749,6 +756,13 @@ private:
 	 * BuildCellMeshesFromGeometryCollection에서 호출됨
 	 */
 	void BuildGridToChunkMap();
+
+	/**
+	 * 수정된 청크들에 대해 CellGraph 갱신
+	 * ModifiedChunkIds를 기반으로 Cell 재계산 및 연결 갱신 수행
+	 * OnBatchCompleted 발생 시 호출됨
+	 */
+	void UpdateCellGraphForModifiedChunks();
 
 public:
 	/** CellGraph 초기화 상태 확인 */
@@ -797,9 +811,7 @@ public:
 
 #endif
 protected:
-
-
-
+	
 	//////////////////////////////////////////////////////////////////////////
 	// Debug Display Settings (액터 위 디버그 텍스트 표시)
 	//////////////////////////////////////////////////////////////////////////
