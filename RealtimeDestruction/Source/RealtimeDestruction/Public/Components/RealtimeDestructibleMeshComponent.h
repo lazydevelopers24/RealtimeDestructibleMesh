@@ -499,8 +499,6 @@ public:
 
 	bool IsInitialized() { return bIsInitialized;  }
 
-	void TogleDebugUpdate() { bShouldDebugUpdate = !bShouldDebugUpdate; }
-
 	int32 GetChunkIndex(const UPrimitiveComponent* ChunkMesh);
 
 	int32 GetChunkNum() const { return CellMeshComponents.Num(); }
@@ -789,12 +787,7 @@ public:
 	//int32 GetCellMeshCount() const { return CellMeshes.Num(); }
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
 	int32 GetCellMeshCount() const { return CellMeshComponents.Num(); }
-
-	/** Cell 메시 디버그 시각화 (각 Cell을 다른 색상으로 표시) */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh")
-	void DrawCellMeshesDebug();
-
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	FIntVector SliceCount;
 
@@ -824,29 +817,19 @@ protected:
 	// Debug Display Settings (액터 위 디버그 텍스트 표시)
 	//////////////////////////////////////////////////////////////////////////
 
-	void UpdateDebugInfo();
-
 	/** 액터 위에 디버그 정보 텍스트 표시 여부 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowDebugText = false;
-
-	/** 디버그 텍스트 표시 위치 오프셋 (액터 위치 기준) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	FVector DebugTextOffset = FVector(0.0f, 0.0f, 250.0f);
-
-	/** 디버그 텍스트 색상 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	FLinearColor DebugTextColor = FLinearColor::Yellow;
-
-	/** Cell 메시 와이어프레임 디버그 표시 (PIE에서 자동으로 그려짐) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	bool bShowCellMeshDebug = false;
-
+	
 	/** CellGraph 노드 및 연결 디버그 표시 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowCellGraphDebug = false;
 
-	/** CellGraph 디버그 드로잉 */
+	/** 디버그 텍스트 갱신. 메시 업데이트시에만 수행하는 식으로 업데이트 빈도 제어 */
+	void UpdateDebugText();
+	
+	void DrawDebugText() const;
+	
 	void DrawCellGraphDebug();
 
 	/** 분리된 Cell 그룹 디버그 시각화 */

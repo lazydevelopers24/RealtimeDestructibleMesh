@@ -1483,6 +1483,11 @@ void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMes
 
 	// CellGraph 갱신을 위해 수정된 청크 추적
 	ModifiedChunkIds.Add(ChunkIndex);
+	// 디버그 텍스트 갱신 플래그는 기본적으로 구조적 무결성 갱신 후 업데이트되지만, 청크 없는 경우 여기에서 대신 갱신 
+	if (CellMeshComponents.Num() == 0)
+	{
+		bShouldDebugUpdate = true;
+	}
 
 	if (bDelayedCollisionUpdate)
 	{
@@ -1514,14 +1519,8 @@ void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate(UDynamicM
 	}
 }
 
-void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
+void URealtimeDestructibleMeshComponent::UpdateDebugText()
 {
-#if !UE_BUILD_SHIPPING
-	if (!GetWorld())
-	{
-		return;
-	}
-	
 	// 메시 정보 가져오기
 	int32 VertexCount = 0;
 	int32 TriangleCount = 0;
@@ -1534,9 +1533,6 @@ void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
 				TriangleCount = Mesh.TriangleCount();
 			});
 	}
-
-	// 대기 중인 Op 수
-	int32 PendingCount = PendingOps.Num();
 
 	// BooleanProcessor의 hole count 가져오기 (비동기 처리 시 여기서 관리됨)
 	int32 HoleCount = BooleanProcessor.IsValid() ? BooleanProcessor->GetCurrentHoleCount() : CurrentHoleCount;
@@ -1565,26 +1561,74 @@ void URealtimeDestructibleMeshComponent::UpdateDebugInfo()
 		}
 	}
 
-	// 서버 배칭 상태
-	FString BatchingStr = bUseServerBatching ? TEXT("ON") : TEXT("OFF");
-	int32 BatchQueueSize = bUseCompactMulticast ? PendingServerBatchOpsCompact.Num() : PendingServerBatchOps.Num();
-
 	// 디버그 텍스트 생성
 	DebugText = FString::Printf(
-		TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nPending Ops: %d\nInitialized: %s\n--- Network ---\nMode: %s\nBatching: %s (Queue: %d)"),
+		TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nInitialized: %s\nNetwork Mode: %s"),
 		VertexCount,
 		TriangleCount,
 		HoleCount,
 		MaxHoleCount,
-		PendingCount,
 		bIsInitialized ? TEXT("Yes") : TEXT("No"),
-		*NetModeStr,
-		*BatchingStr,
-		BatchQueueSize
+		*NetModeStr
 	);
 
-	TogleDebugUpdate();
+	bShouldDebugUpdate = false;
+}
 
+void URealtimeDestructibleMeshComponent::DrawDebugText() const
+{
+#if !UE_BUILD_SHIPPING
+	UWorld* DebugWorld = GetWorld();
+	if (!DebugWorld)
+	{
+		return;
+	}
+
+	const int32 ChunkCount = CellMeshComponents.Num();
+	const int32 NodeCount = CellGraph.GetNodeCount();
+
+	int32 CellCount = 0;
+	for (int32 ChunkId = 0; ChunkId < CellGraph.GetChunkCount(); ++ChunkId)
+	{
+		if (const FChunkCellCache* Cache = CellGraph.GetChunkCellCache(ChunkId))
+		{
+			CellCount += Cache->CellIds.Num();
+		}
+	}
+
+	int32 EdgeCount = 0;
+	for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
+	{
+		if (const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx))
+		{
+			EdgeCount += Node->Neighbors.Num();
+		}
+	}
+	EdgeCount /= 2;
+
+	const FString CellStructureDebugText = FString::Printf(
+		TEXT("Chunks: %d | Cells: %d | Nodes: %d | Edges: %d"),
+		ChunkCount, CellCount, NodeCount, EdgeCount);
+
+	FString CombinedText = DebugText;
+	if (!CombinedText.IsEmpty())
+	{
+		CombinedText += TEXT("\n");
+	}
+	CombinedText += CellStructureDebugText;
+
+	float BoundsHeight = Bounds.BoxExtent.Z * 2.0f;
+	if (CellMeshComponents.Num() > 0)
+	{
+		if (SliceCount.Z > 0 && CachedCellSize.Z > 0.0f)
+		{
+			BoundsHeight = CachedCellSize.Z * SliceCount.Z;
+		}
+	}
+
+	const float WorldScaleZ = GetComponentTransform().GetScale3D().Z;
+	const FVector TextLocation = GetComponentLocation() + FVector(0, 0, BoundsHeight * WorldScaleZ);
+	DrawDebugString(DebugWorld, TextLocation, CombinedText, nullptr, FColor::Cyan, 0.0f, true, 1.5f);
 #endif
 }
 
@@ -1749,9 +1793,13 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 #if !UE_BUILD_SHIPPING
-	if (bShowDebugText && bShouldDebugUpdate)
+	if (bShowDebugText)
 	{
-		UpdateDebugInfo();
+		if (bShouldDebugUpdate)
+		{
+			UpdateDebugText();
+		}
+		DrawDebugText();
 	}
 #endif
 
@@ -1785,50 +1833,11 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	{
 		UpdateCellGraphForModifiedChunks();
 	}
-
-	// Cell 메시 디버그 와이어프레임 표시
-	if (bShowCellMeshDebug)
-	{
-		DrawCellMeshesDebug();
-	}
-
+	
 	// CellGraph 노드 및 연결 디버그 표시
 	if (bShowCellGraphDebug)
 	{
 		DrawCellGraphDebug();
-
-		// 통계 정보 디버그 텍스트 표시
-		if (UWorld* DebugWorld = GetWorld())
-		{
-			const int32 ChunkCount = CellMeshComponents.Num();
-			const int32 NodeCount = CellGraph.GetNodeCount();
-
-			// Cell 개수: 각 ChunkCellCache의 CellIds 합산
-			int32 CellCount = 0;
-			for (int32 ChunkId = 0; ChunkId < CellGraph.GetChunkCount(); ++ChunkId)
-			{
-				if (const FChunkCellCache* Cache = CellGraph.GetChunkCellCache(ChunkId))
-				{
-					CellCount += Cache->CellIds.Num();
-				}
-			}
-
-			// Edge 개수: 각 노드의 Neighbor 합산 / 2 (양방향이므로)
-			int32 EdgeCount = 0;
-			for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
-			{
-				if (const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx))
-				{
-					EdgeCount += Node->Neighbors.Num();
-				}
-			}
-			EdgeCount /= 2;
-
-			FVector TextLocation = GetComponentLocation() + FVector(0, 0, 100.0f);
-			FString CellStructureDebugText = FString::Printf(TEXT("Chunks: %d | Cells: %d | Nodes: %d | Edges: %d"),
-				ChunkCount, CellCount, NodeCount, EdgeCount);
-			DrawDebugString(DebugWorld, TextLocation, CellStructureDebugText, nullptr, FColor::Cyan, 0.0f, true, 1.5f);
-		}
 	}
 
 	// 서버 배칭 처리
@@ -2049,74 +2058,6 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 //////////////////////////////////////////////////////////////////////////
 // Cell Mesh Parallel Processing
 //////////////////////////////////////////////////////////////////////////
-
-void URealtimeDestructibleMeshComponent::DrawCellMeshesDebug()
-{
-	if (!bCellMeshesValid || CellMeshComponents.Num() == 0)
-	{
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	const FTransform& CompTransform = GetComponentTransform();
-	const float Duration = 0.0f;  // 매 프레임 새로 그림
-
-	// Cell별로 다른 색상 생성
-	TArray<FColor> CellColors;
-	CellColors.SetNum(CellMeshComponents.Num());
-	for (int32 i = 0; i < CellMeshComponents.Num(); ++i)
-	{
-		// HSV 색상환에서 균등하게 분포된 색상
-		float Hue = (float)i / (float)CellMeshComponents.Num() * 360.0f;
-		CellColors[i] = FLinearColor::MakeFromHSV8(static_cast<uint8>(Hue / 360.0f * 255.0f), 255, 255).ToFColor(true);
-	}
-
-	int32 TotalTrianglesDrawn = 0;
-
-	for (int32 CellId = 0; CellId < CellMeshComponents.Num(); ++CellId)
-	{
-		const FColor& Color = CellColors[CellId];
-
-		if (!CellMeshComponents[CellId])
-		{
-			continue;
-		}
-
-		const UE::Geometry::FDynamicMesh3* Mesh = CellMeshComponents[CellId]->GetMesh();
-
-		// Cell 중심 위치 계산 (메쉬 바운드 기준)
-		UE::Geometry::FAxisAlignedBox3d MeshBounds = Mesh->GetBounds();
-		FVector MeshCenter(MeshBounds.Center().X, MeshBounds.Center().Y, MeshBounds.Center().Z);
-		FVector CellCenterWorld = CompTransform.TransformPosition(MeshCenter);
-
-		// Cell 중심에 점과 ID 표시
-		DrawDebugPoint(World, CellCenterWorld, 15.0f, Color, false, Duration, SDPG_Foreground);
-		DrawDebugString(World, CellCenterWorld + FVector(0, 0, 5.0f),
-			FString::Printf(TEXT("%d"), CellId), nullptr, FColor::White, Duration, true, 1.2f);
-
-		// 각 Triangle의 엣지를 그림
-		for (int32 TriId : Mesh->TriangleIndicesItr())
-		{
-			UE::Geometry::FIndex3i Tri = Mesh->GetTriangle(TriId);
-
-			FVector V0 = CompTransform.TransformPosition(FVector(Mesh->GetVertex(Tri.A)));
-			FVector V1 = CompTransform.TransformPosition(FVector(Mesh->GetVertex(Tri.B)));
-			FVector V2 = CompTransform.TransformPosition(FVector(Mesh->GetVertex(Tri.C)));
-
-			DrawDebugLine(World, V0, V1, Color, false, Duration, SDPG_Foreground, 1.0f);
-			DrawDebugLine(World, V1, V2, Color, false, Duration, SDPG_Foreground, 1.0f);
-			DrawDebugLine(World, V2, V0, Color, false, Duration, SDPG_Foreground, 1.0f);
-
-			++TotalTrianglesDrawn;
-		}
-	}
-
-}
 
 int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection()
 {
@@ -2831,6 +2772,7 @@ void URealtimeDestructibleMeshComponent::UpdateCellGraphForModifiedChunks()
 
 	// 7. ModifiedChunkIds 초기화
 	ModifiedChunkIds.Reset();
+	bShouldDebugUpdate = true;
 }
 
 void URealtimeDestructibleMeshComponent::DrawCellGraphDebug()
