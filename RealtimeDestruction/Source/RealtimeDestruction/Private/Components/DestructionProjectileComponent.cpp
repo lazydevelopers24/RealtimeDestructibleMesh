@@ -275,25 +275,12 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 
 	float ToolRadius = ToolShape == EDestructionToolShape::Cylinder ? CylinderRadius : SphereRadius;
 	// 오버랩 영역에 여유분 추가
-	float OverlappedRadius = ToolRadius * 1.1f;
-	
-	TArray<UPrimitiveComponent*> OverlappedComp;
-	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
-	ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldStatic));
-	// 분리된 파편 물리 연산 시 필요
-	ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECollisionChannel::ECC_WorldDynamic));
+	float OverlappedRadius = ToolRadius * 1.2f;
 	
 	// 자신과 겹치는 경우 제외
 	TArray<AActor*> ActorToIgnore;
 	ActorToIgnore.Add(Owner);
 
-	/*	 
-	 * OverlappedRadiusa의 안에 있는 ObjectTypes의 컴포넌트 수집해서 오버랩 검사
-	 */
-	UKismetSystemLibrary::SphereOverlapComponents(
-		this, Hit.ImpactPoint, OverlappedRadius, ObjectTypes,
-		nullptr, ActorToIgnore, OverlappedComp);
-	
 	// 중복 방지용 Set
 	TSet<int32> Targets;
 	
@@ -305,39 +292,32 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	}
 
 	AActor* TargetActor = DestructComp->GetOwner();
+	int32 ChunkNum = DestructComp->GetChunkNum();
 	const FBox ToolBounds = FBox::BuildAABB(Hit.ImpactPoint, FVector(OverlappedRadius));
-	for (auto* PrimitiveComponent : OverlappedComp)
+	for (int32 i = 0; i < ChunkNum; i++)
 	{
-		// 같은 액터가 아니면 생략
-		if (PrimitiveComponent->GetOwner() != TargetActor)
+		UDynamicMeshComponent* Chunk = DestructComp->GetChunkMeshComponent(i);
+		if (!Chunk)
 		{
 			continue;
 		}
 	
-		// 오버랩된 청크 인덱스
-		int32 OverlappedChunkIndex = DestructComp->GetChunkIndex(PrimitiveComponent);
-		if (OverlappedChunkIndex == INDEX_NONE || Targets.Contains(OverlappedChunkIndex))
+		if (!Chunk->IsVisible() || Chunk->GetOwner() != TargetActor)
 		{
 			continue;
 		}
 	
-		// 오버랩된 청크와 발사체의 Box끼리 검사
-		// Box vs Box 검사, Box vs Spherer가 정확하지만 성능 우선 
-		if (!PrimitiveComponent->Bounds.GetBox().Intersect(ToolBounds))
+		const FBox ChunkBox = Chunk->Bounds.GetBox();
+		if (ToolBounds.Intersect(ChunkBox))
 		{
-			continue;
+			Targets.Add(i);
+			// DrawDebugBox(GetWorld(), ToolBounds.GetCenter(),
+			// 	ToolBounds.GetExtent() + FVector(0.5f), FColor::Red, false,
+			// 	2.0f, 0, 2.5f);
+			// DrawDebugBox(GetWorld(), ChunkBox.GetCenter(),
+			// 	ChunkBox.GetExtent() + FVector(0.5f), FColor::Blue, false,
+			// 	2.0f, 0, 2.5f);
 		}
-
-		// if (GetWorld())
-		// {
-		// 	DrawDebugBox(GetWorld(), ToolBounds.GetCenter(), ToolBounds.GetExtent() + FVector(0.5f), FColor::Red,
-		// 		false, 2.0f, 0, 2.5f);
-		// 	DrawDebugBox(GetWorld(), PrimitiveComponent->Bounds.GetBox().GetCenter(),
-		// 		PrimitiveComponent->Bounds.GetBox().GetExtent() + FVector(0.5f), FColor::Blue, false,
-		// 		2.0f, 0, 2.5f);
-		// }
-		
-		Targets.Add(OverlappedChunkIndex);
 	}
 	
 	APawn* InstigatorPawn = Owner->GetInstigator();
@@ -597,8 +577,8 @@ void UDestructionProjectileComponent::RequestDestructionManual(const FHitResult&
 		if (ChunkNum == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequest %d"), ChunkNum);
-			ProcessDestructionRequest(DestructComp, HitResult);
-		}
+		ProcessDestructionRequest(DestructComp, HitResult);
+	}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequestForCell %d"), ChunkNum);

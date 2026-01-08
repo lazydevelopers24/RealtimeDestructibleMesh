@@ -62,8 +62,8 @@ struct REALTIMEDESTRUCTION_API FUnionFind
 
     UPROPERTY()
     TArray<int32> Parent;
-
-    UPROPERTY()
+    
+    UPROPERTY() 
     TArray<int32> Rank;
 
     void Init(int32 Count)
@@ -132,21 +132,24 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
 
     UPROPERTY()
     FVector Normal = FVector::UpVector;
-
+    
     UPROPERTY()
     float Radius = 0.0f;
-
+    
     UPROPERTY()
     TArray<FVector> MemberPoints;
-
+    
     UPROPERTY()
     TArray<FVector> MemberNormals;
 
     UPROPERTY()
     TArray<float> MemberRadius;
 
+    UPROPERTY()
+    TArray<int32> ChunkIndices; 
 
-    void Init(FVector Point, FVector InNormal, float InRadius)
+
+    void Init(FVector Point, FVector InNormal, float InRadius, int ChunkIndex)
     {
         Center = Point;
         Normal = InNormal;
@@ -155,17 +158,21 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         MemberPoints.Empty();
         MemberNormals.Empty();
         MemberRadius.Empty();
+        ChunkIndices.Empty();
+
 
         MemberPoints.Add(Point);
         MemberNormals.Add(InNormal);
         MemberRadius.Add(InRadius);
+        ChunkIndices.Add(ChunkIndex); 
     }
-    void AddMember(FVector Point, FVector InNormal, float InRadius)
+    void AddMember(FVector Point, FVector InNormal, float InRadius, int ChunkIndex )
     {
         MemberPoints.Add(Point);
         MemberNormals.Add(InNormal);
         MemberRadius.Add(InRadius);
-
+        ChunkIndices.Add(ChunkIndex);
+         
         // Normal
         Normal += InNormal;
         Normal = Normal.GetSafeNormal();
@@ -180,16 +187,22 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
 
         float NewRadius = (Radius + Dist + InRadius) * 0.5f;
 
-        if (Dist > KINDA_SMALL_NUMBER)
-        {
-            FVector Dir = (Point - Center).GetSafeNormal();
-
-            Center += Dir * (NewRadius - Radius);
-        }
-
-        Radius = NewRadius;
-
+        Radius = NewRadius; 
     }
+
+    void Shutdown()
+        {
+        Center = FVector::ZeroVector;
+
+        Normal = FVector::UpVector;
+
+        Radius = 0.0f;
+
+        MemberPoints.Empty();
+        MemberNormals.Empty();
+        MemberRadius.Empty();
+    }
+     
 
     float PredictRadius(const FVector& Point, float InRadius) const
     {
@@ -200,7 +213,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
             return Radius;
         }
 
-        return (Radius + Dist + InRadius);
+        return (Radius + Dist + InRadius) * 0.5f;
     }
 
 };

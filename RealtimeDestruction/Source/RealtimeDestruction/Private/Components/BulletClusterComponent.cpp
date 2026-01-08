@@ -13,9 +13,9 @@ void UBulletClusterComponent::BeginPlay()
 }
 
 void UBulletClusterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
+{ 
 	ClearPendingRequests();
-
+	
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -32,16 +32,16 @@ void UBulletClusterComponent::SetOwnerMesh(URealtimeDestructibleMeshComponent* I
 	OwnerMesh = InOwnerMesh;
 }
 
-void UBulletClusterComponent::RegisterRequest(const FVector& ImpactPoint, const FVector& ImpactNormal,
-	const float Radius)
+void UBulletClusterComponent::RegisterRequest(const FVector& ImpactPoint, const FVector& ImpactNormal, const float Radius, int32 ChunkIndex)
 {
 	// 요청 추가
 	FPendingClusteringRequest NewRequest;
-	NewRequest.ImpactPoint = ImpactPoint;
+	NewRequest.ImpactPoint  = ImpactPoint;
 	NewRequest.ImpactNormal = ImpactNormal;
 	NewRequest.Radius = Radius;
+	NewRequest.ChunkIndex = ChunkIndex;
 	PendingRequests.Add(NewRequest);
-
+	
 	// 타이머 시작
 	if (!bTimerActive && GetWorld())
 	{
@@ -54,37 +54,34 @@ void UBulletClusterComponent::RegisterRequest(const FVector& ImpactPoint, const 
 
 		bTimerActive = true;
 	}
-
+	
 }
 
-void UBulletClusterComponent::FlushPendingRequests()
-{
-	OnClusterWindowExpired();
-}
 
 void UBulletClusterComponent::OnClusterWindowExpired()
 {
 	bTimerActive = false;
-
+	
+	// 임계 Request 이상 쌓이지 않으면 초기화 
 	if (PendingRequests.Num() < ClusterCountThreshold)
 	{
 		// 버퍼 클리어
 		ClearPendingRequests();
-
 		return;
 	}
-
+	
 	//군집화 수행
 	TArray<FBulletCluster> Clusters = ProcessClustering();
-	UE_LOG(LogTemp, Warning, TEXT("Cluster Num : %d"), Clusters.Num());
+	 
 	// 파괴
 	if (Clusters.Num() > 0)
 	{
-		ExecuteDestruction(Clusters);
+	ExecuteDestruction(Clusters);
 	}
+
 	// 버퍼 클리어
 	ClearPendingRequests();
-
+	
 }
 
 TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
@@ -92,6 +89,8 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 	TArray<FBulletCluster> ResultClusters;
 	int32 N = PendingRequests.Num();
 
+
+	// 임계치 이상 안넘으면 return
 	if (N < ClusterCountThreshold)
 	{
 		return ResultClusters;
@@ -107,8 +106,8 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 		for (int32 j = i + 1; j < N; ++j)
 		{
 			float Dist = FVector::Dist(
-				PendingRequests[i].ImpactPoint,
-				PendingRequests[j].ImpactPoint
+			PendingRequests[i].ImpactPoint,
+			PendingRequests[j].ImpactPoint
 			);
 
 			if (Dist <= MergeDistanceThreshold)
@@ -127,11 +126,12 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 		const FPendingClusteringRequest& Req = PendingRequests[i];
 
 		FBulletCluster* FoundCluster = RootToCluster.Find(Root);
+
 		// 아직 등록이 안되어있다면
 		if (!FoundCluster)
 		{
 			FBulletCluster NewCluster;
-			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.Radius);
+			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.Radius, Req.ChunkIndex); 
 			RootToCluster.Add(Root, NewCluster);
 		}
 		else
@@ -142,7 +142,7 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 
 			if (PredicatedRauius <= MaxClusterRadius)
 			{
-				FoundCluster->AddMember(Req.ImpactPoint, Req.ImpactNormal, Req.Radius);
+				FoundCluster->AddMember(Req.ImpactPoint, Req.ImpactNormal, Req.Radius, Req.ChunkIndex);
 			}
 
 		}
@@ -163,29 +163,36 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 
 void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& Clusters)
 {
+
 	URealtimeDestructibleMeshComponent* Mesh = OwnerMesh.Get();
-
-	if (!Mesh)
-	{
-		return;
-	}
-
+	if (!Mesh || !IsValid(Mesh)) return;
+	
 	for (const FBulletCluster& Cluster : Clusters)
 	{
-		FRealtimeDestructionRequest Request;
+		float FinalRadius = Cluster.Radius * ClusterRadiusOffset;
 
-		Request.ImpactPoint = Cluster.Center;
+
+		TArray<int32> AffectedChunks;
+		Mesh->FindChunksInRadius(Cluster.Center, FinalRadius, AffectedChunks);
+
+		if (AffectedChunks.Num() == 0) continue;
+
+		// 모든 청크가 동일한 Center를 사용하여 높이가 일관되게 유지됨
+		for (int32 ChunkIndex : AffectedChunks)
+	{
+		FRealtimeDestructionRequest Request;
+			Request.ImpactPoint = Cluster.Center;  // 모든 청크에 동일한 Center 사용
 		Request.ImpactNormal = Cluster.Normal;
 		Request.ToolShape = EDestructionToolShape::Cylinder;
-		Request.ShapeParams.Radius = Cluster.Radius * ClusterRadiusOffset;
+			Request.ShapeParams.Radius = FinalRadius;
+			Request.ChunkIndex = ChunkIndex;
 
 		Request.ToolMeshPtr = Mesh->CreateToolMeshPtrFromShapeParams(
-			Request.ToolShape,
-			Request.ShapeParams
-		);
+				Request.ToolShape, Request.ShapeParams);
 
 		Mesh->ExecuteDestructionInternal(Request);
 	}
+	} 
 }
 
 void UBulletClusterComponent::ClearPendingRequests()
@@ -199,5 +206,6 @@ void UBulletClusterComponent::ClearPendingRequests()
 
 	// 대기열 초기화
 	PendingRequests.Empty();
+
 
 }

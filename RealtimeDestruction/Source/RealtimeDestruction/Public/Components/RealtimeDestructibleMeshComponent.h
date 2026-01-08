@@ -94,6 +94,9 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	int32 ChunkIndex = INDEX_NONE;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	FVector ToolForwardVector = FVector::ForwardVector;
 };
 
 USTRUCT(BlueprintType)
@@ -201,7 +204,7 @@ public:
 	UPROPERTY()
 	FIntVector SavedSliceCount = FIntVector::ZeroValue;
 
-	UPROPERTY()
+	UPROPERTY() 
 	bool bSavedShowCellGraphDebug = false;
 
 	UPROPERTY()
@@ -264,7 +267,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	bool ExecuteDestructionInternal(const FRealtimeDestructionRequest& Request);
-
+	
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Clustering")
 	void RegisterForClustering(const FRealtimeDestructionRequest& Request);
 
@@ -442,13 +445,13 @@ public:
 	/** Clustering 변수 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	TObjectPtr<UBulletClusterComponent> BulletClusterComponent;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	bool bEnableClustering = true;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float MaxMergeDistance = 10.0f;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	int  MinClusterCount = 3;
 
@@ -457,6 +460,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float ClusterRaidusOffset = 1.0f;
+	
+	UPROPERTY()
+	FBox CachedMeshBounds;
+
+	UPROPERTY()
+	FVector CachedCellSize; 
 	
 	/** 데이터 유지를 위한 함수 */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
@@ -488,7 +497,7 @@ public:
 
 	void SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker);
 
-	bool IsInitialized() { return bIsInitialized; }
+	bool IsInitialized() { return bIsInitialized;  }
 
 	void TogleDebugUpdate() { bShouldDebugUpdate = !bShouldDebugUpdate; }
 
@@ -496,31 +505,30 @@ public:
 
 	int32 GetChunkNum() const { return CellMeshComponents.Num(); }
 
+	bool IsChunkValid(int32 ChunkIndex) const;
+
 	UDynamicMeshComponent* GetChunkMeshComponent(int32 ChunkIndex) const;
 
 	bool GetChunkMesh(FDynamicMesh3& OutMesh, int32 ChunkIndex) const;
 
 	bool CheckAndSetChunkBusy(int32 ChunkIndex);
 
+	void FindChunksInRadius(const FVector& WorldCenter, float Radius, TArray<int32> & OutChunkIndices);
+
+
 	// 비트 연산은 원자적이지 않아서 GT 외에 호출할 때는 로직 수정 필요함
 	void ClearChunkBusy(int32 ChunkIndex);
 
 	void ClearAllChunkBusyBits();
 
-	/** bit를 체크하고, 사용 중이지 않다면 할당까지 해주는 함수 */
-	bool CheckAndSetChunkSubtractBusy(int32 ChunkIndex);
-	void ClearChunkSubtractBusy(int32 ChunkIndex);
-	void ClearAllChunkSubtractBusyBits();
-
 	void SetChunkBits(int32 ChunkIndex, int32& BitIndex, int32& BitOffset);
 	
-
 	/*
 	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
 	 * 검증 완료되면 유지
 	 */
-	 /*************************************************/
-	 // 변형된 메시의 시각적(렌더링) 처리 즉시 업데이트하는 함수
+	/*************************************************/
+	// 변형된 메시의 시각적(렌더링) 처리 즉시 업데이트하는 함수
 	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, const int32 ChunkIndex, bool bDelayedCollisionUpdate);
 	// 타겟메시의 idle이나 원하는 딜레이를 주고 Async로 collision 갱신하는 함수
 	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);
@@ -723,7 +731,7 @@ protected:
 
 	/** 구조적 무결성 시스템 (Anchor 연결성 분석) */
 	FStructuralIntegritySystem IntegritySystem;
- 
+
 
 	/** 현재 배치에서 변경된 청크 ID 집합 (CellGraph 갱신용) */
 	TSet<int32> ModifiedChunkIds;
@@ -811,7 +819,7 @@ public:
 
 #endif
 protected:
-	
+
 	//////////////////////////////////////////////////////////////////////////
 	// Debug Display Settings (액터 위 디버그 텍스트 표시)
 	//////////////////////////////////////////////////////////////////////////
@@ -846,7 +854,7 @@ protected:
 
 	bool bShouldDebugUpdate = true;
 
-	FString DebugText;
+	FString DebugText;	
 
 protected:
 #if WITH_EDITOR
