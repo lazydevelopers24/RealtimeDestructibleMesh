@@ -238,10 +238,8 @@ public:
 	virtual ~URealtimeDestructibleMeshComponent() override;
 
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
-
-	UE_DEPRECATED(5.7, "Function has been deprecated. Do not Initalize this component directly form static mesh")
-		UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",
-			meta = (DeprecatedFunction, DeprecationMessage = "Function has been deprecated. Do not Initalize this component directly form static mesh"))
+	
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",meta = (DeprecatedFunction))
 	bool InitializeFromStaticMesh(UStaticMesh* InMesh);
 
 	UE_DEPRECATED(5.7, "Function has been deprecated. Do not Initalize this component directly form static mesh")
@@ -260,9 +258,6 @@ public:
 	int32 EnqueueBatch(const TArray<FRealtimeDestructionRequest>& Requests);
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
-	int32 ProcessPendingOps(int32 MaxOpsThisFrame);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	bool RequestDestruction(const FRealtimeDestructionRequest& Request);
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
@@ -274,9 +269,6 @@ public:
 	// Options
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetBooleanOptions(const FGeometryScriptMeshBooleanOptions& Options);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
-	void SetSphereResolution(int32 StepsPhi, int32 StepsTheta);
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetMaxOpsPerFrame(int32 MaxOps);
@@ -295,10 +287,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
 	int32 GetHoleCount() const;
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
-	int32 GetPendingOpCount() const;
-
+	
 	// Replication
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerEnqueueOps(const TArray<FRealtimeDestructionRequest>& Requests);
@@ -476,7 +465,6 @@ public:
 	void GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxOpsPerFrame, int32& OutMaxBatchSize);
 	FGeometryScriptMeshBooleanOptions GetBooleanOptions() const { return BooleanOptions; }
 	FRealtimeBooleanProcessor* GetBooleanProcessor() const { return BooleanProcessor.Get(); }
-	FDynamicMesh3 GetToolMesh(EDestructionToolShape ToolShape, FDestructionToolShapeParams ToolParam);
 
 	/** ShapeParams로 ToolMeshPtr 재생성 (네트워크 수신 시 사용) */
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> CreateToolMeshPtrFromShapeParams(
@@ -608,22 +596,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
-
-	/*
-	 * SharedPtr로 변경
-	 * Projectile에서 받아 올 때도 Shared로 하면 좋을 것 같아서 바꿈
-	 * Projectile의 ToolMesh는 Runtime에서 변하지 않을 듯
-	 */
-	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> SphereTemplatePtr;
-
-	FDynamicMesh3 SphereTemplate;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 3, ClampMax = 64))
-	int32 SphereStepsPhi = 8;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 3, ClampMax = 128))
-	int32 SphereStepsTheta = 16;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxOpsPerFrame = 16;
 
@@ -845,13 +818,8 @@ protected:
 #endif
 
 private:
-	UPROPERTY()
-	TArray<FRealtimeDestructionOp> PendingOps;
-
 	int64 NextOpId = 1;
 	int32 NextSequence = 0;
-
-	bool bSphereTemplateReady = false;
 
 	// 서버 배칭용 변수
 	TArray<FRealtimeDestructionOp> PendingServerBatchOps;
@@ -875,10 +843,7 @@ private:
 
 	/** Cell 바운딩 박스 계산 */
 	FBox CalculateCellBounds(int32 CellId) const;
-
-
-	bool EnsureSphereTemplate();
-
+	
 	UDynamicMesh* CreateToolMeshFromRequest(const FRealtimeDestructionRequest& Request);
 
 	///////////////////////////

@@ -199,8 +199,7 @@ void URealtimeDestructibleMeshComponent::ResetToSourceMesh()
 		BooleanProcessor->CancelAllOperations();
 		BooleanProcessor->SetWorkInFlight(false);
 	}
-
-	PendingOps.Reset();
+	
 	CurrentHoleCount = 0;
 	bIsInitialized = false;
 	InitializeFromStaticMeshInternal(SourceStaticMesh, true);
@@ -264,58 +263,6 @@ int32 URealtimeDestructibleMeshComponent::EnqueueBatch(const TArray<FRealtimeDes
 	}
 
 	return AddedCount;
-}
-
-int32 URealtimeDestructibleMeshComponent::ProcessPendingOps(int32 MaxOpsThisFrame)
-{
-	const int32 MaxOps = (MaxOpsThisFrame > 0) ? MaxOpsThisFrame : MaxOpsPerFrame;
-	const int32 OpsToProcess = FMath::Min(MaxOps, PendingOps.Num());
-	if (OpsToProcess <= 0)
-	{
-		return 0;
-	}
-
-	const bool bPerHitUpdates = (CollisionUpdateMode == ERealtimeCollisionUpdateMode::PerHit);
-	int32 AppliedCount = 0;
-
-	for (int32 Index = 0; Index < OpsToProcess; ++Index)
-	{
-		const FRealtimeDestructionOp& Op = PendingOps[Index];
-		if (ApplyDestructionRequestInternal(Op.Request))
-		{
-			++AppliedCount;
-			OnOpApplied.Broadcast(Op);
-			ModifiedChunkIds.Add(Op.Request.ChunkIndex);
-
-			if (bPerHitUpdates)
-			{
-				if (RenderUpdateMode == ERealtimeRenderUpdateMode::Auto)
-				{
-					ApplyRenderUpdate();
-				}				
-				ApplyCollisionUpdate(this);
-			}
-		}
-	}
-
-	PendingOps.RemoveAt(0, OpsToProcess);
-
-	if (AppliedCount > 0 && !bPerHitUpdates)
-	{
-		if (RenderUpdateMode == ERealtimeRenderUpdateMode::Auto)
-		{
-			ApplyRenderUpdate();
-		}
-		ApplyCollisionUpdate(this);
-	}
-
-	if (AppliedCount > 0)
-	{
-		OnBatchCompleted.Broadcast(AppliedCount);
-		UpdateCellGraphForModifiedChunks();
-	}
-
-	return AppliedCount;
 }
 
 bool URealtimeDestructibleMeshComponent::ApplyOpImmediate(const FRealtimeDestructionRequest& Request)
@@ -435,12 +382,6 @@ void URealtimeDestructibleMeshComponent::SetBooleanOptions(const FGeometryScript
 	BooleanOptions = Options;
 }
 
-void URealtimeDestructibleMeshComponent::SetSphereResolution(int32 StepsPhi, int32 StepsTheta)
-{
-	SphereStepsPhi = FMath::Max(3, StepsPhi);
-	SphereStepsTheta = FMath::Max(3, StepsTheta);
-}
-
 void URealtimeDestructibleMeshComponent::SetMaxOpsPerFrame(int32 MaxOps)
 {
 	MaxOpsPerFrame = FMath::Max(1, MaxOps);
@@ -469,11 +410,6 @@ void URealtimeDestructibleMeshComponent::SetMaxHoleCount(int32 MaxCount)
 int32 URealtimeDestructibleMeshComponent::GetHoleCount() const
 {
 	return CurrentHoleCount;
-}
-
-int32 URealtimeDestructibleMeshComponent::GetPendingOpCount() const
-{
-	return PendingOps.Num();
 }
 
 bool URealtimeDestructibleMeshComponent::ServerEnqueueOps_Validate(const TArray<FRealtimeDestructionRequest>& Requests)
@@ -916,40 +852,6 @@ bool URealtimeDestructibleMeshComponent::InitializeFromStaticMeshInternal(UStati
 	return true;
 }
 
-bool URealtimeDestructibleMeshComponent::EnsureSphereTemplate()
-{
-	if (SphereTemplatePtr.IsValid())
-	{
-		return false;
-	}
-
-	UDynamicMesh* Temp = NewObject<UDynamicMesh>(this);
-
-	// 구형 메시 생성 옵션
-	FGeometryScriptPrimitiveOptions PrimitiveOptions;
-	PrimitiveOptions.PolygroupMode = EGeometryScriptPrimitivePolygroupMode::SingleGroup;
-
-	const int32 StepsPhi = FMath::Max(3, SphereStepsPhi);
-	const int32 StepsTheta = FMath::Max(3, SphereStepsTheta);
-	UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendSphereLatLong(
-		Temp,										// 대상 메시 (in-out)
-		PrimitiveOptions,							// 생성 옵션
-		FTransform::Identity,						// 원점에 생성 (중요!)
-		1.0f,										// 구의 반지름
-		StepsPhi,									// StepsPhi (위도)
-		StepsTheta,									// StepsTheta (경도)
-		EGeometryScriptPrimitiveOriginMode::Center	// 중심점 기준
-	);
-
-	SphereTemplatePtr = MakeShared<FDynamicMesh3, ESPMode::ThreadSafe>();
-	Temp->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Source)
-		{
-			*SphereTemplatePtr = Source;
-		});
-
-	return true;
-}
-
 UDynamicMesh* URealtimeDestructibleMeshComponent::CreateToolMeshFromRequest(const FRealtimeDestructionRequest& Request)
 {
 	UDynamicMesh* ToolMesh = NewObject<UDynamicMesh>();
@@ -1136,62 +1038,6 @@ void URealtimeDestructibleMeshComponent::CopyCollisionFromStaticMeshComponent(US
 	SetCollisionResponseToChannels(InComp->GetCollisionResponseToChannels());
 	SetGenerateOverlapEvents(InComp->GetGenerateOverlapEvents());
 	SetComplexAsSimpleCollisionEnabled(true);
-}
-
-FDynamicMesh3 URealtimeDestructibleMeshComponent::GetToolMesh(EDestructionToolShape ToolShape, FDestructionToolShapeParams ShapeParams)
-{
-	UDynamicMesh* TempMesh = NewObject<UDynamicMesh>(this);
-	FGeometryScriptPrimitiveOptions PrimitiveOptions;
-	PrimitiveOptions.PolygroupMode = EGeometryScriptPrimitivePolygroupMode::SingleGroup;
-
-	switch (ToolShape)
-	{
-	case EDestructionToolShape::Sphere:
-	{
-		UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendSphereLatLong(
-			TempMesh,
-			PrimitiveOptions,
-			FTransform::Identity,
-			ShapeParams.Radius,
-			ShapeParams.StepsPhi,
-			ShapeParams.StepsTheta,
-			EGeometryScriptPrimitiveOriginMode::Center
-		);
-		break;
-	}
-
-	case EDestructionToolShape::Cylinder:
-	{
-		UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendCylinder(
-			TempMesh,
-			PrimitiveOptions,
-			FTransform::Identity,
-			ShapeParams.Radius,
-			ShapeParams.Height,
-			ShapeParams.RadiusSteps,
-			ShapeParams.HeightSubdivisions,
-			ShapeParams.bCapped,
-			EGeometryScriptPrimitiveOriginMode::Center
-		);
-		break;
-	}
-	default:
-	{
-		if (!bSphereTemplateReady)
-		{
-			bSphereTemplateReady = EnsureSphereTemplate();
-		}
-		return *SphereTemplatePtr;
-	}
-	}
-
-	FDynamicMesh3 ResultMesh;
-	TempMesh->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Source)
-		{
-			ResultMesh = Source;
-		});
-
-	return ResultMesh;
 }
 
 void URealtimeDestructibleMeshComponent::ApplyRenderUpdate()
@@ -1561,29 +1407,6 @@ void URealtimeDestructibleMeshComponent::UpdateDebugText()
 		}
 	}
 
-	// 디버그 텍스트 생성
-	DebugText = FString::Printf(
-		TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nInitialized: %s\nNetwork Mode: %s"),
-		VertexCount,
-		TriangleCount,
-		HoleCount,
-		MaxHoleCount,
-		bIsInitialized ? TEXT("Yes") : TEXT("No"),
-		*NetModeStr
-	);
-
-	bShouldDebugUpdate = false;
-}
-
-void URealtimeDestructibleMeshComponent::DrawDebugText() const
-{
-#if !UE_BUILD_SHIPPING
-	UWorld* DebugWorld = GetWorld();
-	if (!DebugWorld)
-	{
-		return;
-	}
-
 	const int32 ChunkCount = CellMeshComponents.Num();
 	const int32 NodeCount = CellGraph.GetNodeCount();
 
@@ -1606,16 +1429,32 @@ void URealtimeDestructibleMeshComponent::DrawDebugText() const
 	}
 	EdgeCount /= 2;
 
-	const FString CellStructureDebugText = FString::Printf(
-		TEXT("Chunks: %d | Cells: %d | Nodes: %d | Edges: %d"),
-		ChunkCount, CellCount, NodeCount, EdgeCount);
+	// 디버그 텍스트 생성
+	DebugText = FString::Printf(
+		TEXT("Vertices: %d\nTriangles: %d\nHoles: %d / %d\nInitialized: %s\nNetwork Mode: %s\n<Cell Structures>\nChunks: %d | Cells: %d | Nodes: %d | Edges: %d"),
+		VertexCount,
+		TriangleCount,
+		HoleCount,
+		MaxHoleCount,
+		bIsInitialized ? TEXT("Yes") : TEXT("No"),
+		*NetModeStr,
+		ChunkCount,
+		CellCount,
+		NodeCount,
+		EdgeCount
+	);
 
-	FString CombinedText = DebugText;
-	if (!CombinedText.IsEmpty())
+	bShouldDebugUpdate = false;
+}
+
+void URealtimeDestructibleMeshComponent::DrawDebugText() const
+{
+#if !UE_BUILD_SHIPPING
+	UWorld* DebugWorld = GetWorld();
+	if (!DebugWorld)
 	{
-		CombinedText += TEXT("\n");
+		return;
 	}
-	CombinedText += CellStructureDebugText;
 
 	float BoundsHeight = Bounds.BoxExtent.Z * 2.0f;
 	if (CellMeshComponents.Num() > 0)
@@ -1628,8 +1467,137 @@ void URealtimeDestructibleMeshComponent::DrawDebugText() const
 
 	const float WorldScaleZ = GetComponentTransform().GetScale3D().Z;
 	const FVector TextLocation = GetComponentLocation() + FVector(0, 0, BoundsHeight * WorldScaleZ);
-	DrawDebugString(DebugWorld, TextLocation, CombinedText, nullptr, FColor::Cyan, 0.0f, true, 1.5f);
+	DrawDebugString(DebugWorld, TextLocation, DebugText, nullptr, FColor::Cyan, 0.0f, true, 1.5f);
 #endif
+}
+
+void URealtimeDestructibleMeshComponent::DrawCellGraphDebug()
+{
+	if (!CellGraph.IsGraphBuilt())
+	{
+		// 매 프레임 경고는 스팸이 되므로 주석 처리
+		// UE_LOG(LogTemp, Warning, TEXT("DrawCellGraphDebug: CellGraph not built"));
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 디버그 로그는 첫 프레임만 출력 (스팸 방지)
+	static bool bFirstDraw = true;
+	if (bFirstDraw)
+	{
+		UE_LOG(LogTemp, Log, TEXT("DrawCellGraphDebug: Drawing %d nodes"), CellGraph.GetNodeCount());
+		bFirstDraw = false;
+	}
+
+	const FTransform& ComponentTransform = GetComponentTransform();
+	const int32 NodeCount = CellGraph.GetNodeCount();
+
+	// 노드 중심 위치 캐시 (연결선 그리기용)
+	TArray<FVector> NodeCenters;
+	NodeCenters.SetNum(NodeCount);
+
+	// 1. 각 노드(Cell)의 바운드 중심에 점 그리기
+	for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
+	{
+		const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx);
+		if (!Node)
+		{
+			continue;
+		}
+
+		const FChunkCellCache* Cache = CellGraph.GetChunkCellCache(Node->ChunkId);
+		if (!Cache || Node->CellId >= Cache->CellBounds.Num())
+		{
+			continue;
+		}
+
+		const FBox& NodeBounds = Cache->CellBounds[Node->CellId];
+		if (!NodeBounds.IsValid)
+		{
+			continue;
+		}
+
+		// 로컬 바운드 중심을 월드 좌표로 변환
+		const FVector LocalCenter = NodeBounds.GetCenter();
+		const FVector WorldCenter = ComponentTransform.TransformPosition(LocalCenter);
+		NodeCenters[NodeIdx] = WorldCenter;
+
+		// IntegritySystem에서 Cell 상태 확인
+		const FCellKey CellKey(Node->ChunkId, Node->CellId);
+		const int32 IntegrityId = IntegritySystem.GetCellIdForKey(CellKey);
+		const ECellStructuralState CellState = IntegritySystem.GetCellState(IntegrityId);
+
+		// 상태에 따른 색상: Anchor=녹색, Intact=시안, Destroyed=회색(스킵)
+		if (CellState == ECellStructuralState::Destroyed)
+		{
+			continue; // Destroyed된 셀은 그리지 않음
+		}
+
+		const FColor NodeColor = Node->bIsAnchor ? FColor::Green : FColor::Cyan;
+
+		// 노드 위치에 점 그리기 (매 프레임 그리기)
+		DrawDebugPoint(World, WorldCenter, 10.0f, NodeColor, false, 0.0f, SDPG_Foreground);
+	}
+
+	// 2. 연결된 노드 간에 선 그리기 (중복 방지를 위해 NodeA < NodeB인 경우만)
+	TSet<TPair<int32, int32>> DrawnEdges;
+
+	for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
+	{
+		const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx);
+		if (!Node)
+		{
+			continue;
+		}
+
+		// 현재 노드가 Destroyed면 스킵
+		const FCellKey NodeKey(Node->ChunkId, Node->CellId);
+		const int32 NodeIntegrityId = IntegritySystem.GetCellIdForKey(NodeKey);
+		if (IntegritySystem.GetCellState(NodeIntegrityId) == ECellStructuralState::Destroyed)
+		{
+			continue;
+		}
+
+		for (const FChunkCellNeighbor& Neighbor : Node->Neighbors)
+		{
+			// 이웃 노드가 Destroyed면 스킵
+			const FCellKey NeighborKey(Neighbor.ChunkId, Neighbor.CellId);
+			const int32 NeighborIntegrityId = IntegritySystem.GetCellIdForKey(NeighborKey);
+			if (IntegritySystem.GetCellState(NeighborIntegrityId) == ECellStructuralState::Destroyed)
+			{
+				continue;
+			}
+
+			const int32 NeighborNodeIdx = CellGraph.FindNodeIndex(Neighbor.ChunkId, Neighbor.CellId);
+			if (NeighborNodeIdx == INDEX_NONE)
+			{
+				continue;
+			}
+
+			// 중복 방지: 작은 인덱스 -> 큰 인덱스 방향만 그리기
+			const int32 MinIdx = FMath::Min(NodeIdx, NeighborNodeIdx);
+			const int32 MaxIdx = FMath::Max(NodeIdx, NeighborNodeIdx);
+			TPair<int32, int32> EdgeKey(MinIdx, MaxIdx);
+
+			if (DrawnEdges.Contains(EdgeKey))
+			{
+				continue;
+			}
+			DrawnEdges.Add(EdgeKey);
+
+			// 연결선 그리기 (노란색, 매 프레임 그리기)
+			if (NodeCenters.IsValidIndex(NodeIdx) && NodeCenters.IsValidIndex(NeighborNodeIdx))
+			{
+				DrawDebugLine(World, NodeCenters[NodeIdx], NodeCenters[NeighborNodeIdx],
+					FColor::Yellow, false, 0.0f, SDPG_Foreground, 2.0f);
+			}
+		}
+	}
 }
 
 void URealtimeDestructibleMeshComponent::SetSourceMeshEnabled(bool bEnabled)
@@ -1739,14 +1707,6 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 		{
 			// UPROPERTY 값을 프로세서에 동기화
 			BooleanProcessor->SetCachedMeshOptimization(bUseCachedMeshOptimization);
-		}
-	}
-
-	if (bIsInitialized)
-	{
-		if (!EnsureSphereTemplate())
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Sphere template not ready"));
 		}
 	}
 
@@ -2360,7 +2320,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 		}
 
 		// [핵심 해결책 1] 이 컴포넌트는 에디터 레벨 인스턴스의 일부라고 명시합니다.
-// 이 설정이 없으면 Actor를 움직일 때마다 컴포넌트가 초기화되거나 연결이 끊깁니다.
+		// 이 설정이 없으면 Actor를 움직일 때마다 컴포넌트가 초기화되거나 연결이 끊깁니다.
 		CellComp->CreationMethod = EComponentCreationMethod::Instance;
 
 		// [핵심 해결책 2] 부착 대상을 명확히 합니다.
@@ -2773,135 +2733,6 @@ void URealtimeDestructibleMeshComponent::UpdateCellGraphForModifiedChunks()
 	// 7. ModifiedChunkIds 초기화
 	ModifiedChunkIds.Reset();
 	bShouldDebugUpdate = true;
-}
-
-void URealtimeDestructibleMeshComponent::DrawCellGraphDebug()
-{
-	if (!CellGraph.IsGraphBuilt())
-	{
-		// 매 프레임 경고는 스팸이 되므로 주석 처리
-		// UE_LOG(LogTemp, Warning, TEXT("DrawCellGraphDebug: CellGraph not built"));
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	// 디버그 로그는 첫 프레임만 출력 (스팸 방지)
-	static bool bFirstDraw = true;
-	if (bFirstDraw)
-	{
-		UE_LOG(LogTemp, Log, TEXT("DrawCellGraphDebug: Drawing %d nodes"), CellGraph.GetNodeCount());
-		bFirstDraw = false;
-	}
-
-	const FTransform& ComponentTransform = GetComponentTransform();
-	const int32 NodeCount = CellGraph.GetNodeCount();
-
-	// 노드 중심 위치 캐시 (연결선 그리기용)
-	TArray<FVector> NodeCenters;
-	NodeCenters.SetNum(NodeCount);
-
-	// 1. 각 노드(Cell)의 바운드 중심에 점 그리기
-	for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
-	{
-		const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx);
-		if (!Node)
-		{
-			continue;
-		}
-
-		const FChunkCellCache* Cache = CellGraph.GetChunkCellCache(Node->ChunkId);
-		if (!Cache || Node->CellId >= Cache->CellBounds.Num())
-		{
-			continue;
-		}
-
-		const FBox& NodeBounds = Cache->CellBounds[Node->CellId];
-		if (!NodeBounds.IsValid)
-		{
-			continue;
-		}
-
-		// 로컬 바운드 중심을 월드 좌표로 변환
-		const FVector LocalCenter = NodeBounds.GetCenter();
-		const FVector WorldCenter = ComponentTransform.TransformPosition(LocalCenter);
-		NodeCenters[NodeIdx] = WorldCenter;
-
-		// IntegritySystem에서 Cell 상태 확인
-		const FCellKey CellKey(Node->ChunkId, Node->CellId);
-		const int32 IntegrityId = IntegritySystem.GetCellIdForKey(CellKey);
-		const ECellStructuralState CellState = IntegritySystem.GetCellState(IntegrityId);
-
-		// 상태에 따른 색상: Anchor=녹색, Intact=시안, Destroyed=회색(스킵)
-		if (CellState == ECellStructuralState::Destroyed)
-		{
-			continue; // Destroyed된 셀은 그리지 않음
-		}
-
-		const FColor NodeColor = Node->bIsAnchor ? FColor::Green : FColor::Cyan;
-
-		// 노드 위치에 점 그리기 (매 프레임 그리기)
-		DrawDebugPoint(World, WorldCenter, 10.0f, NodeColor, false, 0.0f, SDPG_Foreground);
-	}
-
-	// 2. 연결된 노드 간에 선 그리기 (중복 방지를 위해 NodeA < NodeB인 경우만)
-	TSet<TPair<int32, int32>> DrawnEdges;
-
-	for (int32 NodeIdx = 0; NodeIdx < NodeCount; ++NodeIdx)
-	{
-		const FChunkCellNode* Node = CellGraph.GetNode(NodeIdx);
-		if (!Node)
-		{
-			continue;
-		}
-
-		// 현재 노드가 Destroyed면 스킵
-		const FCellKey NodeKey(Node->ChunkId, Node->CellId);
-		const int32 NodeIntegrityId = IntegritySystem.GetCellIdForKey(NodeKey);
-		if (IntegritySystem.GetCellState(NodeIntegrityId) == ECellStructuralState::Destroyed)
-		{
-			continue;
-		}
-
-		for (const FChunkCellNeighbor& Neighbor : Node->Neighbors)
-		{
-			// 이웃 노드가 Destroyed면 스킵
-			const FCellKey NeighborKey(Neighbor.ChunkId, Neighbor.CellId);
-			const int32 NeighborIntegrityId = IntegritySystem.GetCellIdForKey(NeighborKey);
-			if (IntegritySystem.GetCellState(NeighborIntegrityId) == ECellStructuralState::Destroyed)
-			{
-				continue;
-			}
-
-			const int32 NeighborNodeIdx = CellGraph.FindNodeIndex(Neighbor.ChunkId, Neighbor.CellId);
-			if (NeighborNodeIdx == INDEX_NONE)
-			{
-				continue;
-			}
-
-			// 중복 방지: 작은 인덱스 -> 큰 인덱스 방향만 그리기
-			const int32 MinIdx = FMath::Min(NodeIdx, NeighborNodeIdx);
-			const int32 MaxIdx = FMath::Max(NodeIdx, NeighborNodeIdx);
-			TPair<int32, int32> EdgeKey(MinIdx, MaxIdx);
-
-			if (DrawnEdges.Contains(EdgeKey))
-			{
-				continue;
-			}
-			DrawnEdges.Add(EdgeKey);
-
-			// 연결선 그리기 (노란색, 매 프레임 그리기)
-			if (NodeCenters.IsValidIndex(NodeIdx) && NodeCenters.IsValidIndex(NeighborNodeIdx))
-			{
-				DrawDebugLine(World, NodeCenters[NodeIdx], NodeCenters[NeighborNodeIdx],
-					FColor::Yellow, false, 0.0f, SDPG_Foreground, 2.0f);
-			}
-		}
-	}
 }
 
 void URealtimeDestructibleMeshComponent::DrawDetachedGroupsDebug(const TArray<FDetachedCellGroup>& Groups)
