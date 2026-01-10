@@ -62,8 +62,8 @@ struct REALTIMEDESTRUCTION_API FUnionFind
 
     UPROPERTY()
     TArray<int32> Parent;
-    
-    UPROPERTY() 
+
+    UPROPERTY()
     TArray<int32> Rank;
 
     void Init(int32 Count)
@@ -132,13 +132,13 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
 
     UPROPERTY()
     FVector Normal = FVector::UpVector;
-    
+
     UPROPERTY()
     float Radius = 0.0f;
-    
+
     UPROPERTY()
     TArray<FVector> MemberPoints;
-    
+
     UPROPERTY()
     TArray<FVector> MemberNormals;
 
@@ -148,8 +148,14 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     UPROPERTY()
     TArray<int32> ChunkIndices; 
 
+    UPROPERTY()
+    FVector AverageForwardVector = FVector::ForwardVector;
 
-    void Init(FVector Point, FVector InNormal, float InRadius, int ChunkIndex)
+    UPROPERTY()
+    FVector ForwardSum = FVector::ZeroVector;
+
+
+    void Init(const FVector& Point, const FVector& InNormal, const FVector& Forward, float InRadius, int ChunkIndex)
     {
         Center = Point;
         Normal = InNormal;
@@ -165,17 +171,27 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         MemberNormals.Add(InNormal);
         MemberRadius.Add(InRadius);
         ChunkIndices.Add(ChunkIndex); 
+
+        ForwardSum = Forward.GetSafeNormal();
+        AverageForwardVector = ForwardSum.IsNearlyZero() ? FVector::ForwardVector : ForwardSum;
     }
-    void AddMember(FVector Point, FVector InNormal, float InRadius, int ChunkIndex )
+    void AddMember(const FVector& Point, const FVector& InNormal, const FVector& InForward, float InRadius, int ChunkIndex )
     {
         MemberPoints.Add(Point);
         MemberNormals.Add(InNormal);
         MemberRadius.Add(InRadius);
         ChunkIndices.Add(ChunkIndex);
-         
+
         // Normal
         Normal += InNormal;
         Normal = Normal.GetSafeNormal();
+
+        const FVector SafeForward = InForward.GetSafeNormal();
+        if (!SafeForward.IsNearlyZero())
+        {
+            ForwardSum += SafeForward;
+            AverageForwardVector += ForwardSum.GetSafeNormal();
+        }
 
         // Center, Radius 확장 
         float Dist = FVector::Dist(Center, Point);
@@ -201,8 +217,11 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         MemberPoints.Empty();
         MemberNormals.Empty();
         MemberRadius.Empty();
+
+        ForwardSum = FVector::ZeroVector;
+        AverageForwardVector = FVector::ForwardVector;
     }
-     
+
 
     float PredictRadius(const FVector& Point, float InRadius) const
     {

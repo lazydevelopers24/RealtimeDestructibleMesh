@@ -79,6 +79,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape")
 	EDestructionToolShape ToolShape = EDestructionToolShape::Cylinder;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Debug")
+	bool bShowToolShape = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Debug")
+	bool bShowAffetedChunks = false;
+
 	//=========================================================================
 	//  Cylinder / Cone  전용 파라매터
 	//=========================================================================  
@@ -232,5 +238,18 @@ private:
 
 	void SetShapeParameters(FRealtimeDestructionRequest& OutRequest);
 	
+	void DrawDebugToolShape(const FVector& Center, const FVector& Direction, const FColor& Color) const;
+
+	void DrawDebugAffetedChunks(const FBox& ChunkBox, const FColor& Color) const;
+
+	void DrawDebugCylinderInternal(const FVector& Center, const FVector& Direction, const FColor& Color) const;
+
+	void DrawDebugSphereInternal(const FVector& Center, const FColor& Color) const;
+
+	FVector GetToolDirection(const FHitResult& Hit, AActor* Owner) const;
+	
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = nullptr;
+
+
+	const float SurfaceMargin = 2.0f;
 };

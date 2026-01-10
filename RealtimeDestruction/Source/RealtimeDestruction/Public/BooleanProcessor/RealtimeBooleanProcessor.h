@@ -85,7 +85,7 @@ struct FBulletHoleBatch
 	int32 ChunkIndex = INDEX_NONE;
 
 	FBulletHoleBatch() = default;
-	~FBulletHoleBatch() = default;	
+	~FBulletHoleBatch() = default;
 
 	void Reserve(int32 Capacity)
 	{
@@ -93,7 +93,7 @@ struct FBulletHoleBatch
 		Attempts.Reserve(Capacity);
 		bIsPenetrations.Reserve(Capacity);
 		TemporaryDecals.Reserve(Capacity);
-		ToolMeshPtrs.Reserve(Capacity);		
+		ToolMeshPtrs.Reserve(Capacity);
 	}
 
 	void Reset()
@@ -165,6 +165,50 @@ struct FBooleanThreadTuner
 	int32 GetRecommendedThreadCount() const;
 };
 
+struct FChunkState
+{
+	int32 Interval = 0;
+	int32 LastSimplifyTriCount = 0;
+	int32 DurationAccumCount = 0;
+	float SubtractDurationAccum = 0.0f;
+
+	void Reset()
+	{
+		Interval = 0;
+		DurationAccumCount = 0;
+		SubtractDurationAccum = 0.0f;
+	}
+};
+
+struct FChunkProcessState
+{
+	TArray<FChunkState> States;
+	
+	void Initialize(int32 ChunkNum)
+	{
+		States.SetNumZeroed(ChunkNum);
+	}
+
+	void Reset()
+	{
+		for (FChunkState& State : States)
+		{
+			State.Reset();
+		}
+	}
+
+	void Shutdown()
+	{
+		States.Empty();
+	}
+
+	FChunkState& GetState(int32 ChunkIndex)
+	{
+		check(States.IsValidIndex(ChunkIndex));
+		return States[ChunkIndex];
+	}
+};
+
 class FRealtimeBooleanProcessor
 {
 public:
@@ -173,12 +217,12 @@ public:
 		std::atomic<bool> bAlive{ true };
 		std::atomic<FRealtimeBooleanProcessor*> Processor{ nullptr };
 		void Clear()
-		{			
+		{
 			bAlive = false;
 			Processor = nullptr;
 		}
 	};
-	
+
 public:
 	FRealtimeBooleanProcessor() = default;
 	~FRealtimeBooleanProcessor();
@@ -205,37 +249,42 @@ public:
 	bool IsStale(int32 Gen) const { return Gen != BooleanGeneration.load(); }
 	bool IsStaleForChunk(int32 Gen, int32 ChunkIndex) const { return Gen != BooleanGenerations[ChunkIndex].load(); }
 
-	bool IsHoleMax() const { return CurrentHoleCount >= MaxHoleCount; }	
+	bool IsHoleMax() const { return CurrentHoleCount >= MaxHoleCount; }
+
+	int32 GetChunkHoleCount(int32 ChunkIndex) const { return ChunkHoleCount[ChunkIndex]; }
+	int32 GetChunkHoleCount(const UPrimitiveComponent* ChunkComponent) const;
 
 	static bool ApplyMeshBooleanAsync(const UE::Geometry::FDynamicMesh3* TargetMesh,
-	                                  const UE::Geometry::FDynamicMesh3* ToolMesh,
-	                                  UE::Geometry::FDynamicMesh3* OutputMesh,
-	                                  const EGeometryScriptBooleanOperation Operation,
-	                                  const FGeometryScriptMeshBooleanOptions Options,
-	                                  const FTransform& TargetTransform = FTransform::Identity,
-	                                  const FTransform& ToolTransform = FTransform::Identity);
-	
+		const UE::Geometry::FDynamicMesh3* ToolMesh,
+		UE::Geometry::FDynamicMesh3* OutputMesh,
+		const EGeometryScriptBooleanOperation Operation,
+		const FGeometryScriptMeshBooleanOptions Options,
+		const FTransform& TargetTransform = FTransform::Identity,
+		const FTransform& ToolTransform = FTransform::Identity);
+
 	static void ApplySimplifyToPlanarAsync(UE::Geometry::FDynamicMesh3* TargetMesh, FGeometryScriptPlanarSimplifyOptions Options);
-	
+
 	static UE::Geometry::FDynamicMesh3 HierarchicalUnion(TArray<UE::Geometry::FDynamicMesh3>& Results, const FGeometryScriptMeshBooleanOptions& Options);
 
 
 private:
 	int32 DrainBatch(FBulletHoleBatch& InBatch);
 	void StartBooleanWorkerAsync(FBulletHoleBatch&& InBatch, int32 Gen);
-	
+
 	void StartBooleanWorkerAsyncForChunk(FBulletHoleBatch&& InBatch, int32 Gen);
 
 	void StartBooleanWorkerParallel(FBulletHoleBatch&& InBatch, int32 Gen);
 
-	void AccumulateSubtractDuration(double CurrentSubDuration);
+	void AccumulateSubtractDuration(int32 ChunkIndex, double CurrentSubDuration);
 
 	void UpdateSimplifyInterval(double CurrentSetMeshAvgCost);
 
-	bool TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 UnionCount);
+	bool TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 ChunkIndex, int32 UnionCount);
 
 	void EnqueueRetryOps(TQueue<FBulletHole, EQueueMode::Mpsc>& Queue, FBulletHoleBatch&& InBatch,
-	                     UDynamicMeshComponent* TargetMesh, int32 ChunkIndex, int32& DebugCount);
+		UDynamicMeshComponent* TargetMesh, int32 ChunkIndex, int32& DebugCount);
+
+	int32& GetChunkInterval(int32 ChunkIndex);
 
 private:
 	TWeakObjectPtr<URealtimeDestructibleMeshComponent> OwnerComponent = nullptr;
@@ -261,9 +310,9 @@ private:
 	 * 위 경우에서 메시가 새로 갱신되었는데 이전의 불리언 연산값을 반영하는 결과가 발생할 수 있음
 	 * 3번 단계에서 BooleanGeneration을 증가시키고 GT에서 Stale 검사를 하면 방어 가능
 	 */
-	// deprecated_realdestruction
-	// Legacy 코드, 기존의 단일 메시에 대한 Gen 관리용 멤버 변수
-	// Chunk 안정화 후 제거
+	 // deprecated_realdestruction
+	 // Legacy 코드, 기존의 단일 메시에 대한 Gen 관리용 멤버 변수
+	 // Chunk 안정화 후 제거
 	std::atomic<int32>BooleanGeneration = 0;
 	// Chunk용
 	TArray<std::atomic<int32>> BooleanGenerations;
@@ -273,28 +322,24 @@ private:
 	int32 MaxHoleCount = 0;
 	int32 MaxOpsPerFrame = 0;
 	int32 MaxBatchSize = 0;
-	
+
+	TArray<int32> ChunkHoleCount = {};
 	int32 CurrentHoleCount = 0;
 
-	/*
-	 * Simplify 변수
-	 */
-	int32 LastSimplifyTriCount = 0;
 	// defaut 값 부터 테스트
 	int32 AngleThreshold = 0.001;
+
+	FChunkProcessState ChunkStates;
 	
-	int32 CurrentInterval = 0;
 	int32 MaxInterval = 0;
 	int32 InitInterval = 0;
 
-	double SubtractDurationAccum = 0.0;
 	double SubDurationHighThreshold = 0.0;
 	double SubDurationLowThreshold = 5.0;
-	int32 DurationAccumCount = 0;
 
 	double SetMeshAvgCost = 0.0;
 
-		// Debug
+	// Debug
 	int32 OpAccum = 0;
 	int32 DurationCount = 0;
 	int32 GrowthCount = 0;
@@ -350,7 +395,7 @@ private:
 
 	/** 여러개의 Worker를 사용하기 위한 테스트용 변수들 */
 	TQueue<FUnionResult, EQueueMode::Mpsc> UnionResultsQueue;
-	
+
 	/** 현재 Union 작업 중인 Worker 수 */
 	std::atomic<int32> ActiveUnionWorkers{ 0 };
 
@@ -361,7 +406,7 @@ private:
 	std::atomic<int32> NextBatchID{ 0 };
 
 	/** Subtract 대기 중 배치 ID (순서 보장용) */
-	std::atomic<int32> NextSubtractBatchID{ 0 }; 
+	std::atomic<int32> NextSubtractBatchID{ 0 };
 
 	/** Chunk별 UnionResults Queue (Chunk마다 독립적인 파이프라인) */
 	TArray<TQueue<FUnionResult, EQueueMode::Mpsc>*> ChunkUnionResultsQueues;

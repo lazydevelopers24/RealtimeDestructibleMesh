@@ -28,6 +28,7 @@
 #include <ThirdParty/skia/skia-simplify.h>
 
 #include "BulletClusterComponent.h"
+#include "Algo/Unique.h"
 
 //////////////////////////////////////////////////////////////////////////
 // FCompactDestructionOp 구현 (언리얼 내장 NetQuantize 사용)
@@ -296,12 +297,7 @@ bool URealtimeDestructibleMeshComponent::RequestDestruction(const FRealtimeDestr
 { 
 	if (bEnableClustering && BulletClusterComponent)
 	{
-		BulletClusterComponent->RegisterRequest(
-			Request.ImpactPoint,
-			Request.ImpactNormal,
-			Request.ShapeParams.Radius,
-			Request.ChunkIndex
-		); 
+		BulletClusterComponent->RegisterRequest(Request); 
 	}
 	return ExecuteDestructionInternal(Request);
 }
@@ -368,12 +364,7 @@ void URealtimeDestructibleMeshComponent::RegisterForClustering(const FRealtimeDe
 		return;
 	}
 
-	BulletClusterComponent->RegisterRequest(
-		Request.ImpactPoint,
-		Request.ImpactNormal,
-		Request.ShapeParams.Radius,
-		Request.ChunkIndex
-	);
+	BulletClusterComponent->RegisterRequest(Request);
 
 }
 
@@ -1213,9 +1204,12 @@ bool URealtimeDestructibleMeshComponent::CheckAndSetChunkBusy(int32 ChunkIndex)
 	return bIsBusy;
 }
 
-void URealtimeDestructibleMeshComponent::FindChunksInRadius(const FVector& WorldCenter, float Radius, TArray<int32>& OutChunkIndices)
+void URealtimeDestructibleMeshComponent::FindChunksInRadius(const FVector& WorldCenter, float Radius, TArray<int32>& OutChunkIndices, bool bAppend)
 {
-	OutChunkIndices.Reset();
+	if (!bAppend)
+	{
+		OutChunkIndices.Reset();
+	}
 
 	if (GridToChunkMap.Num() == 0 || SliceCount.X <= 0 || SliceCount.Y <= 0 || SliceCount.Z <= 0)
 	{
@@ -1244,8 +1238,13 @@ void URealtimeDestructibleMeshComponent::FindChunksInRadius(const FVector& World
 	int32 MaxGridZ = FMath::Clamp(static_cast<int32>((MaxPos.Z - MeshBounds.Min.Z) / CellSize.Z), 0, SliceCount.Z - 1);
 
 
+	/*
+	 * 1. GridToChunk를 만들 때 하나의 그리드에 하나의 청크가 매핑되도록 생성됨
+	 * 2. 3중 for문을 돌면서 GridIndex가 다름
+	 * 위 2가지 이유로 청크인덱스가 중복될 수 없으므로 TSet을 주석처리해서 배열의 메모리 재활용 하도록 변경 
+	 */
 	// 해당 범위의 그리드 셀만 순회
-	TSet<int32> UniqueChunks;
+	// TSet<int32> UniqueChunks;
 	for (int32 Z = MinGridZ; Z <= MaxGridZ; ++Z)
 	{
 		for (int32 Y = MinGridY; Y <= MaxGridY; ++Y)
@@ -1259,14 +1258,60 @@ void URealtimeDestructibleMeshComponent::FindChunksInRadius(const FVector& World
 					int32 ChunkId = GridToChunkMap[GridIndex];
 					if (ChunkId != INDEX_NONE)
 					{
-						UniqueChunks.Add(ChunkId);
+						OutChunkIndices.Add(ChunkId);
+						// UniqueChunks.Add(ChunkId);
 					}
 				}
 			}
 		}
 	}
 
-	OutChunkIndices = UniqueChunks.Array();
+	// OutChunkIndices = UniqueChunks.Array();
+}
+
+void URealtimeDestructibleMeshComponent::FindChunksAlongLine(const FVector& WorldStart, const FVector& WorldEnd, float Radius, TArray<int32>& OutChunkIndices, bool bAppend)
+{
+	if (!bAppend)
+	{
+		OutChunkIndices.Reset();
+	}
+	
+	FVector Forward = WorldEnd - WorldStart;	
+	if (Forward.IsNearlyZero())
+	{
+		return;
+	}
+
+	Forward.Normalize();
+	FVector Right, Up;
+	Forward.FindBestAxisVectors(Right, Up);
+
+	const float OffsetRadius = Radius * 0.9f;
+
+	// 실린더의 중심과 4방향의 offset
+	FVector Offsets[] = {
+		FVector::ZeroVector,
+		Right * OffsetRadius,
+		-Right * OffsetRadius,
+		Up * OffsetRadius,
+		-Up * OffsetRadius
+	};
+
+	// 5방향 DDA 시작
+	for (const FVector& Offset : Offsets)
+	{
+		FVector RayStart = WorldStart + Offset;
+		FVector RayEnd = WorldEnd + Offset;
+
+		FindChunksAlongLineInternal(RayStart, RayEnd, OutChunkIndices);
+	}
+
+	if (OutChunkIndices.Num() > 1)
+	{
+		OutChunkIndices.Sort();
+		int32 UniqueCount = Algo::Unique(OutChunkIndices);
+		OutChunkIndices.SetNum(UniqueCount);
+	}
 }
 
 void URealtimeDestructibleMeshComponent::ClearChunkBusy(int32 ChunkIndex)
@@ -2733,6 +2778,123 @@ void URealtimeDestructibleMeshComponent::UpdateCellGraphForModifiedChunks()
 	// 7. ModifiedChunkIds 초기화
 	ModifiedChunkIds.Reset();
 	bShouldDebugUpdate = true;
+}
+
+void URealtimeDestructibleMeshComponent::FindChunksAlongLineInternal(const FVector& WorldStart, const FVector& WorldEnd, TArray<int32>& OutChunkIndices)
+{
+	if (GridToChunkMap.Num() == 0 || SliceCount.X <= 0 || SliceCount.Y <= 0 || SliceCount.Z <= 0)
+	{
+		return;
+	}
+
+	const FVector& ChunkSize = CachedCellSize;
+	const FBox& MeshBounds = CachedMeshBounds;
+
+	// World to Local
+	FVector LocalStart = GetComponentTransform().InverseTransformPosition(WorldStart);
+	FVector LocalEnd = GetComponentTransform().InverseTransformPosition(WorldEnd);
+
+	/*
+	 * Slab method로 라인이 메시 내부에 있는 지 검사할 필요가 없음
+	 * 라인의 시작점은 항상 메시 표면/내부이고 끝점의 경우 clamp로 처리
+	 */
+
+	// 그리드 공간으로 변환
+	auto ToGridSpace = [&](const FVector& Position) -> FVector
+	{
+		return FVector(
+			(Position.X - MeshBounds.Min.X) / ChunkSize.X,
+			(Position.Y - MeshBounds.Min.Y) / ChunkSize.Y,
+			(Position.Z - MeshBounds.Min.Z) / ChunkSize.Z
+			);
+	};
+	FVector GridStart = ToGridSpace(LocalStart);
+	FVector GridEnd = ToGridSpace(LocalEnd);
+
+	// 인덱스 변환 및 클램핑
+	// End를 박스 내부로 제한
+	int32 CurrentX = FMath::Clamp(FMath::FloorToInt(GridStart.X), 0, SliceCount.X - 1);
+	int32 CurrentY = FMath::Clamp(FMath::FloorToInt(GridStart.Y), 0, SliceCount.Y - 1);
+	int32 CurrentZ = FMath::Clamp(FMath::FloorToInt(GridStart.Z), 0, SliceCount.Z - 1);
+
+	int32 EndX = FMath::Clamp(FMath::FloorToInt(GridEnd.X), 0, SliceCount.X - 1);
+	int32 EndY = FMath::Clamp(FMath::FloorToInt(GridEnd.Y), 0, SliceCount.Y - 1);
+	int32 EndZ = FMath::Clamp(FMath::FloorToInt(GridEnd.Z), 0, SliceCount.Z - 1);
+
+	// DDA 초기화(amanatides & woo의 fast voxel traversal algorithm)
+	int32 StepX = (GridEnd.X >= GridStart.X) ? 1 : -1;
+	int32 StepY = (GridEnd.Y >= GridStart.Y) ? 1 : -1;
+	int32 StepZ = (GridEnd.Z >= GridStart.Z) ? 1 : -1;
+
+	// tDelta
+	FVector Direction = GridEnd - GridStart;
+	float tDeltaX = (FMath::Abs(Direction.X) > KINDA_SMALL_NUMBER) ? (1.0f / FMath::Abs(Direction.X)) : FLT_MAX;
+	float tDeltaY = (FMath::Abs(Direction.Y) > KINDA_SMALL_NUMBER) ? (1.0f / FMath::Abs(Direction.Y)) : FLT_MAX;
+	float tDeltaZ = (FMath::Abs(Direction.Z) > KINDA_SMALL_NUMBER) ? (1.0f / FMath::Abs(Direction.Z)) : FLT_MAX;
+
+	// tMax
+	float FracX = GridStart.X - FMath::FloorToFloat(GridStart.X);
+	float FracY = GridStart.Y - FMath::FloorToFloat(GridStart.Y);
+	float FracZ = GridStart.Z - FMath::FloorToFloat(GridStart.Z);
+
+	float tMaxX = (StepX > 0) ? (1.0f - FracX) * tDeltaX : FracX * tDeltaX;
+	float tMaxY = (StepY > 0) ? (1.0f - FracY) * tDeltaY : FracY * tDeltaY;
+	float tMaxZ = (StepZ > 0) ? (1.0f - FracZ) * tDeltaZ : FracZ * tDeltaZ;
+
+	int32 MaxIteration = SliceCount.X + SliceCount.Y + SliceCount.Z;
+
+	// 그리드 순회
+	for (int32 i = 0; i < MaxIteration; i++)
+	{
+		if (CurrentX >= 0 && CurrentX < SliceCount.X &&
+			CurrentY >= 0 && CurrentY < SliceCount.Y &&
+			CurrentZ >= 0 && CurrentZ < SliceCount.Z)
+		{
+			int32 GridIndex = CurrentX + CurrentY * SliceCount.X + CurrentZ * SliceCount.X * SliceCount.Y;
+			if (GridToChunkMap.IsValidIndex(GridIndex))
+			{
+				int32 ChunkIndex = GridToChunkMap[GridIndex];
+				if (ChunkIndex != INDEX_NONE)
+				{
+					OutChunkIndices.Add(ChunkIndex);
+				}
+			}
+		}
+
+		// 목표지점 도달 시 종료
+		if (CurrentX == EndX && CurrentY == EndY && CurrentZ == EndZ)
+		{
+			break;
+		}
+
+		// tMax가 가장 작은 축으로 한 칸 이동(먼저 부딪히는 벽쪽으로 이동)
+		if (tMaxX < tMaxY)
+		{
+			if (tMaxX < tMaxZ)
+			{
+				CurrentX += StepX;
+				tMaxX += tDeltaX;
+			}
+			else
+			{
+				CurrentZ += StepZ;
+				tMaxZ += tDeltaZ;
+			}
+		}
+		else
+		{
+			if (tMaxY < tMaxZ)
+			{
+				CurrentY += StepY;
+				tMaxY += tDeltaY;
+			}
+			else
+			{
+				CurrentZ += StepZ;
+				tMaxZ += tDeltaZ;
+			}
+		}
+	}
 }
 
 void URealtimeDestructibleMeshComponent::DrawDetachedGroupsDebug(const TArray<FDetachedCellGroup>& Groups)

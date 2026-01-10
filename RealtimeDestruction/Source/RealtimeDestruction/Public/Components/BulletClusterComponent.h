@@ -6,7 +6,7 @@
 #include "BulletClusterComponent.generated.h"
 
 class URealtimeDestructibleMeshComponent;
- 
+
 USTRUCT()
 struct FPendingClusteringRequest
 {
@@ -20,30 +20,33 @@ struct FPendingClusteringRequest
 
 	UPROPERTY()
 	float Radius = 10.0f;
- 
+
 	UPROPERTY()
 	float ChunkIndex = INDEX_NONE;
+
+	UPROPERTY()
+	FVector ToolForwardVector = FVector::ForwardVector;
 };
 
 UCLASS(ClassGroup = (Destruction), meta = (BlueprintSpawnableComponent))
-class UBulletClusterComponent  : public UActorComponent
+class UBulletClusterComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	 UBulletClusterComponent();
-	
+	UBulletClusterComponent();
+
 	// ===============================================
 	// 기본 변수 
 	// ===============================================
-	
+
 	// 군집화 시간 
 	UPROPERTY()
 	float ClusterWindowTime = 0.3f;
 
 	UPROPERTY()
 	float MergeDistanceThreshold = 10.0f;
-	
+
 	UPROPERTY()
 	float MaxClusterRadius = 20.0f;
 
@@ -53,20 +56,20 @@ public:
 	UPROPERTY()
 	float ClusterRadiusOffset = 1.0f;
 
-	
-	
+
+
 	// ===============================================
 	// 기본 함수
 	// ===============================================
 	void Init(float InMergeDistance, float InMaxCluserRadius, int InClusterCountThreshold, float InClusterRadiusOffset);
-	
+
 	void SetOwnerMesh(URealtimeDestructibleMeshComponent* InOwnerMesh);
 
 	// 요청 등록
 	UFUNCTION()
-	void RegisterRequest(const FVector& ImpactPoint, const FVector& ImpactNormal, const float Radius, int32 ChunkIndex);
+	void RegisterRequest(const FRealtimeDestructionRequest& Request);
 
-	
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

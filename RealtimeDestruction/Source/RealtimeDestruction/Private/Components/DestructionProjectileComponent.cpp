@@ -280,7 +280,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	// 자신과 겹치는 경우 제외
 	TArray<AActor*> ActorToIgnore;
 	ActorToIgnore.Add(Owner);
-
+	
 	// 중복 방지용 Set
 	TSet<int32> Targets;
 	
@@ -290,33 +290,60 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	{
 		Targets.Add(HitChunkIndex);
 	}
-
+	
 	AActor* TargetActor = DestructComp->GetOwner();
-	int32 ChunkNum = DestructComp->GetChunkNum();
+
+	// 인접 청크 인덱스 추출
+	TArray<int32> NearbyChunkIndices;
+	NearbyChunkIndices.Reserve(32);
+	DestructComp->FindChunksInRadius(Hit.ImpactPoint, OverlappedRadius, NearbyChunkIndices, false);
+	
 	const FBox ToolBounds = FBox::BuildAABB(Hit.ImpactPoint, FVector(OverlappedRadius));
-	for (int32 i = 0; i < ChunkNum; i++)
+	for (const int32 ChunkIndex : NearbyChunkIndices)
 	{
-		UDynamicMeshComponent* Chunk = DestructComp->GetChunkMeshComponent(i);
+		if (Targets.Contains(ChunkIndex))
+		{
+			continue;
+		}
+		
+		UDynamicMeshComponent* Chunk = DestructComp->GetChunkMeshComponent(ChunkIndex);
 		if (!Chunk)
 		{
 			continue;
 		}
-	
+		
 		if (!Chunk->IsVisible() || Chunk->GetOwner() != TargetActor)
 		{
 			continue;
 		}
-	
+
 		const FBox ChunkBox = Chunk->Bounds.GetBox();
 		if (ToolBounds.Intersect(ChunkBox))
 		{
-			Targets.Add(i);
-			// DrawDebugBox(GetWorld(), ToolBounds.GetCenter(),
-			// 	ToolBounds.GetExtent() + FVector(0.5f), FColor::Red, false,
-			// 	2.0f, 0, 2.5f);
-			// DrawDebugBox(GetWorld(), ChunkBox.GetCenter(),
-			// 	ChunkBox.GetExtent() + FVector(0.5f), FColor::Blue, false,
-			// 	2.0f, 0, 2.5f);
+			DrawDebugAffetedChunks(ToolBounds, FColor::Black);
+			Targets.Add(ChunkIndex);
+		}
+	}	
+	
+	FVector Direction = GetToolDirection(Hit, Owner);
+	FVector ToolStart = Hit.ImpactPoint;
+	FVector ToolEnd = ToolStart + (Direction * CylinderHeight);
+	TArray<int32> LineAlongChunkIndices;
+	LineAlongChunkIndices.Reserve(DestructComp->GetChunkNum());
+	DestructComp->FindChunksAlongLine(ToolStart, ToolEnd, ToolRadius, LineAlongChunkIndices, false);
+	for (int32 ChunkIndex : LineAlongChunkIndices)
+	{
+		if (auto ChunkComp = DestructComp->GetChunkMeshComponent(ChunkIndex))
+		{
+			Targets.Add(ChunkIndex);			
+		}
+	}
+
+	if (!ToolMeshPtr.IsValid())
+	{
+		if (!EnsureToolMesh())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
 		}
 	}
 	
@@ -329,19 +356,12 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		Request.ImpactPoint = Hit.ImpactPoint;
 		Request.ImpactNormal = Hit.ImpactNormal;
 		Request.ChunkIndex = TargetIndex;
+		Request.ToolForwardVector = GetToolDirection(Hit, Owner);		
 
-		UE_LOG(LogTemp, Warning, TEXT("Seam %d"), Request.ChunkIndex);
-		if (!ToolMeshPtr.IsValid())
-		{
-			if (!EnsureToolMesh())
-			{
-				UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
-			}
-		}
 		Request.ToolMeshPtr = ToolMeshPtr;
 		Request.ToolShape = ToolShape;
 	
-		SetShapeParameters(Request);
+		SetShapeParameters(Request);		
 	
 		if (NetworkComp)
 		{
@@ -354,6 +374,17 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 			DestructComp->RequestDestruction(Request);
 		}
 	
+		// Debug
+		{
+			DrawDebugToolShape(Request.ToolCenterWorld, Request.ToolForwardVector, FColor::Cyan);
+			if (bShowAffetedChunks)
+			{
+				FBox ChunkBox = DestructComp->GetChunkMeshComponent(TargetIndex)->Bounds.GetBox();
+				DrawDebugAffetedChunks(ChunkBox, FColor::Red);
+			}
+		}
+	}	
+
 		// 즉시 피드백 표시 (데칼, 파티클) - 모든 네트워크 모드에서 로컬로 스폰
 		if (bShowImmediateFeedback)
 		{
@@ -368,98 +399,6 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		{
 			Owner->Destroy();
 		}
-	}
-
-	/*
-	 * deprecated_realdestruction
-	 */
-	// 파괴 요청 생성
-	// FRealtimeDestructionRequest Request;
-	// Request.ImpactPoint = Hit.ImpactPoint;
-	// Request.ImpactNormal = Hit.ImpactNormal;
-	// Request.ChunkIndex = DestructComp->GetChunkIndex(Hit.GetComponent());
-	//
-	// if (!ToolMeshPtr.IsValid())
-	// {
-	// 	if (!EnsureToolMesh())
-	// 	{
-	// 		UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
-	// 	}	
-	// }	
-	// Request.ToolMeshPtr = ToolMeshPtr;
-	// Request.ToolShape = ToolShape;
-	//
-	// SetShapeParameters(Request);
-	//
-	// // 처리 시간 측정 시작
-	// UWorld* World = GetWorld();
-	// if (!World)
-	// {
-	// 	return;
-	// }
-	//
-	// const double StartTime = FPlatformTime::Seconds();
-	//
-	// // FPS 영향 측정을 위한 파괴 전 FPS 기록
-	// float FPSBefore = 0.0f;
-	// if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
-	// {
-	// 	FPSBefore = Debugger->GetCurrentFPS();
-	// }
-	//
-	// // Instigator(Pawn) → PlayerController → NetworkComp 찾기
-	// APawn* InstigatorPawn = Owner->GetInstigator();
-	// APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
-	// UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
-	//
-	// if (NetworkComp)
-	// {
-	// 	// NetworkComp가 서버/클라이언트/스탠드얼론 모두 처리
-	// 	NetworkComp->RequestDestruction(DestructComp, Request);
-	// }
-	// else
-	// {
-	// 	// NetworkComp가 없으면 로컬에서 직접 처리 (스탠드얼론 또는 설정 오류)
-	// 	DestructComp->RequestDestruction(Request);
-	// }
-	//
-	// // 처리 시간 측정 종료 (밀리초 단위)
-	// const float ProcessTimeMs = static_cast<float>((FPlatformTime::Seconds() - StartTime) * 1000.0);
-	//
-	// // FPS 영향 기록 (파괴 후 FPS와 비교)
-	// if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
-	// {
-	// 	float FPSAfter = Debugger->GetCurrentFPS();
-	// 	Debugger->RecordFPSImpact(FPSBefore, FPSAfter);
-	// }
-	//
-	// // 즉시 피드백 표시 (데칼, 파티클) - 모든 네트워크 모드에서 로컬로 스폰
-	// if (bShowImmediateFeedback)
-	// {
-	// 	SpawnImmediateFeedback(Hit);
-	// }
-	//
-	// // 디버거에 파괴 기록
-	// if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
-	// {
-	// 	Debugger->RecordDestruction(
-	// 		Hit.ImpactPoint,
-	// 		Hit.ImpactNormal,
-	// 		HoleRadius,
-	// 		Owner->GetInstigator(),
-	// 		Hit.GetActor(),
-	// 		ProcessTimeMs
-	// 	);
-	// }
-	//
-	// // 이벤트 브로드캐스트
-	// OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
-	//
-	// // 투사체 제거
-	// if (bDestroyOnHit)
-	// {
-	// 	Owner->Destroy();
-	// }
 }
 
 bool UDestructionProjectileComponent::EnsureToolMesh()
@@ -493,11 +432,11 @@ bool UDestructionProjectileComponent::EnsureToolMesh()
 			PrimitiveOptions,
 			FTransform::Identity,
 			CylinderRadius,
-			CylinderHeight,
+			CylinderHeight + SurfaceMargin,
 			RadialSteps,
 			HeightSubdivisions,
 			bCapped,
-			EGeometryScriptPrimitiveOriginMode::Center
+			EGeometryScriptPrimitiveOriginMode::Base
 		);
 		break;
 	}
@@ -514,16 +453,30 @@ bool UDestructionProjectileComponent::EnsureToolMesh()
 
 void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionRequest& OutRequest)
 {
+	const float PenetrationOffset = 0.5f; // 조절 가능
+	const float TotalHeight = CylinderHeight + SurfaceMargin;
 	switch (OutRequest.ToolShape)
 	{
 	case EDestructionToolShape::Cylinder:
+		{
+			/*
+			 * Cylinder 생성 시 Base로 생성 - 원기둥의 바닥을 원점(0, 0, 0)으로 해서 +z축으로 생성 
+			 */
 		OutRequest.Depth = CylinderHeight;
+			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
 		break;
+		}
 	case EDestructionToolShape::Sphere:
+		{
 		OutRequest.Depth = SphereRadius;
+			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint + (OutRequest.ToolForwardVector * PenetrationOffset);
+		}
 		break;
 	default:
+		{
 		OutRequest.Depth = CylinderHeight;
+			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
+		}
 		break;
 	}
 
@@ -560,6 +513,86 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 		OutRequest.ShapeParams.RadiusSteps);
 }
 
+void UDestructionProjectileComponent::DrawDebugToolShape(const FVector& Center, const FVector& Direction, const FColor& Color) const
+{
+	if (!GetWorld() || !bShowToolShape) 
+	{
+		return;
+	}	
+	
+	switch (ToolShape)
+	{
+	case EDestructionToolShape::Cylinder:
+		{
+			DrawDebugCylinderInternal(Center, Direction, Color);
+			break;
+		}
+	case EDestructionToolShape::Sphere:
+		{
+			DrawDebugSphereInternal(Center, Color);
+			break;
+		}
+	}	
+}
+
+void UDestructionProjectileComponent::DrawDebugAffetedChunks(const FBox& ChunkBox, const FColor& Color) const
+{
+	if (!bShowAffetedChunks || !GetWorld())
+	{
+		return;
+	}
+
+	DrawDebugBox(GetWorld(), ChunkBox.GetCenter(),
+		ChunkBox.GetExtent() + FVector(0.5f), Color, false,
+		2.0f, 0, 2.5f);
+}
+
+void UDestructionProjectileComponent::DrawDebugCylinderInternal(const FVector& Center, const FVector& Direction,
+                                                                const FColor& Color) const
+{
+	float TotalHeight = CylinderHeight + SurfaceMargin;	
+	FVector Start = Center;
+	FVector End = Center + (Direction * TotalHeight);
+	
+	DrawDebugCylinder(GetWorld(), Start, End, CylinderRadius, 16, Color, false, 5.0f, 0, 1.5f);
+	DrawDebugCircle(GetWorld(), Start + (Direction * SurfaceMargin),
+		CylinderRadius, 16, FColor::Red, false, 5.0f, 0, 1.5f);
+	// DrawDebugPoint(GetWorld(), Center, 5.0f, Color, false, 1.5f);
+	// DrawDebugDirectionalArrow(GetWorld(), Start, End, 10.f, Color, false, 5.0f, 0, 1.0f);
+}
+
+void UDestructionProjectileComponent::DrawDebugSphereInternal(const FVector& Center, const FColor& Color) const
+{
+	DrawDebugSphere(GetWorld(), Center, SphereRadius, 16, Color, false, 5.0f, 0, 1.5f);
+}
+
+FVector UDestructionProjectileComponent::GetToolDirection(const FHitResult& Hit, AActor* Owner) const
+{
+	FVector Direction = (Hit.TraceEnd - Hit.TraceStart);
+
+	if (Direction.IsNearlyZero() && Owner)
+	{
+		Direction = Owner->GetVelocity();
+	}
+
+	if (Direction.IsNearlyZero() && Owner)
+	{
+		Direction = Owner->GetActorForwardVector();
+	}
+
+	if (Direction.IsNearlyZero() && Owner)
+	{
+		Direction = GetForwardVector();
+	}
+
+	if (Direction.IsNearlyZero())
+	{
+		Direction = Hit.ImpactNormal;
+	}
+
+	return Direction.GetSafeNormal();
+}
+
 void UDestructionProjectileComponent::RequestDestructionManual(const FHitResult& HitResult)
 {
 	if (!HitResult.GetActor())
@@ -577,8 +610,8 @@ void UDestructionProjectileComponent::RequestDestructionManual(const FHitResult&
 		if (ChunkNum == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequest %d"), ChunkNum);
-		ProcessDestructionRequest(DestructComp, HitResult);
-	}
+			ProcessDestructionRequest(DestructComp, HitResult);
+		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequestForCell %d"), ChunkNum);

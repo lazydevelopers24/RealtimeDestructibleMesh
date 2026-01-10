@@ -97,6 +97,10 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector ToolForwardVector = FVector::ForwardVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	FVector ToolCenterWorld = FVector::ZeroVector;
+	
 };
 
 USTRUCT(BlueprintType)
@@ -238,7 +242,7 @@ public:
 	virtual ~URealtimeDestructibleMeshComponent() override;
 
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
-	
+
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",meta = (DeprecatedFunction))
 	bool InitializeFromStaticMesh(UStaticMesh* InMesh);
 
@@ -287,7 +291,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
 	int32 GetHoleCount() const;
-	
+
 	// Replication
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerEnqueueOps(const TArray<FRealtimeDestructionRequest>& Requests);
@@ -449,7 +453,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float ClusterRaidusOffset = 1.0f;
-	
+
 	UPROPERTY()
 	FBox CachedMeshBounds;
 
@@ -499,16 +503,17 @@ public:
 
 	bool CheckAndSetChunkBusy(int32 ChunkIndex);
 
-	void FindChunksInRadius(const FVector& WorldCenter, float Radius, TArray<int32> & OutChunkIndices);
+	void FindChunksInRadius(const FVector& WorldCenter, float Radius, TArray<int32>& OutChunkIndices, bool bAppend = false);
 
+	void FindChunksAlongLine(const FVector& WorldStart, const FVector& WorldEnd, float Radius, TArray<int32>& OutChunkIndices, bool bAppend = false);
 
 	// 비트 연산은 원자적이지 않아서 GT 외에 호출할 때는 로직 수정 필요함
 	void ClearChunkBusy(int32 ChunkIndex);
 
-	void ClearAllChunkBusyBits();
+	void ClearAllChunkBusyBits(); 
 
 	void SetChunkBits(int32 ChunkIndex, int32& BitIndex, int32& BitOffset);
-	
+
 	/*
 	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
 	 * 검증 완료되면 유지
@@ -596,7 +601,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxOpsPerFrame = 16;
 
@@ -743,6 +748,8 @@ private:
 	 */
 	void UpdateCellGraphForModifiedChunks();
 
+	void FindChunksAlongLineInternal(const FVector& WorldStart, const FVector& WorldEnd, TArray<int32>& OutChunkIndices);
+
 public:
 	/** CellGraph 초기화 상태 확인 */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
@@ -760,7 +767,7 @@ public:
 	//int32 GetCellMeshCount() const { return CellMeshes.Num(); }
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
 	int32 GetCellMeshCount() const { return CellMeshComponents.Num(); }
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	FIntVector SliceCount;
 
@@ -793,16 +800,16 @@ protected:
 	/** 액터 위에 디버그 정보 텍스트 표시 여부 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowDebugText = false;
-	
+
 	/** CellGraph 노드 및 연결 디버그 표시 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowCellGraphDebug = false;
 
 	/** 디버그 텍스트 갱신. 메시 업데이트시에만 수행하는 식으로 업데이트 빈도 제어 */
 	void UpdateDebugText();
-	
+
 	void DrawDebugText() const;
-	
+
 	void DrawCellGraphDebug();
 
 	/** 분리된 Cell 그룹 디버그 시각화 */
@@ -843,7 +850,7 @@ private:
 
 	/** Cell 바운딩 박스 계산 */
 	FBox CalculateCellBounds(int32 CellId) const;
-	
+
 	UDynamicMesh* CreateToolMeshFromRequest(const FRealtimeDestructionRequest& Request);
 
 	///////////////////////////
