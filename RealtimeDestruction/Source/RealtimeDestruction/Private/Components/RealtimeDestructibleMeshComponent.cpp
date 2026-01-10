@@ -308,7 +308,7 @@ bool URealtimeDestructibleMeshComponent::RequestDestruction(const FRealtimeDestr
 
 bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealtimeDestructionRequest& Request)
 {
-	if (CurrentHoleCount >= MaxHoleCount)
+	if (MaxHoleCount > 0 && CurrentHoleCount >= MaxHoleCount)
 	{
 		return false;
 	}
@@ -404,7 +404,7 @@ void URealtimeDestructibleMeshComponent::SetRenderUpdateMode(ERealtimeRenderUpda
 
 void URealtimeDestructibleMeshComponent::SetMaxHoleCount(int32 MaxCount)
 {
-	MaxHoleCount = FMath::Max(1, MaxCount);
+	MaxHoleCount = FMath::Max(0, MaxCount);
 }
 
 int32 URealtimeDestructibleMeshComponent::GetHoleCount() const
@@ -938,7 +938,7 @@ bool URealtimeDestructibleMeshComponent::ApplyDestructionRequestInternal(const F
 		return false;
 	}
 
-	if (CurrentHoleCount >= MaxHoleCount)
+	if (MaxHoleCount > 0 && CurrentHoleCount >= MaxHoleCount)
 	{
 		// UE_LOG(LogTemp, Warning, TEXT("RealtimeDestructibleMeshComponent: Maximum hole count reached"));
 		return false;
@@ -3244,7 +3244,7 @@ bool URealtimeDestructibleMeshComponent::ValidateDestructionRequest(
 	}
 
 	// 1. 최대 구멍 수 체크
-	if (CurrentHoleCount >= MaxHoleCount)
+	if (MaxHoleCount > 0 && CurrentHoleCount >= MaxHoleCount)
 	{
 		OutReason = EDestructionRejectReason::MaxHoleReached;
 		return false;

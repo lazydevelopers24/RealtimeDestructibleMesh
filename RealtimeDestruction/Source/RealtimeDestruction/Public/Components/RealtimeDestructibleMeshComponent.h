@@ -570,8 +570,8 @@ protected:
 	 * - 큰 오브젝트: 50-100
 	 * - 성능 우선: 20 이하
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1, ClampMax = 1000))
-	int32 MaxHoleCount = 100;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0, ClampMax = 1000))
+	int32 MaxHoleCount = 1000;
 
 	/**
 	 * 현재까지 생성된 구멍 개수
