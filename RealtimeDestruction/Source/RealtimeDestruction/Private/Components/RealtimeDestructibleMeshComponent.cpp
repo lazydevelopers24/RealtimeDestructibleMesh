@@ -24,6 +24,9 @@
 
 #include "DrawDebugHelpers.h"
 #include "DynamicMesh/Operations/MergeCoincidentMeshEdges.h"
+#include "Selections/MeshConnectedComponents.h"
+#include "Operations/MeshBoolean.h"
+#include "BooleanProcessor/RealtimeBooleanProcessor.h"
 
 #include <ThirdParty/skia/skia-simplify.h>
 
@@ -622,6 +625,451 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		CellState.DestroyedCells.Num(), CellState.DetachedGroups.Num());
 }
 
+int32 URealtimeDestructibleMeshComponent::GridCellIdToChunkId(int32 GridCellId) const
+{
+	if (!GridCellCache.IsValidCellId(GridCellId))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GridCellIdToChunkId: Invalid CellId=%d"), GridCellId);
+		return INDEX_NONE;
+	}
+	if (GridToChunkMap.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GridCellIdToChunkId: GridToChunkMap is empty!"));
+		return INDEX_NONE;
+	}
+
+	// GridCellCache에서 로컬 중심점 획득
+	const FVector LocalCenter = GridCellCache.IdToLocalCenter(GridCellId);
+
+	// SliceCount 기반 그리드 인덱스 계산
+	int32 GridX = FMath::FloorToInt((LocalCenter.X - CachedMeshBounds.Min.X) / CachedCellSize.X);
+	int32 GridY = FMath::FloorToInt((LocalCenter.Y - CachedMeshBounds.Min.Y) / CachedCellSize.Y);
+	int32 GridZ = FMath::FloorToInt((LocalCenter.Z - CachedMeshBounds.Min.Z) / CachedCellSize.Z);
+
+	GridX = FMath::Clamp(GridX, 0, SliceCount.X - 1);
+	GridY = FMath::Clamp(GridY, 0, SliceCount.Y - 1);
+	GridZ = FMath::Clamp(GridZ, 0, SliceCount.Z - 1);
+
+	const int32 GridIndex = GridX + GridY * SliceCount.X + GridZ * SliceCount.X * SliceCount.Y;
+	return GridToChunkMap.IsValidIndex(GridIndex) ? GridToChunkMap[GridIndex] : INDEX_NONE;
+}
+
+void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
+	const TArray<int32>& DetachedCellIds)
+{
+	using namespace UE::Geometry;
+
+	if (DetachedCellIds.Num() == 0 || ChunkMeshComponents.Num() == 0)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("=== RemoveTrianglesForDetachedCells START ==="));
+	UE_LOG(LogTemp, Warning, TEXT("DetachedCellIds.Num()=%d, ChunkMeshComponents.Num()=%d"),
+		DetachedCellIds.Num(), ChunkMeshComponents.Num());
+
+	const FVector CellSizeVec = GridCellCache.CellSize;
+
+	// 파편 정리용 초기화
+	LastOccupiedCells.Empty();
+	LastCellSizeVec = CellSizeVec;
+
+	// 1. 모든 분리된 셀들의 3D 점유 맵 생성
+	TSet<FIntVector> BaseCells;
+	for (int32 CellId : DetachedCellIds)
+	{
+		const FVector LocalMin = GridCellCache.IdToLocalMin(CellId);
+		FIntVector GridPos(
+			FMath::FloorToInt(LocalMin.X / CellSizeVec.X),
+			FMath::FloorToInt(LocalMin.Y / CellSizeVec.Y),
+			FMath::FloorToInt(LocalMin.Z / CellSizeVec.Z)
+		);
+		BaseCells.Add(GridPos);
+	}
+
+	// 인접 셀 26방향 확장
+	TSet<FIntVector> OccupiedCells = BaseCells;
+	for (const FIntVector& Pos : BaseCells)
+	{
+		for (int32 dx = -1; dx <= 1; ++dx)
+		{
+			for (int32 dy = -1; dy <= 1; ++dy)
+			{
+				for (int32 dz = -1; dz <= 1; ++dz)
+				{
+					OccupiedCells.Add(FIntVector(Pos.X + dx, Pos.Y + dy, Pos.Z + dz));
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("BaseCells=%d, ExpandedCells=%d"), BaseCells.Num(), OccupiedCells.Num());
+
+	// 파편 정리용으로 저장
+	LastOccupiedCells = OccupiedCells;
+
+	// 2. Greedy Meshing으로 ToolMesh 생성
+	const double BoxExpand = 1.0;
+
+	FDynamicMesh3 ToolMesh;
+	ToolMesh.EnableTriangleGroups();
+
+	// 외곽 경계 계산
+	FIntVector GridMin(TNumericLimits<int32>::Max());
+	FIntVector GridMax(TNumericLimits<int32>::Lowest());
+	for (const FIntVector& Pos : OccupiedCells)
+	{
+		GridMin.X = FMath::Min(GridMin.X, Pos.X);
+		GridMin.Y = FMath::Min(GridMin.Y, Pos.Y);
+		GridMin.Z = FMath::Min(GridMin.Z, Pos.Z);
+		GridMax.X = FMath::Max(GridMax.X, Pos.X + 1);
+		GridMax.Y = FMath::Max(GridMax.Y, Pos.Y + 1);
+		GridMax.Z = FMath::Max(GridMax.Z, Pos.Z + 1);
+	}
+
+	// 공유 정점 맵
+	TMap<FIntVector, int32> CornerToVertexId;
+
+	auto GetOrCreateVertex = [&](const FIntVector& Corner) -> int32
+	{
+		if (int32* Existing = CornerToVertexId.Find(Corner))
+		{
+			return *Existing;
+		}
+
+		double ExpX = 0, ExpY = 0, ExpZ = 0;
+		if (Corner.X == GridMin.X) ExpX = -BoxExpand;
+		else if (Corner.X == GridMax.X) ExpX = BoxExpand;
+		if (Corner.Y == GridMin.Y) ExpY = -BoxExpand;
+		else if (Corner.Y == GridMax.Y) ExpY = BoxExpand;
+		if (Corner.Z == GridMin.Z) ExpZ = -BoxExpand;
+		else if (Corner.Z == GridMax.Z) ExpZ = BoxExpand;
+
+		FVector3d VertexPos(
+			Corner.X * CellSizeVec.X + ExpX,
+			Corner.Y * CellSizeVec.Y + ExpY,
+			Corner.Z * CellSizeVec.Z + ExpZ
+		);
+
+		int32 NewId = ToolMesh.AppendVertex(VertexPos);
+		CornerToVertexId.Add(Corner, NewId);
+		return NewId;
+	};
+
+	// 면 방향별 Greedy Meshing
+	for (int32 FaceDir = 0; FaceDir < 6; ++FaceDir)
+	{
+		TSet<FIntVector> ExposedFaces;
+		FIntVector Normal;
+
+		switch (FaceDir)
+		{
+		case 0: Normal = FIntVector(0, 0, -1); break;
+		case 1: Normal = FIntVector(0, 0, 1); break;
+		case 2: Normal = FIntVector(-1, 0, 0); break;
+		case 3: Normal = FIntVector(1, 0, 0); break;
+		case 4: Normal = FIntVector(0, -1, 0); break;
+		case 5: Normal = FIntVector(0, 1, 0); break;
+		}
+
+		for (const FIntVector& Pos : OccupiedCells)
+		{
+			if (!OccupiedCells.Contains(Pos + Normal))
+			{
+				ExposedFaces.Add(Pos);
+			}
+		}
+
+		if (ExposedFaces.Num() == 0) continue;
+
+		TSet<FIntVector> Processed;
+
+		for (const FIntVector& Start : ExposedFaces)
+		{
+			if (Processed.Contains(Start)) continue;
+
+			int32 Width = 1, Height = 1;
+			int32 Axis1, Axis2;
+			if (FaceDir <= 1) { Axis1 = 0; Axis2 = 1; }
+			else if (FaceDir <= 3) { Axis1 = 1; Axis2 = 2; }
+			else { Axis1 = 0; Axis2 = 2; }
+
+			auto GetCoord = [](const FIntVector& V, int32 Axis) -> int32 {
+				return Axis == 0 ? V.X : (Axis == 1 ? V.Y : V.Z);
+			};
+			auto SetCoord = [](FIntVector& V, int32 Axis, int32 Val) {
+				if (Axis == 0) V.X = Val;
+				else if (Axis == 1) V.Y = Val;
+				else V.Z = Val;
+			};
+
+			while (true)
+			{
+				FIntVector Check = Start;
+				SetCoord(Check, Axis1, GetCoord(Start, Axis1) + Width);
+				if (ExposedFaces.Contains(Check) && !Processed.Contains(Check))
+					Width++;
+				else
+					break;
+			}
+
+			while (true)
+			{
+				bool CanExpand = true;
+				for (int32 w = 0; w < Width; ++w)
+				{
+					FIntVector Check = Start;
+					SetCoord(Check, Axis1, GetCoord(Start, Axis1) + w);
+					SetCoord(Check, Axis2, GetCoord(Start, Axis2) + Height);
+					if (!ExposedFaces.Contains(Check) || Processed.Contains(Check))
+					{
+						CanExpand = false;
+						break;
+					}
+				}
+				if (CanExpand) Height++;
+				else break;
+			}
+
+			for (int32 h = 0; h < Height; ++h)
+			{
+				for (int32 w = 0; w < Width; ++w)
+				{
+					FIntVector Cell = Start;
+					SetCoord(Cell, Axis1, GetCoord(Start, Axis1) + w);
+					SetCoord(Cell, Axis2, GetCoord(Start, Axis2) + h);
+					Processed.Add(Cell);
+				}
+			}
+
+			FIntVector C0 = Start, C1 = Start, C2 = Start, C3 = Start;
+
+			switch (FaceDir)
+			{
+			case 0:
+				C1.X += Width; C2.X += Width; C2.Y += Height; C3.Y += Height;
+				break;
+			case 1:
+				C0.Z += 1; C1.Z += 1; C2.Z += 1; C3.Z += 1;
+				C1.X += Width; C2.X += Width; C2.Y += Height; C3.Y += Height;
+				break;
+			case 2:
+				C1.Y += Width; C2.Y += Width; C2.Z += Height; C3.Z += Height;
+				break;
+			case 3:
+				C0.X += 1; C1.X += 1; C2.X += 1; C3.X += 1;
+				C1.Y += Width; C2.Y += Width; C2.Z += Height; C3.Z += Height;
+				break;
+			case 4:
+				C1.X += Width; C2.X += Width; C2.Z += Height; C3.Z += Height;
+				break;
+			case 5:
+				C0.Y += 1; C1.Y += 1; C2.Y += 1; C3.Y += 1;
+				C1.X += Width; C2.X += Width; C2.Z += Height; C3.Z += Height;
+				break;
+			}
+
+			int32 I0 = GetOrCreateVertex(C0);
+			int32 I1 = GetOrCreateVertex(C1);
+			int32 I2 = GetOrCreateVertex(C2);
+			int32 I3 = GetOrCreateVertex(C3);
+
+			switch (FaceDir)
+			{
+			case 0:
+				ToolMesh.AppendTriangle(I0, I2, I1);
+				ToolMesh.AppendTriangle(I0, I3, I2);
+				break;
+			case 1:
+				ToolMesh.AppendTriangle(I0, I1, I2);
+				ToolMesh.AppendTriangle(I0, I2, I3);
+				break;
+			case 2:
+				ToolMesh.AppendTriangle(I0, I3, I2);
+				ToolMesh.AppendTriangle(I0, I2, I1);
+				break;
+			case 3:
+				ToolMesh.AppendTriangle(I0, I1, I2);
+				ToolMesh.AppendTriangle(I0, I2, I3);
+				break;
+			case 4:
+				ToolMesh.AppendTriangle(I0, I1, I2);
+				ToolMesh.AppendTriangle(I0, I2, I3);
+				break;
+			case 5:
+				ToolMesh.AppendTriangle(I0, I3, I2);
+				ToolMesh.AppendTriangle(I0, I2, I1);
+				break;
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("ToolMesh: Tris=%d, Verts=%d"), ToolMesh.TriangleCount(), ToolMesh.VertexCount());
+
+	// 노말 방향 반전 (Subtract용)
+	ToolMesh.ReverseOrientation();
+
+	if (ToolMesh.TriangleCount() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ToolMesh has 0 triangles!"));
+		return;
+	}
+
+	// 디버그: 원점에 ToolMesh 스폰
+	if (UWorld* World = GetWorld())
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AActor* DebugActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+		if (DebugActor)
+		{
+			UDynamicMeshComponent* DebugComp = NewObject<UDynamicMeshComponent>(DebugActor);
+			DebugComp->RegisterComponent();
+			DebugActor->AddInstanceComponent(DebugComp);
+			*DebugComp->GetMesh() = ToolMesh;
+			DebugComp->NotifyMeshUpdated();
+			UE_LOG(LogTemp, Warning, TEXT("DEBUG: ToolMesh spawned at origin"));
+		}
+	}
+
+	// 3. 모든 ChunkMeshComponents에 Boolean Subtract 적용
+	FGeometryScriptMeshBooleanOptions BoolOptions;
+	BoolOptions.bFillHoles = true;
+	BoolOptions.bSimplifyOutput = false;
+
+	int32 TotalChunksProcessed = 0;
+
+	for (int32 ChunkIdx = 0; ChunkIdx < ChunkMeshComponents.Num(); ++ChunkIdx)
+	{
+		UDynamicMeshComponent* ChunkMesh = ChunkMeshComponents[ChunkIdx];
+		if (!ChunkMesh || !ChunkMesh->GetMesh()) continue;
+
+		FDynamicMesh3* TargetMesh = ChunkMesh->GetMesh();
+		if (TargetMesh->TriangleCount() == 0) continue;
+
+		FDynamicMesh3 ResultMesh;
+		bool bSuccess = FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(
+			TargetMesh,
+			&ToolMesh,
+			&ResultMesh,
+			EGeometryScriptBooleanOperation::Subtract,
+			BoolOptions
+		);
+
+		if (bSuccess && ResultMesh.TriangleCount() > 0 && ResultMesh.TriangleCount() != TargetMesh->TriangleCount())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: %d -> %d tris"), ChunkIdx, TargetMesh->TriangleCount(), ResultMesh.TriangleCount());
+			*TargetMesh = MoveTemp(ResultMesh);
+			ChunkMesh->NotifyMeshUpdated();
+			TotalChunksProcessed++;
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("RemoveTrianglesForDetachedCells: %d cells, %d chunks affected"),
+		DetachedCellIds.Num(), TotalChunksProcessed);
+
+	// 즉시 파편 정리
+	CleanupSmallFragments();
+
+	// 0.5초 후 추가 정리
+	GetWorld()->GetTimerManager().SetTimer(
+		FragmentCleanupTimerHandle,
+		this,
+		&URealtimeDestructibleMeshComponent::CleanupSmallFragments,
+		0.5f,
+		false
+	);
+}
+
+void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
+{
+	using namespace UE::Geometry;
+
+	// 작은 파편 기준: 바운딩 박스 볼륨 (cm^3)
+	const double SmallVolumeThreshold = 5000.0;  // 약 17x17x17 cm 이하
+
+	int32 TotalRemoved = 0;
+
+	for (UDynamicMeshComponent* ChunkMesh : ChunkMeshComponents)
+	{
+		if (!ChunkMesh || !ChunkMesh->GetMesh()) continue;
+
+		FDynamicMesh3* Mesh = ChunkMesh->GetMesh();
+		if (Mesh->TriangleCount() == 0) continue;
+
+		FMeshConnectedComponents ConnectedComponents(Mesh);
+		ConnectedComponents.FindConnectedTriangles();
+
+		if (ConnectedComponents.Num() <= 1) continue;
+
+		FTransform MeshTransform = ChunkMesh->GetComponentTransform();
+
+		int32 RemovedCount = 0;
+		for (int32 i = 0; i < ConnectedComponents.Num(); ++i)
+		{
+			const auto& Comp = ConnectedComponents.GetComponent(i);
+
+			// 바운딩 박스 계산
+			FAxisAlignedBox3d BoundingBox = FAxisAlignedBox3d::Empty();
+			FVector3d Centroid = FVector3d::Zero();
+			int32 ValidCount = 0;
+
+			for (int32 Tid : Comp.Indices)
+			{
+				if (!Mesh->IsTriangle(Tid)) continue;
+
+				FIndex3i Tri = Mesh->GetTriangle(Tid);
+				for (int32 j = 0; j < 3; ++j)
+				{
+					FVector3d Vertex = Mesh->GetVertex(Tri[j]);
+					BoundingBox.Contain(Vertex);
+				}
+
+				Centroid += Mesh->GetTriCentroid(Tid);
+				ValidCount++;
+			}
+
+			if (ValidCount > 0 && BoundingBox.Volume() > 0)
+			{
+				Centroid /= ValidCount;
+				FVector WorldPos = MeshTransform.TransformPosition(FVector(Centroid));
+
+				// 볼륨 기반 작은 파편 판단
+				double Volume = BoundingBox.Volume();
+				bool bIsSmallFragment = (Volume <= SmallVolumeThreshold);
+
+				// 디버그 색상: 빨강 = 작은 파편 (삭제), 초록 = 큰 구조물 (유지)
+				FColor PointColor = bIsSmallFragment ? FColor::Red : FColor::Green;
+				DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
+
+				// 작은 파편이면 삭제
+				if (bIsSmallFragment)
+				{
+					for (int32 Tid : Comp.Indices)
+					{
+						Mesh->RemoveTriangle(Tid);
+					}
+					RemovedCount++;
+				}
+			}
+		}
+
+		if (RemovedCount > 0)
+		{
+			Mesh->CompactInPlace();
+			ChunkMesh->NotifyMeshUpdated();
+			TotalRemoved += RemovedCount;
+		}
+	}
+
+	if (TotalRemoved > 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CleanupSmallFragments: Removed %d small fragments (volume <= 5000 cm^3)"),
+			TotalRemoved);
+	}
+}
+
 // [deprecated]
 void URealtimeDestructibleMeshComponent::RegisterForClustering(const FRealtimeDestructionRequest& Request)
 {
@@ -849,10 +1297,10 @@ void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
 
 	UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris RECEIVED - NetMode=%s, DebrisCount=%d"), *NetModeStr, DetachedDebris.Num());
 
-	// 서버: 이미 로컬에서 파편 스폰 완료, 스킵
-	if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer || NetMode == NM_Standalone)
+	// DedicatedServer: 렌더링 안 하므로 삼각형 삭제 스킵
+	if (NetMode == NM_DedicatedServer)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris SKIPPED (Server already processed)"));
+		UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris SKIPPED (DedicatedServer - no rendering)"));
 		return;
 	}
 
@@ -877,12 +1325,18 @@ void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
 		UE_LOG(LogTemp, Warning, TEXT("[GridCell] Client AddDetachedGroup AFTER - DetachedGroups.Num=%d"),
 			CellState.DetachedGroups.Num());
 
-		// 파편 스폰 (TODO: 기존 SpawnDebris 로직 연결)
-		// SpawnDebrisFromCells(CellIds, DebrisInfo.InitialLocation, DebrisInfo.InitialVelocity);
+		// 클라이언트: 분리된 셀의 삼각형 삭제 (시각적 처리)
+		RemoveTrianglesForDetachedCells(CellIds);
 
-		UE_LOG(LogTemp, Warning, TEXT("  Debris ID: %d, Cells: %d, Location: %s"),
+		// TODO: 파편 액터 스폰 (서버에서 복제되므로 클라에서는 스킵)
+		// 파편 액터는 서버에서 스폰하고 SetReplicateMovement(true)로 복제됨
+
+		UE_LOG(LogTemp, Warning, TEXT("  Debris ID: %d, Cells: %d, Location: %s, Triangles removed on client"),
 			DebrisInfo.DebrisId, CellIds.Num(), *DebrisInfo.InitialLocation.ToString());
 	}
+
+	// 분리된 셀들을 파괴됨 상태로 이동 (디버그 색상: 주황 → 빨강)
+	CellState.MoveAllDetachedToDestroyed();
 }
 
 void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRealtimeDestructionOp>& Ops)

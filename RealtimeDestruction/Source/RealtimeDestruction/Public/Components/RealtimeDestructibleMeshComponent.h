@@ -774,6 +774,22 @@ public:
 	 */
 	void UpdateCellStateFromDestruction(const FRealtimeDestructionRequest& Request);
 
+	/**
+	 * GridCellId를 ChunkId로 변환
+	 * @param GridCellId - 격자 셀 ID
+	 * @return 해당하는 ChunkId, 없으면 INDEX_NONE
+	 */
+	int32 GridCellIdToChunkId(int32 GridCellId) const;
+
+	/**
+	 * 분리된 셀들의 메시를 Boolean Subtract로 제거
+	 * @param DetachedCellIds - 분리된 셀 ID 배열
+	 */
+	void RemoveTrianglesForDetachedCells(const TArray<int32>& DetachedCellIds);
+
+	/** 작은 파편(고립된 Connected Component) 정리 */
+	void CleanupSmallFragments();
+
 	//[deprecated]
 	/** Cell 개수 반환 */
 	//UFUNCTION(BlueprintPure, Category="RealtimeDestructibleMesh|CellMesh")
@@ -851,7 +867,14 @@ protected:
 
 private:
 	FTimerHandle CollisionUpdateTimerHandle;
-	
+
+	/** 지연 파편 정리 타이머 핸들 */
+	FTimerHandle FragmentCleanupTimerHandle;
+
+	/** 마지막 파괴된 셀 영역 (CleanupSmallFragments용) */
+	TSet<FIntVector> LastOccupiedCells;
+	FVector LastCellSizeVec;
+
 	int64 NextOpId = 1;
 	int32 NextSequence = 0;
 
