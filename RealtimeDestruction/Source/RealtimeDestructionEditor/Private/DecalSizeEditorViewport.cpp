@@ -415,6 +415,48 @@ void SDecalSizeEditorViewport::SetPreviewMeshRotation(const FRotator& InRotator)
 	}
 }
 
+void SDecalSizeEditorViewport::SetDecalVisible(bool bVisible)
+{
+	bShowDecal = bVisible;
+	if (DecalPreviewComponent)
+	{
+		DecalPreviewComponent->SetVisibility(bVisible);
+	}
+	if (DecalWireframe)
+	{
+		DecalWireframe->SetVisibility(bVisible);
+	}
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+}
+
+void SDecalSizeEditorViewport::SetToolShapeVisible(bool bVisible)
+{
+	bShowToolShape = bVisible;
+	if (ToolShapeWireframe)
+	{
+		ToolShapeWireframe->SetVisibility(bVisible);
+	}
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+}
+
+void SDecalSizeEditorViewport::SetPreviewMeshVisible(bool bVisible)
+{
+	bShowPreviewMesh = bVisible;
+	if (ProjectileMesh)
+	{
+		ProjectileMesh->SetVisibility(bVisible);
+	}
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+}
 
 void SDecalSizeEditorViewport::UpdateDecalMesh()
 {

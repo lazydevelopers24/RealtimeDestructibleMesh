@@ -74,6 +74,15 @@ public:
 	void SetDecalSize(const FVector& InSize);
 	FVector GetDecalSize() const { return DecalSize; }
 
+	// Visibility Toggles
+	void SetDecalVisible(bool bVisible);
+	void SetToolShapeVisible(bool bVisible);
+	void SetPreviewMeshVisible(bool bVisible);
+
+	bool IsDecalVisible() const { return bShowDecal; }
+	bool IsToolShapeVisible() const { return bShowToolShape; }
+	bool IsPreviewMeshVisible() const { return bShowPreviewMesh; }
+
 protected:
 	//SEditorViewport Interface
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override; 
@@ -116,7 +125,12 @@ private:
 	float PreviewCylinderHeight = 20.0f;
 
 	/** Decal Material */
-	TObjectPtr<UMaterialInterface> DecalMaterial; 
+	TObjectPtr<UMaterialInterface> DecalMaterial;
+
+	/** Visibility flags */
+	bool bShowDecal = true;
+	bool bShowToolShape = true;
+	bool bShowPreviewMesh = true;
 
 	/** 저장을 위한 함수 */
 	void SaveState();

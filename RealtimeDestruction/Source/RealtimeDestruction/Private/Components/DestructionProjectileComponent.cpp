@@ -231,6 +231,30 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 			Targets.Add(ChunkIndex);
 		}
 	}	
+
+
+	// ===== DataAsset에서 Tool Shape 로드 (메시 생성 전에!) =====
+	FName SurfaceTypeForShape = DestructComp->SurfaceType;
+	if (DecalDataAsset)
+	{
+		FDecalSizeConfig TempConfig;
+		if (DecalDataAsset->GetConfig(DecalConfigID, SurfaceTypeForShape, TempConfig))
+		{
+			bool bShapeChanged = (CylinderRadius != TempConfig.CylinderRadius ||
+				CylinderHeight != TempConfig.CylinderHeight ||
+				SphereRadius != TempConfig.SphereRadius);
+
+			CylinderRadius = TempConfig.CylinderRadius;
+			CylinderHeight = TempConfig.CylinderHeight;
+			SphereRadius = TempConfig.SphereRadius;
+
+			if (bShapeChanged && ToolMeshPtr.IsValid())
+			{
+				ToolMeshPtr.Reset();
+			}
+		}
+	} 
+	// ===== 여기까지 추가 =====
 	
 	FVector Direction = GetToolDirection(Hit, Owner);
 	FVector ToolStart = Hit.ImpactPoint;
@@ -287,10 +311,9 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 				Request.DecalSize = FoundConfig.DecalSize;
 				Request.DecalLocationOffset = FoundConfig.LocationOffset;
 				Request.DecalRotationOffset = FoundConfig.RotationOffset;
-				Request.DecalMaterial = FoundConfig.DecalMaterial;
+				Request.DecalMaterial = FoundConfig.DecalMaterial; 
 			}
-		} 
-
+		}  
 
 		SetShapeParameters(Request);		
 	

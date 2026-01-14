@@ -35,8 +35,7 @@ public:
 
 	static void OpenWindowForDataAsset(UDecalMaterialDataAsset* DataAsset);
 private:
-	TSharedRef<SWidget> CreateMaterialSection();
-
+	
 	TArray<TSharedPtr<FString>> ToolShapeOptions;
 private:
 	/** propert 변경 콜백 */ 
@@ -64,12 +63,13 @@ private:
 	void DeleteCurrentSurfaceType();
 
 	void RenameCurrentConfigID(FName NewName);
-	
+	void RenameCurrentSurfaceType(FName NewName);
+
 	/** UI 생성 헬퍼 */
-	TSharedRef<SWidget> CreateDecalTransformSection();
 	TSharedRef<SWidget> CreateToolShapeSection();
 	TSharedRef<SWidget> CreateConfigSelectionSection();
 	TSharedRef<SWidget> CreatePreviewMeshSection();
+	TSharedRef<SWidget> CreateDecalSection();
 	
 	/** Target Component */
 	TWeakObjectPtr<UDestructionProjectileComponent> TargetComponent;

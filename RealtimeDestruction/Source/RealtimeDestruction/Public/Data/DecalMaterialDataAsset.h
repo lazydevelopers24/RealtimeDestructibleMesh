@@ -22,6 +22,16 @@ struct REALTIMEDESTRUCTION_API FDecalSizeConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FRotator RotationOffset = FRotator::ZeroRotator;
 
+	// Tool Shape
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float CylinderRadius = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float CylinderHeight = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float SphereRadius = 10.0f;
+
 	// 유효성 검사 함수 (기존에 있다면 유지)
 	bool IsValid() const { return DecalMaterial != nullptr; } 
 };
