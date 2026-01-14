@@ -26,6 +26,12 @@ struct FPendingClusteringRequest
 
 	UPROPERTY()
 	FVector ToolForwardVector = FVector::ForwardVector;
+
+	UPROPERTY()
+	FVector ToolCenterWorld = FVector::ZeroVector;
+
+	UPROPERTY()
+	float Depth = 10.0f;
 };
 
 UCLASS(ClassGroup = (Destruction), meta = (BlueprintSpawnableComponent))

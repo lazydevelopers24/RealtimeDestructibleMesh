@@ -240,8 +240,6 @@ public:
 
 	void CancelAllOperations();
 
-	void SetWorkInFlight(bool bEnabled) { bWorkInFlight = bEnabled; }
-
 	int32 GetChunkHoleCount(int32 ChunkIndex) const { return ChunkHoleCount[ChunkIndex]; }
 	int32 GetChunkHoleCount(const UPrimitiveComponent* ChunkComponent) const;
 
@@ -256,24 +254,33 @@ public:
 	static void ApplySimplifyToPlanarAsync(UE::Geometry::FDynamicMesh3* TargetMesh, FGeometryScriptPlanarSimplifyOptions Options);
 
 private:
-	int32 DrainBatch(FBulletHoleBatch& InBatch);
+	void StartBooleanWorkerAsyncForChunk(FBulletHoleBatch&& InBatch, int32 Gen);	
 
-	void StartBooleanWorkerAsyncForChunk(FBulletHoleBatch&& InBatch, int32 Gen);
+	void StartUnionWorkerForChunk(FBulletHoleBatch&& InBatch, int32 BatchID, int32 ChunkIndex);
+	void TriggerSubtractWorkerForChunk(int32 ChunkIndex);
 
 	void AccumulateSubtractDuration(int32 ChunkIndex, double CurrentSubDuration);
 
 	void UpdateSimplifyInterval(double CurrentSetMeshAvgCost);
 
+	void UpdateUnionSize(int32 ChunkIndex, double DurationMs);
+
 	bool TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 ChunkIndex, int32 UnionCount);
 
+	int32& GetChunkInterval(int32 ChunkIndex);	
+	
 	void EnqueueRetryOps(TQueue<FBulletHole, EQueueMode::Mpsc>& Queue, FBulletHoleBatch&& InBatch,
 		UDynamicMeshComponent* TargetMesh, int32 ChunkIndex, int32& DebugCount);
 
-	int32& GetChunkInterval(int32 ChunkIndex);
+	/** Subtract 연산 비용 측정기 */
+	void UpdateSubtractAvgCost(double CostMs);
+
 
 private:
 	TWeakObjectPtr<URealtimeDestructibleMeshComponent> OwnerComponent = nullptr;
 
+	TSharedPtr<FProcessorLifeTime, ESPMode::ThreadSafe> LifeTime;
+	
 	// Queue를 관통, 비관통 전용으로 나눠서 관리
 	TQueue<FBulletHole, EQueueMode::Mpsc> HighPriorityQueue;
 	int DebugHighQueueCount;
@@ -281,19 +288,24 @@ private:
 	TQueue<FBulletHole, EQueueMode::Mpsc> NormalPriorityQueue;
 	int DebugNormalQueueCount;
 
-	TSharedPtr<FProcessorLifeTime, ESPMode::ThreadSafe> LifeTime;
-
-	// 비동기 작업 실행 여부 검사
-	bool bWorkInFlight = false;
+	FChunkProcessState ChunkStates;
 
 	// 청크 변경 이력 관리
 	// 불리연 연산이 완료되고 SetMesh할 때 증가
 	TArray<std::atomic<int32>> ChunkGenerations;
 
+	/** Chunk별 UnionResults Queue (Chunk마다 독립적인 파이프라인) */
+	TArray<TQueue<FUnionResult, EQueueMode::Mpsc>*> ChunkUnionResultsQueues;
+
+	/** Chunk별 BatchID 카운터 */
+	TArray<std::atomic<int32>> ChunkNextBatchIDs;
+
+	// 청크별 toolmesh의 최대 Union 개수
+	TArray<uint8> MaxUnionCount;
+
 	// Destruction Settings
 	// 프로세서를 소유한 컴포넌트로부터 받아옴
 	int32 MaxHoleCount = 0;
-	int32 MaxOpsPerFrame = 0;
 	int32 MaxBatchSize = 0;
 
 	TArray<int32> ChunkHoleCount = {};
@@ -302,8 +314,6 @@ private:
 	// defaut 값 부터 테스트
 	int32 AngleThreshold = 0.001;
 
-	FChunkProcessState ChunkStates;
-	
 	int32 MaxInterval = 0;
 	int32 InitInterval = 0;
 
@@ -312,30 +322,10 @@ private:
 
 	double SetMeshAvgCost = 0.0;
 
-	// Batch를 나눠서 병렬로 처리하는 방법
-	int32 ParallelThreshold = 12;
-	int32 MaxParallelThreads = 4;
-	bool bEnableParallel = true;
-
 	FBooleanThreadTuner AutoTuner;
-
-private:
-	void StartUnionWorkerForChunk(FBulletHoleBatch&& InBatch, int32 BatchID, int32 ChunkIndex);
-	void TriggerSubtractWorkerForChunk(int32 ChunkIndex);
-
-	/** Subtract 연산 비용 측정기 */
-	void UpdateSubtractAvgCost(double CostMs);
-
-	void UpdateUnionSize(int32 ChunkIndex, double DurationMs);
 
 	bool bEnableMultiWorkers;
 	
-	/** 최대 Worker 수 */
-	int8 MaxWorkerCount = 8;
-
-	/** 여러개의 Worker를 사용하기 위한 테스트용 변수들 */
-	TQueue<FUnionResult, EQueueMode::Mpsc> UnionResultsQueue;
-
 	/** 현재 Union 작업 중인 Worker 수 */
 	std::atomic<int32> ActiveUnionWorkers{ 0 };
 
@@ -348,20 +338,10 @@ private:
 	/** Subtract 대기 중 배치 ID (순서 보장용) */
 	std::atomic<int32> NextSubtractBatchID{ 0 };
 
-	/** Chunk별 UnionResults Queue (Chunk마다 독립적인 파이프라인) */
-	TArray<TQueue<FUnionResult, EQueueMode::Mpsc>*> ChunkUnionResultsQueues;
-
-	/** Chunk별 BatchID 카운터 */
-	TArray<std::atomic<int32>> ChunkNextBatchIDs;
-
-	// 청크별 toolmesh의 최대 Union 개수
-	TArray<uint8> MaxUnionCount;
-
 	double FrameBudgetMs = 8.0f;
 	double SubtractAvgCostMs = 2.0f;
 	double SubtractCostAccum = 0.0f;
 	int32 SubtractCostSampleCount = 0;
-
 };
 
 

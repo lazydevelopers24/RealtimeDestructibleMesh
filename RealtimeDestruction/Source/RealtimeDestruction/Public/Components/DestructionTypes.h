@@ -53,6 +53,9 @@ struct REALTIMEDESTRUCTION_API FDestructionToolShapeParams
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape|Box")
     FVector BoxSize = FVector(20.0f, 20.0f, 20.0f);
+
+    // 내부에서만 사용하는 변수
+    float SurfaceMargin = 0.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -137,16 +140,16 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     float Radius = 0.0f;
 
     UPROPERTY()
-    TArray<FVector> MemberPoints;
+    TArray<FVector> MemberPoints = {};
 
     UPROPERTY()
-    TArray<FVector> MemberNormals;
+    TArray<FVector> MemberNormals = {};
 
     UPROPERTY()
-    TArray<float> MemberRadius;
+    TArray<float> MemberRadius = {};
 
     UPROPERTY()
-    TArray<int32> ChunkIndices; 
+    TArray<int32> ChunkIndices = {};
 
     UPROPERTY()
     FVector AverageForwardVector = FVector::ForwardVector;
@@ -154,12 +157,57 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     UPROPERTY()
     FVector ForwardSum = FVector::ZeroVector;
 
+    UPROPERTY()
+    FVector ToolCenterWorld = FVector::ZeroVector;
 
-    void Init(const FVector& Point, const FVector& InNormal, const FVector& Forward, float InRadius, int ChunkIndex)
+    UPROPERTY()
+    float Depth = 10.0f;
+
+    FBulletCluster() = default;
+
+    FBulletCluster(const FVector& InCenter, const FVector& InNormal,
+                   float InRadius, const FVector& InForward,
+                   const FVector& InToolCenter, int32 ChunkIndex, float InDepth)
+        : Center(InCenter), Normal(InNormal), Radius(InRadius), ToolCenterWorld(InToolCenter), Depth(InDepth)
+    {
+        ForwardSum = InForward.GetSafeNormal();
+        AverageForwardVector = ForwardSum.IsNearlyZero() ? FVector::ForwardVector : ForwardSum;
+
+        MemberPoints.Empty();
+        MemberNormals.Empty();
+        MemberRadius.Empty();
+        ChunkIndices.Empty();
+
+        MemberPoints.Add(InCenter);
+        MemberNormals.Add(InNormal);
+        MemberRadius.Add(InRadius);
+        ChunkIndices.Add(ChunkIndex);
+    }
+
+    void Init(FBulletCluster&& Other)
+    {
+        Center = Other.Center;
+        Normal = Other.Normal;
+        Radius = Other.Radius;
+        Depth = Other.Depth;
+        
+        AverageForwardVector = Other.AverageForwardVector;
+        ForwardSum = Other.ForwardSum;
+        ToolCenterWorld = Other.ToolCenterWorld;
+
+        MemberPoints = MoveTemp(Other.MemberPoints);
+        MemberNormals = MoveTemp(Other.MemberNormals);
+        MemberRadius = MoveTemp(Other.MemberRadius);
+        ChunkIndices = MoveTemp(Other.ChunkIndices);
+    }
+
+    void Init(const FVector& Point, const FVector& InNormal, const FVector& Forward, const FVector& InToolCenterWorld,
+        float InRadius, int ChunkIndex, float InDepth)
     {
         Center = Point;
         Normal = InNormal;
         Radius = InRadius;
+        Depth = InDepth;
 
         MemberPoints.Empty();
         MemberNormals.Empty();
@@ -170,10 +218,11 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         MemberPoints.Add(Point);
         MemberNormals.Add(InNormal);
         MemberRadius.Add(InRadius);
-        ChunkIndices.Add(ChunkIndex); 
+        ChunkIndices.Add(ChunkIndex);
 
         ForwardSum = Forward.GetSafeNormal();
         AverageForwardVector = ForwardSum.IsNearlyZero() ? FVector::ForwardVector : ForwardSum;
+        ToolCenterWorld = InToolCenterWorld;
     }
     void AddMember(const FVector& Point, const FVector& InNormal, const FVector& InForward, float InRadius, int ChunkIndex )
     {

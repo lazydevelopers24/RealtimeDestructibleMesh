@@ -269,25 +269,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	bool ExecuteDestructionInternal(const FRealtimeDestructionRequest& Request);
 	
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Clustering")
-	void RegisterForClustering(const FRealtimeDestructionRequest& Request);
-
-	// Options
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
-	void SetBooleanOptions(const FGeometryScriptMeshBooleanOptions& Options);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
-	void SetMaxOpsPerFrame(int32 MaxOps);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
-	void SetAsyncEnabled(bool bEnabled);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
-	void SetMaxHoleCount(int32 MaxCount);
-
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
-	int32 GetHoleCount() const;
-
 	// Replication
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerEnqueueOps(const TArray<FRealtimeDestructionRequest>& Requests);
@@ -461,7 +442,7 @@ public:
 	FVector CachedChunkSize;
 
 	UPROPERTY()
-	FVector CachedCellSize;
+	FVector CachedCellSize; 
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FName SurfaceType = FName("Default");
@@ -472,7 +453,7 @@ public:
 	/*
 	 * 에디터에 노출하지 않는 함수
 	 */
-	void GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxOpsPerFrame, int32& OutMaxBatchSize);
+	void GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxBatchSize);
 	FGeometryScriptMeshBooleanOptions GetBooleanOptions() const { return BooleanOptions; }
 	FRealtimeBooleanProcessor* GetBooleanProcessor() const { return BooleanProcessor.Get(); }
 
@@ -482,7 +463,7 @@ public:
 		const FDestructionToolShapeParams& ShapeParams);
 	float GetAngleThreshold() const { return AngleThreshold; }
 	double GetSubtractDurationLimit() const { return SubtractDurationLimit; }
-	int32 GetMaxOpCount() const { return MaxOpCount; }
+	int32 GetInitInterval() const { return InitInterval; }
 	void SetCurrentHoleCount(int32 Count) { CurrentHoleCount = Count; }
 
 	void ApplyRenderUpdate();
@@ -490,10 +471,8 @@ public:
 	void ApplyCollisionUpdateAsync(UDynamicMeshComponent* TargetComp);
 
 	bool CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration);
-
-	void GetParallelSettings(int32& OutThreshold, int32& OutMaxThreads);
-
-	void SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker);
+	
+	void SettingAsyncOption(bool& OutMultiWorker);
 
 	bool IsInitialized() { return bIsInitialized;  }
 
@@ -520,13 +499,9 @@ public:
 
 	void SetChunkBits(int32 ChunkIndex, int32& BitIndex, int32& BitOffset);
 
-	/*
-	 * 총알 충돌과 그 외 충돌 분리를 위한 테스트 코드
-	 * 검증 완료되면 유지
-	 */
-	/*************************************************/
 	// 변형된 메시의 시각적(렌더링) 처리 즉시 업데이트하는 함수
 	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, const int32 ChunkIndex, bool bDelayedCollisionUpdate);
+	
 	// 타겟메시의 idle이나 원하는 딜레이를 주고 Async로 collision 갱신하는 함수
 	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);
 
@@ -614,19 +589,7 @@ protected:
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
-	int32 MaxOpsPerFrame = 16;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxBatchSize = 8;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
-	int32 ParallelThreshold = 12;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
-	int32 MaxParallelThreads = 12;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
-	bool bEnableParallel = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	bool bAsyncEnabled = true;
@@ -641,23 +604,10 @@ protected:
 	float AngleThreshold = 0.001f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0.0))
-	double SubtractDurationLimit = 0.0;
+	double SubtractDurationLimit = 15.0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0))
-	int32 MaxOpCount = 0;
-
-	/**
-	 * GT 복사 블로킹 최적화 사용 여부
-	 *
-	 * true: 캐시 기반 최적화 (워커에서 복사, GT 블로킹 최소화)
-	 * false: 기존 방식 (GT에서 복사)
-	 *
-	 * Unreal Insights에서 다음 스코프로 비교 가능:
-	 * - Optimized: *_CopyInWorker_Optimized, *_CacheAndSetMesh_Optimized
-	 * - Legacy: *_CopyMesh_GT_Legacy, *_SetMesh_Legacy
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
-	bool bUseCachedMeshOptimization = true;
+	int32 InitInterval = 50;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Cell Mesh Parallel Processing
@@ -675,11 +625,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh",
 		meta = (EditCondition = "bUseCellMeshes"))
 	TObjectPtr<UGeometryCollection> FracturedGeometryCollection;
-
-	//[deprecated]
-	/** Cell별 분리된 메시 */
-	//TArray<TSharedPtr<UE::Geometry::FDynamicMesh3>> CellMeshes;
-
 
 	/** Cell별 분리된 메시 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|CellMesh")
@@ -735,7 +680,7 @@ public:
 	 * @return 추출된 메시 개수
 	 */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh", meta = (DisplayName = "Build Cell Meshes From GC"))
-	int32 BuildCellMeshesFromGeometryCollection();
+	int32 BuildChunkMeshesFromGeometryCollection();
 
 	/** Cell 메시 유효 여부 */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
@@ -915,17 +860,6 @@ private:
 
 	UDynamicMesh* CreateToolMeshFromRequest(const FRealtimeDestructionRequest& Request);
 
-	///////////////////////////
-	/*
-	 * BooleanProcessor로 리팩토링 예정
-	 * 모든 불리언 연산은 BooleanProcessor에서 처리할거임
-	 */
-	bool ApplyDestructionRequestInternal(const FRealtimeDestructionRequest& Request);
-	///////////////////////////
-
-	// 파괴 요청 함수
-	bool ApplyOpImmediate(const FRealtimeDestructionRequest& Request);
-
 	void CopyMaterialsFromStaticMesh(UStaticMesh* InMesh);
 	void CopyMaterialsFromStaticMeshComponent(UStaticMeshComponent* InComp);
 	void CopyCollisionFromStaticMeshComponent(UStaticMeshComponent* InComp);
@@ -939,7 +873,4 @@ private:
 	virtual void BeginDestroy() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-	// Trace 활성화 상태 (비-쉬핑 빌드에서 사용)
-	static bool bIsTraceEnabled;
 };

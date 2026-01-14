@@ -40,8 +40,6 @@
 // FCompactDestructionOp 구현 (언리얼 내장 NetQuantize 사용)
 //////////////////////////////////////////////////////////////////////////
 
-bool URealtimeDestructibleMeshComponent::bIsTraceEnabled = false;
-
 FCompactDestructionOp FCompactDestructionOp::Compress(const FRealtimeDestructionRequest& Request, int32 Seq)
 {
 	FCompactDestructionOp Compact;
@@ -212,7 +210,6 @@ void URealtimeDestructibleMeshComponent::ResetToSourceMesh()
 	if (BooleanProcessor.IsValid())
 	{
 		BooleanProcessor->CancelAllOperations();
-		BooleanProcessor->SetWorkInFlight(false);
 	}
 	
 	CurrentHoleCount = 0;
@@ -264,28 +261,6 @@ int32 URealtimeDestructibleMeshComponent::EnqueueBatch(const TArray<FRealtimeDes
 	return AddedCount;
 }
 
-bool URealtimeDestructibleMeshComponent::ApplyOpImmediate(const FRealtimeDestructionRequest& Request)
-{
-	if (!ApplyDestructionRequestInternal(Request))
-	{
-		return false;
-	}
-
-	FRealtimeDestructionOp Op;
-	Op.OpId.Value = NextOpId++;
-	Op.Sequence = NextSequence++;
-	Op.Request = Request;
-
-	OnOpApplied.Broadcast(Op);
-	ModifiedChunkIds.Add(Op.Request.ChunkIndex);
-
-	ApplyRenderUpdate();
-	ApplyCollisionUpdate(this);
-	OnBatchCompleted.Broadcast(1);
-
-	return true;
-}
-
 // Projectile에서 호출해줌
 bool URealtimeDestructibleMeshComponent::RequestDestruction(const FRealtimeDestructionRequest& Request)
 {
@@ -315,14 +290,12 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 
 	// Cell 상태 업데이트 (Boolean 처리와 별개로 수행)
 	UpdateCellStateFromDestruction(Request);
-
-	if (bAsyncEnabled)
+	
+	UDecalComponent* TempDecal = nullptr;
+	if (!bIsPenetration)
 	{
-		UDecalComponent* TempDecal = nullptr;
-		if (!bIsPenetration)
-		{
-			TempDecal = SpawnTemporaryDecal(Request);
-		}
+		TempDecal = SpawnTemporaryDecal(Request);
+	}
 
 		// 기본 관통을 Enqeue
 		EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
@@ -351,11 +324,7 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 			EnqueueRequestLocal(PenetrationRequest, true, nullptr);
 		}
 		return true;
-	}
-	else
-	{
-		return ApplyOpImmediate(Request);
-	}
+	
 }
 
 //=============================================================================
@@ -1212,45 +1181,6 @@ void URealtimeDestructibleMeshComponent::SpawnDebrisFromCells(const TArray<int32
 	// 이 함수는 향후 확장을 위해 유지
 }
 
-// [deprecated]
-void URealtimeDestructibleMeshComponent::RegisterForClustering(const FRealtimeDestructionRequest& Request)
-{
-	//TODO: 언제 return할 지 고민 중
-	if (!bEnableClustering || !BulletClusterComponent)
-	{
-		ExecuteDestructionInternal(Request);
-		return;
-	}
-
-	BulletClusterComponent->RegisterRequest(Request);
-
-}
-
-void URealtimeDestructibleMeshComponent::SetBooleanOptions(const FGeometryScriptMeshBooleanOptions& Options)
-{
-	BooleanOptions = Options;
-}
-
-void URealtimeDestructibleMeshComponent::SetMaxOpsPerFrame(int32 MaxOps)
-{
-	MaxOpsPerFrame = FMath::Max(1, MaxOps);
-}
-
-void URealtimeDestructibleMeshComponent::SetAsyncEnabled(bool bEnabled)
-{
-	bAsyncEnabled = bEnabled;
-}
-
-void URealtimeDestructibleMeshComponent::SetMaxHoleCount(int32 MaxCount)
-{
-	MaxHoleCount = FMath::Max(0, MaxCount);
-}
-
-int32 URealtimeDestructibleMeshComponent::GetHoleCount() const
-{
-	return CurrentHoleCount;
-}
-
 bool URealtimeDestructibleMeshComponent::ServerEnqueueOps_Validate(const TArray<FRealtimeDestructionRequest>& Requests)
 {
 	// 1단계: 명백한 치트 검사 → 실패 시 클라이언트 킥
@@ -1651,10 +1581,9 @@ bool URealtimeDestructibleMeshComponent::ApplyMeshSnapshot(const FRealtimeMeshSn
 	return true;
 }
 
-void URealtimeDestructibleMeshComponent::GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxOpsPerFrame, int32& OutMaxBatchSize)
+void URealtimeDestructibleMeshComponent::GetDestructionSettings(int32& OutMaxHoleCount, int32& OutMaxBatchSize)
 {
 	OutMaxHoleCount = MaxHoleCount;
-	OutMaxOpsPerFrame = MaxOpsPerFrame;
 	OutMaxBatchSize = MaxBatchSize;
 }
 
@@ -1840,67 +1769,6 @@ TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> URealtimeDestructibleMeshComponen
 	return Result;
 }
 
-bool URealtimeDestructibleMeshComponent::ApplyDestructionRequestInternal(const FRealtimeDestructionRequest& Request)
-{
-	if (!bIsInitialized)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("RealtimeDestructibleMeshComponent: Not initialized"));
-		return false;
-	}
-
-	if (MaxHoleCount > 0 && CurrentHoleCount >= MaxHoleCount)
-	{
-		// UE_LOG(LogTemp, Warning, TEXT("RealtimeDestructibleMeshComponent: Maximum hole count reached"));
-		return false;
-	}
-
-	UDynamicMesh* TargetMesh = GetDynamicMesh();
-	if (!TargetMesh)
-	{
-		UE_LOG(LogTemp, Error, TEXT("RealtimeDestructibleMeshComponent: TargetMesh is null"));
-		return false;
-	}
-
-	UDynamicMesh* ToolMesh = CreateToolMeshFromRequest(Request);
-
-
-	const FVector LocalImpactPoint = GetComponentTransform().InverseTransformPosition(Request.ImpactPoint);
-	const FTransform LocalToolTransform = FTransform(LocalImpactPoint);
-
-	// Boolean 연산 시간 측정 시작
-	const double BooleanStartTime = FPlatformTime::Seconds();
-
-	UDynamicMesh* ResultMesh = UGeometryScriptLibrary_MeshBooleanFunctions::ApplyMeshBoolean(
-		TargetMesh,
-		FTransform::Identity,
-		ToolMesh,
-		LocalToolTransform,
-		EGeometryScriptBooleanOperation::Subtract,
-		BooleanOptions
-	);
-
-	// Boolean 연산 시간 측정 종료
-	const float BooleanTimeMs = static_cast<float>((FPlatformTime::Seconds() - BooleanStartTime) * 1000.0);
-
-	// 디버거에 Boolean 연산 시간 기록
-	if (UWorld* World = GetWorld())
-	{
-		if (UDestructionDebugger* Debugger = World->GetSubsystem<UDestructionDebugger>())
-		{
-			Debugger->RecordBooleanOperationTime(BooleanTimeMs);
-		}
-	}
-
-	if (!ResultMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("RealtimeDestructibleMeshComponent: Boolean operation failed"));
-		return false;
-	}
-
-	++CurrentHoleCount;
-	return true;
-}
-
 void URealtimeDestructibleMeshComponent::CopyMaterialsFromStaticMesh(UStaticMesh* InMesh)
 {
 	if (!InMesh)
@@ -2047,14 +1915,9 @@ bool URealtimeDestructibleMeshComponent::CheckPenetration(const FRealtimeDestruc
 	}
 	return false;
 }
-void URealtimeDestructibleMeshComponent::GetParallelSettings(int32& OutThreshold, int32& OutMaxThreads)
+
+void URealtimeDestructibleMeshComponent::SettingAsyncOption(bool& OutMultiWorker)
 {
-	OutThreshold = ParallelThreshold;
-	OutMaxThreads = MaxParallelThreads;
-}
-void URealtimeDestructibleMeshComponent::SettingAsyncOption(bool& OutParallelEnabled, bool& OutMultiWorker)
-{
-	OutParallelEnabled = bEnableParallel;
 	OutMultiWorker = bEnableMultiWorkers;
 }
 
@@ -2541,21 +2404,6 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 
 	UE_LOG(LogTemp, Display, TEXT("CellMesh Num %d"), ChunkMeshComponents.Num());
 
-	// Trace 채널 활성화 (비-쉬핑 빌드에서만)
-#if !UE_BUILD_SHIPPING
-	if (!bIsTraceEnabled)
-	{
-		if (GEngine)
-		{
-			GEngine->Exec(GetWorld(), TEXT("Trace.Enable task"));
-			GEngine->Exec(GetWorld(), TEXT("Trace.Enable contextswitch"));
-			GEngine->Exec(GetWorld(), TEXT("Trace.Enable counters"));
-			bIsTraceEnabled = true;
-			UE_LOG(LogTemp, Log, TEXT("Trace channel task, counters enabled"));
-		}
-	}
-#endif
-
 	// 멀티플레이어 동기화를 위해 Owner Actor의 Replication 활성화
 	if (AActor* Owner = GetOwner())
 	{
@@ -2928,7 +2776,7 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 // Cell Mesh Parallel Processing
 //////////////////////////////////////////////////////////////////////////
 
-int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection()
+int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection()
 {
 	if (!FracturedGeometryCollection)
 	{
@@ -3049,7 +2897,7 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 	{
 		const TArray<int32>& MyVertexIndices = VertexIndicesByTransform[TransformIdx];
 		const TArray<FTriangleData>& MyTriangles = TrianglesByTransform[TransformIdx];
-		 
+
 		// 빈 조각 + 첫 번째 스킵
 		if (TransformIdx == 0 || MyVertexIndices.Num() == 0 || MyTriangles.Num() == 0)
 		{
@@ -3080,12 +2928,12 @@ int32 URealtimeDestructibleMeshComponent::BuildCellMeshesFromGeometryCollection(
 			CellComp->SetupAttachment(Owner->GetRootComponent());
 		}
 		//CellComp->SetRelativeTransform(FTransform::Identity);
-			 
+
 		// Collision 설정
 		CellComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		CellComp->SetCollisionProfileName(TEXT("BlockAll"));
 		CellComp->SetComplexAsSimpleCollisionEnabled(true);
-		
+
 
 		// Tick 활성화   
 		CellComp->PrimaryComponentTick.bCanEverTick = false;
@@ -3653,7 +3501,7 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 	{
 		if (bUseCellMeshes && FracturedGeometryCollection)
 		{
-			int32 CellCount = BuildCellMeshesFromGeometryCollection();
+			int32 CellCount = BuildChunkMeshesFromGeometryCollection();
 			UE_LOG(LogTemp, Log, TEXT("PostEditChangeProperty: Auto-built %d cell meshes"), CellCount);
 		}
 	}
@@ -3894,7 +3742,7 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 
 
 	// Cell 메시 빌드
-	int32 CellCount = BuildCellMeshesFromGeometryCollection();
+	int32 CellCount = BuildChunkMeshesFromGeometryCollection();
 
 	if (AActor* Owner = GetOwner())
 	{
@@ -4171,4 +4019,3 @@ TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::
 
 	return MakeStructOnScope<FActorComponentInstanceData, FRealtimeDestructibleMeshComponentInstanceData>(this);
 }	
-

@@ -41,6 +41,8 @@ void UBulletClusterComponent::RegisterRequest(const FRealtimeDestructionRequest&
 	NewRequest.Radius = Request.ShapeParams.Radius;
 	NewRequest.ChunkIndex = Request.ChunkIndex;
 	NewRequest.ToolForwardVector = Request.ToolForwardVector;
+	NewRequest.ToolCenterWorld = Request.ImpactPoint - (Request.ToolForwardVector * Request.ShapeParams.SurfaceMargin);
+	NewRequest.Depth = (Request.ShapeParams.Height + Request.ShapeParams.SurfaceMargin) * 0.9f;
 	PendingRequests.Add(NewRequest);
 
 	// 타이머 시작
@@ -116,20 +118,6 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 			if (Dist <= MergeDistanceThreshold)
 			{
 				ClusterUF.Union(i, j);
-				// const FVector ForwardA = PendingRequests[i].ToolForwardVector;
-				// const FVector ForwardB = PendingRequests[j].ToolForwardVector;
-				// if (ForwardA.IsNearlyZero() || ForwardB.IsNearlyZero())
-				// {
-				// 	ClusterUF.Union(i, j);
-				// }
-				// else
-				// {
-				// 	const float Dot = FVector::DotProduct(ForwardA, ForwardB);
-				// 	if (Dot > CosThreshold)
-				// 	{
-				// 		ClusterUF.Union(i, j);
-				// 	}
-				// }
 			}
 		}
 	}
@@ -148,7 +136,7 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 		if (!FoundCluster)
 		{
 			FBulletCluster NewCluster;
-			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.ToolForwardVector, Req.Radius, Req.ChunkIndex); 
+			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.ToolForwardVector, Req.ToolCenterWorld, Req.Radius, Req.ChunkIndex, Req.Depth); 
 			RootToCluster.Add(Root, NewCluster);
 		}
 		else
@@ -192,28 +180,30 @@ void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& C
 	for (const FBulletCluster& Cluster : Clusters)
 	{
 		float FinalRadius = Cluster.Radius * ClusterRadiusOffset;
-
+		
 		Mesh->FindChunksInRadius(Cluster.Center, FinalRadius, AffectedChunks);
 
 		if (AffectedChunks.Num() == 0) continue;
 
 		// 모든 청크가 동일한 Center를 사용하여 높이가 일관되게 유지됨
 		for (int32 ChunkIndex : AffectedChunks)
-	{
-		FRealtimeDestructionRequest Request;
-			Request.ImpactPoint = Cluster.Center;  // 모든 청크에 동일한 Center 사용
-		Request.ImpactNormal = Cluster.Normal;
-		Request.ToolShape = EDestructionToolShape::Cylinder;
+		{
+			FRealtimeDestructionRequest Request;
+			Request.ImpactPoint = Cluster.Center; // 모든 청크에 동일한 Center 사용
+			Request.ImpactNormal = Cluster.Normal;
+			Request.ToolShape = EDestructionToolShape::Cylinder;
 			Request.ShapeParams.Radius = FinalRadius;
 			Request.ChunkIndex = ChunkIndex;
 			Request.ToolForwardVector = Cluster.AverageForwardVector;
+			Request.ToolCenterWorld = Cluster.ToolCenterWorld;
+			Request.ShapeParams.Height = Cluster.Depth;
 
-		Request.ToolMeshPtr = Mesh->CreateToolMeshPtrFromShapeParams(
+			Request.ToolMeshPtr = Mesh->CreateToolMeshPtrFromShapeParams(
 				Request.ToolShape, Request.ShapeParams);
 
-		Mesh->ExecuteDestructionInternal(Request);
+			Mesh->ExecuteDestructionInternal(Request);
+		}
 	}
-	} 
 }
 
 void UBulletClusterComponent::ClearPendingRequests()
@@ -227,6 +217,4 @@ void UBulletClusterComponent::ClearPendingRequests()
 
 	// 대기열 초기화
 	PendingRequests.Empty();
-
-
 }

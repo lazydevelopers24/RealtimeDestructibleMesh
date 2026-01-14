@@ -55,8 +55,7 @@ void UDestructionProjectileComponent::PostEditChangeProperty(FPropertyChangedEve
 	}
 } 
 #endif
- 
- 
+
 void UDestructionProjectileComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -463,6 +462,7 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 		OutRequest.ShapeParams.RadiusSteps = RadialSteps;
 		OutRequest.ShapeParams.HeightSubdivisions = HeightSubdivisions;
 		OutRequest.ShapeParams.bCapped = bCapped;
+		OutRequest.ShapeParams.SurfaceMargin = SurfaceMargin;
 		break;
 
 	case EDestructionToolShape::Sphere:
@@ -477,6 +477,7 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 		OutRequest.ShapeParams.RadiusSteps = RadialSteps;
 		OutRequest.ShapeParams.HeightSubdivisions = HeightSubdivisions;
 		OutRequest.ShapeParams.bCapped = bCapped;
+		OutRequest.ShapeParams.SurfaceMargin = SurfaceMargin;
 		break;
 	}
 	GetCalculateDecalSize(OutRequest.SurfaceType, OutRequest.DecalLocationOffset,  OutRequest.DecalRotationOffset, OutRequest.DecalSize ); 
@@ -528,7 +529,6 @@ void UDestructionProjectileComponent::DrawDebugCylinderInternal(const FVector& C
 	float TotalHeight = CylinderHeight + SurfaceMargin;	
 	FVector Start = Center;
 	FVector End = Center + (Direction * TotalHeight);
-	
 	DrawDebugCylinder(GetWorld(), Start, End, CylinderRadius, 16, Color, false, 5.0f, 0, 1.5f);
 	DrawDebugPoint(GetWorld(), Start + (Direction * SurfaceMargin), 10.0f, FColor::Red, false, 5.0f);
 }
@@ -646,32 +646,3 @@ void UDestructionProjectileComponent::GetCalculateDecalSize(FName SurfaceType, F
 	float FinalSize	 = BaseSize * DecalSizeMultiplier;
 	SizeOffset = FVector(FinalSize,FinalSize,FinalSize);
 }
-//
-// FVector UDestructionProjectileComponent::GetCalculateDecalSize() const
-// {
-// 	if (bUseDecalSizeOverride)
-// 	{
-// 		return DecalSizeOverride;
-// 	}
-//
-// 	float BaseSize = 0.0f;
-//
-// 	switch (ToolShape)
-// 	{
-// 	case EDestructionToolShape::Cylinder:
-// 		BaseSize = CylinderRadius;
-// 		break;
-//
-// 	case EDestructionToolShape::Sphere:
-// 		BaseSize = SphereRadius;
-// 		break;
-//
-// 	default: 
-// 		break;
-// 	}
-//
-// 	float FinalSize	 = BaseSize * DecalSizeMultiplier;
-// 	
-//
-// 	return FVector(FinalSize,FinalSize,FinalSize);
-// }
