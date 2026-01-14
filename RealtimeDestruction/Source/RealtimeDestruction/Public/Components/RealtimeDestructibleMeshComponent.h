@@ -6,8 +6,7 @@
 #include "Components/DynamicMeshComponent.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
 #include "DestructionTypes.h"
-#include "StructuralIntegrity/RealDestructCellGraph.h"
-#include "StructuralIntegrity/StructuralIntegritySystem.h"
+#include "StructuralIntegrity/GridCellTypes.h"
 #include "RealtimeDestructibleMeshComponent.generated.h"
 
 class UGeometryCollection;
@@ -130,6 +129,10 @@ struct REALTIMEDESTRUCTION_API FCompactDestructionOp
 	UPROPERTY()
 	FVector_NetQuantize10 ImpactNormal;
 
+	// 총알 진행 방향 (직렬화 시 ~6 bytes)
+	UPROPERTY()
+	FVector_NetQuantize10 ToolForwardVector;
+
 	// 반지름: 1-255 cm (1 byte)
 	UPROPERTY()
 	uint8 Radius = 10;
@@ -199,8 +202,8 @@ public:
 	UPROPERTY()
 	FIntVector SavedSliceCount = FIntVector::ZeroValue;
 
-	UPROPERTY() 
-	bool bSavedShowCellGraphDebug = false;
+	UPROPERTY()
+	bool bSavedShowGridCellDebug = false;
 
 	UPROPERTY()
 	// 포인터 대신 컴포넌트 이름 저장 (PIE 복제 시 이름으로 찾기 위함)
@@ -221,6 +224,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDestructionRejected, int32, Sequ
 // Class Declaration
 //////////////////////////////////////////////////////////////////////////
 
+/**
+ * 실시간 파괴 가능 메시 컴포넌트
+ *
+ * [중요] Grid Cell 시스템은 월드 좌표계를 기준으로 생성됩니다.
+ * 런타임 중 이 컴포넌트의 월드 스케일을 변경하면 Grid Cell과 실제 메시 간의
+ * 불일치가 발생하여 파괴 판정이 정확하지 않게 됩니다.
+ * 스케일 변경이 필요한 경우 BuildGridCells()를 다시 호출해야 합니다.
+ */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class REALTIMEDESTRUCTION_API URealtimeDestructibleMeshComponent : public UDynamicMeshComponent
 {
@@ -233,7 +244,7 @@ public:
 	virtual ~URealtimeDestructibleMeshComponent() override;
 
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
-	
+
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",meta = (DeprecatedFunction))
 	bool InitializeFromStaticMesh(UStaticMesh* InMesh);
 
@@ -258,6 +269,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	bool ExecuteDestructionInternal(const FRealtimeDestructionRequest& Request);
 	
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Clustering")
+	void RegisterForClustering(const FRealtimeDestructionRequest& Request);
+
 	// Options
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Options")
 	void SetBooleanOptions(const FGeometryScriptMeshBooleanOptions& Options);
@@ -273,7 +287,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Status")
 	int32 GetHoleCount() const;
-	
+
 	// Replication
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerEnqueueOps(const TArray<FRealtimeDestructionRequest>& Requests);
@@ -284,6 +298,13 @@ public:
 	/** 압축된 Multicast RPC (서버 → 클라이언트) */
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastApplyOpsCompact(const TArray<FCompactDestructionOp>& CompactOps);
+
+	/**
+	 * 분리된 파편 정보 Multicast RPC (서버 → 클라이언트)
+	 * 서버에서 BFS로 계산된 분리된 셀 그룹 정보를 클라이언트에 전송
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastDetachedDebris(const TArray<FDetachedDebrisInfo>& DetachedDebris);
 
 	/** 파괴 요청 거부 RPC (서버 → 요청한 클라이언트) */
 	UFUNCTION(Client, Reliable)
@@ -588,7 +609,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 1))
 	int32 MaxOpsPerFrame = 16;
 
@@ -652,6 +673,11 @@ protected:
 		meta = (EditCondition = "bUseCellMeshes"))
 	TObjectPtr<UGeometryCollection> FracturedGeometryCollection;
 
+	//[deprecated]
+	/** Cell별 분리된 메시 */
+	//TArray<TSharedPtr<UE::Geometry::FDynamicMesh3>> CellMeshes;
+
+
 	/** Cell별 분리된 메시 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|CellMesh")
 	TArray<TObjectPtr<UDynamicMeshComponent>> ChunkMeshComponents;
@@ -675,14 +701,27 @@ protected:
 	UPROPERTY()
 	bool bCellMeshesValid = false;
 
-	/** Cell 연결 그래프 (기하학적 연결성 관리) */
-	FRealDestructCellGraph CellGraph;
+	/** 격자 셀 캐시 (에디터에서 생성, 런타임 변경 없음) */
+	UPROPERTY()
+	FGridCellCache GridCellCache;
 
-	/** 구조적 무결성 시스템 (Anchor 연결성 분석) */
-	FStructuralIntegritySystem IntegritySystem;
+	/** 런타임 셀 상태 */
+	UPROPERTY()
+	FCellState CellState;
 
+	//=========================================================================
+	// Cell 기반 구조적 무결성 시스템
+	//=========================================================================
 
-	/** 현재 배치에서 변경된 청크 ID 집합 (CellGraph 갱신용) */
+	/** 구조적 무결성 시스템 활성화 여부 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity")
+	bool bEnableStructuralIntegrity = true;
+
+	/** 양자화된 파괴 입력 히스토리 (NarrowPhase용) */
+	UPROPERTY()
+	TArray<FQuantizedDestructionInput> DestructionInputHistory;
+
+	/** 현재 배치에서 변경된 청크 ID 집합 */
 	TSet<int32> ModifiedChunkIds;
 
 public:
@@ -699,12 +738,16 @@ public:
 	bool IsCellMeshesValid() const { return bCellMeshesValid; }
 
 	/**
-	 * CellGraph 및 StructuralIntegritySystem 초기화
-	 * BuildCellMeshesFromGeometryCollection 내부에서 자동 호출됨
-	 * @return 그래프 구축 성공 여부
+	 * 격자 셀 캐시 생성 (에디터에서 호출)
+	 * SourceStaticMesh로부터 격자 셀을 생성합니다.
+	 * @return 성공 여부
 	 */
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|CellMesh")
-	bool BuildCellGraph();
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
+	bool BuildGridCells();
+
+	/** 격자 셀 캐시 유효 여부 */
+	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|GridCell")
+	bool IsGridCellCacheValid() const { return GridCellCache.IsValid(); }
 
 private:
 	/**
@@ -714,37 +757,42 @@ private:
 	 */
 	void BuildGridToChunkMap();
 
-	/**
-	 * 수정된 청크들에 대해 CellGraph 갱신
-	 * ModifiedChunkIds를 기반으로 Cell 재계산 및 연결 갱신 수행
-	 * OnBatchCompleted 발생 시 호출됨
-	 */
-	void UpdateCellGraphForModifiedChunks();
-
 	void FindChunksAlongLineInternal(const FVector& WorldStart, const FVector& WorldEnd, TArray<int32>& OutChunkIndices);
 
 public:
-	/** CellGraph 초기화 상태 확인 */
+	/** GridCellCache 조회 (읽기 전용) */
+	const FGridCellCache& GetGridCellCache() const { return GridCellCache; }
+
+	/** CellState 조회 (읽기 전용) */
+	const FCellState& GetCellState() const { return CellState; }
+
+	/**
+	 * 파괴 요청에 의해 영향받은 셀 상태 업데이트
+	 * Boolean 파괴 처리와 함께 호출되어 Cell 파괴 판정 수행
+	 *
+	 * @param Request - 파괴 요청 정보
+	 */
+	void UpdateCellStateFromDestruction(const FRealtimeDestructionRequest& Request);
+
+	//[deprecated]
+	/** Cell 개수 반환 */
+	//UFUNCTION(BlueprintPure, Category="RealtimeDestructibleMesh|CellMesh")
+	//int32 GetCellMeshCount() const { return CellMeshes.Num(); }
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
-	bool IsCellGraphBuilt() const { return CellGraph.IsGraphBuilt(); }
+	int32 GetCellMeshCount() const { return ChunkMeshComponents.Num(); }
 
-	/** CellGraph 조회 (읽기 전용) */
-	const FRealDestructCellGraph& GetCellGraph() const { return CellGraph; }
-
-	/** StructuralIntegritySystem 조회 (읽기 전용) */
-	const FStructuralIntegritySystem& GetIntegritySystem() const { return IntegritySystem; }
-
-	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
-	int32 GetChunkMeshCount() const { return ChunkMeshComponents.Num(); }
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	FIntVector SliceCount;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh")
 	float SliceAngleVariation = 0.3f;
 
+	/** 격자 셀 크기 (cm). 값이 작을수록 해상도가 높아지지만 성능 비용 증가 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "1.0"))
+	FVector GridCellSize = FVector(5.0f);
+
 	/** 바닥 Anchor 감지 Z 높이 임계값 (cm, MeshBounds.Min.Z 기준 상대값) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "0.0"))
 	float FloorHeightThreshold = 10.0f;
 
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
@@ -773,20 +821,24 @@ protected:
 	/** 액터 위에 디버그 정보 텍스트 표시 여부 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowDebugText = false;
-	
-	/** CellGraph 노드 및 연결 디버그 표시 */
+
+	/** GridCell 디버그 표시 (격자 셀 시스템) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	bool bShowCellGraphDebug = false;
+	bool bShowGridCellDebug = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowCellConnectivityLines = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowDestroyedCells = false;
 
 	/** 디버그 텍스트 갱신. 메시 업데이트시에만 수행하는 식으로 업데이트 빈도 제어 */
 	void UpdateDebugText();
-	
-	void DrawDebugText() const;
-	
-	void DrawCellGraphDebug();
 
-	/** 분리된 Cell 그룹 디버그 시각화 */
-	void DrawDetachedGroupsDebug(const TArray<FDetachedCellGroup>& Groups);
+	void DrawDebugText() const;
+
+	/** 격자 셀 디버그 시각화 */
+	void DrawGridCellDebug();
 
 	bool bShouldDebugUpdate = true;
 
@@ -825,8 +877,19 @@ private:
 
 	/** Cell 바운딩 박스 계산 */
 	FBox CalculateCellBounds(int32 CellId) const;
-	
+
 	UDynamicMesh* CreateToolMeshFromRequest(const FRealtimeDestructionRequest& Request);
+
+	///////////////////////////
+	/*
+	 * BooleanProcessor로 리팩토링 예정
+	 * 모든 불리언 연산은 BooleanProcessor에서 처리할거임
+	 */
+	bool ApplyDestructionRequestInternal(const FRealtimeDestructionRequest& Request);
+	///////////////////////////
+
+	// 파괴 요청 함수
+	bool ApplyOpImmediate(const FRealtimeDestructionRequest& Request);
 
 	void CopyMaterialsFromStaticMesh(UStaticMesh* InMesh);
 	void CopyMaterialsFromStaticMeshComponent(UStaticMeshComponent* InComp);

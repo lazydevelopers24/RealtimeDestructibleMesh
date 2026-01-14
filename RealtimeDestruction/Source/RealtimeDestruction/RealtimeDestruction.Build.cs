@@ -13,7 +13,6 @@ public class RealtimeDestruction : ModuleRules
 				ModuleDirectory + "/Public",
 				ModuleDirectory + "/Public/Components",
 				ModuleDirectory + "/Public/BooleanProcessor",
-				ModuleDirectory + "/Public/CellStructure",
 				ModuleDirectory + "/Public/Debug",
 				ModuleDirectory + "/Public/Rendering",
 				ModuleDirectory + "/Public/StructuralIntegrity",
@@ -42,6 +41,7 @@ public class RealtimeDestruction : ModuleRules
 				"GeometryAlgorithms",
 				"DynamicMesh",
 				"MeshDescription",
+				"MeshConversion",
 				"ModelingComponents",
 
 				// Chaos / GeometryCollection
