@@ -17,6 +17,7 @@ class UMaterialInterface;
 class FLifetimeProperty;
 class FRealtimeBooleanProcessor;
 class UBulletClusterComponent;
+class UDecalMaterialDataAsset;
 
 //////////////////////////////////////////////////////////////////////////
 // Destruction Types
@@ -78,6 +79,16 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector DecalSize = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	bool bSpawnDecal = true;
+
+	/** Decal Material (Projectile에서 조회한 결과) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
+	
+	UPROPERTY()
+	FName SurfaceType = FName("Default");
 };
 
 USTRUCT(BlueprintType)
@@ -426,8 +437,11 @@ public:
 	FBox CachedMeshBounds;
 
 	UPROPERTY()
-	FVector CachedCellSize; 
+	FVector CachedCellSize;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	FName SurfaceType = FName("Default");
+
 	/** 데이터 유지를 위한 함수 */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
 
@@ -522,11 +536,19 @@ protected:
 	UDecalComponent* SpawnTemporaryDecal(const FRealtimeDestructionRequest& Request);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
+	TObjectPtr<UDecalMaterialDataAsset> DecalDataAsset = nullptr;
+ 
+	// [deprecated]
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	TObjectPtr<UMaterialInterface> HoleDecal = nullptr;
 
+	// [deprecated]
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	FVector DecalSize = FVector(10.0f, 10.0f, 10.0f);
-
+ 
+	/** Decal Material (projectile에서 조회한 결과) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
+	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
 
 	/**
 	 * 이 메시가 받을 수 있는 최대 구멍 개수
@@ -724,6 +746,10 @@ public:
 	/** 바닥 Anchor 감지 Z 높이 임계값 (cm, MeshBounds.Min.Z 기준 상대값) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|CellMesh", meta = (ClampMin = "0.0"))
 	float FloorHeightThreshold = 10.0f;
+
+	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|CellMesh")
+	int32 GetMaterialIDFromFaceIndex(int32 FaceIndex);
+
 
 #if WITH_EDITOR
 	/**

@@ -199,6 +199,15 @@ public:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> DecalMaterialInEditor = nullptr;
+
+	UPROPERTY()
+	FName DecalConfig = FName("Default");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
+	TObjectPtr<UDecalMaterialDataAsset> DecalDataAsset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
+	FName DecalConfigID = FName("Default");
 	
 	
 	//=========================================================================
@@ -233,7 +242,7 @@ public:
 	void RequestDestructionManual(const FHitResult& HitResult);
 public:
 	UFUNCTION(BlueprintCallable, Category="Destruction|Decal")
-	void GetCalculateDecalSize( FVector& LocationOffset,  FRotator& RotatorOffset, FVector& SizeOffset) const;
+	void GetCalculateDecalSize(FName SurfaceType,FVector& LocationOffset,  FRotator& RotatorOffset, FVector& SizeOffset) const;
 
 protected:
 	virtual void BeginPlay() override;

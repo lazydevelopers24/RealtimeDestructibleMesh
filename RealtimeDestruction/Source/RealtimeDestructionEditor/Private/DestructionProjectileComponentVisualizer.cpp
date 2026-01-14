@@ -110,7 +110,7 @@ void FDestructionProjectileComponentVisualizer::DrawDecalPreview(const class UDe
 	FVector DecalSize; 
 	FVector LocationOffset;
 	FRotator RotationOffset;
-	Component->GetCalculateDecalSize(LocationOffset, RotationOffset, DecalSize);
+	Component->GetCalculateDecalSize(FName("Default"), LocationOffset, RotationOffset, DecalSize);
 
 	
 	FVector Location = Component->GetComponentLocation();

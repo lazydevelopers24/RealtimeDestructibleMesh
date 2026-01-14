@@ -6,6 +6,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/SNullWidget.h"
 #include "PropertyEditorModule.h"
 #include "Modules/ModuleManager.h"
 #include "Framework/Docking/TabManager.h"
@@ -14,6 +15,7 @@
 #include "BoneControllers/AnimNode_AnimDynamics.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "PropertyCustomizationHelpers.h"
+#include "Data/DecalMaterialDataAsset.h"
 
 #define LOCTEXT_NAMESPACE "DecalSizeEditorWindow"
 
@@ -22,7 +24,35 @@ static const FName DecalSizeEditorTabId("DecalSizeEditorTab");
 void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 {
 	TargetComponent = InArgs._TargetComponent;
+	TargetDataAsset  = InArgs._TargetDataAsset;
 
+	// 편집 모드 결정
+	if (TargetDataAsset.IsValid())
+	{
+		CurrentEditMode = EEditMode::DataAsset;  
+		RefreshConfigIDList();
+		if (ConfigIDList.Num() == 0)
+		{
+			AddNewConfigID();
+		}
+		if (ConfigIDList.Num() > 0)
+		{
+			OnConfigIDSelected(*ConfigIDList[0]);
+
+			// Material 가져오기
+			FDecalSizeConfig* Config = GetCurrentDecalConfig();
+			if (Config)
+			{
+				SelectedDecalMaterial = Config->DecalMaterial;
+			}
+		} 
+	}
+	else if (TargetComponent.IsValid())
+	{
+		CurrentEditMode = EEditMode::Component;
+		SelectedDecalMaterial = TargetComponent->DecalMaterialInEditor;
+	}
+	
 	ToolShapeOptions.Add(MakeShared<FString>(TEXT("Sphere")));
 	ToolShapeOptions.Add(MakeShared<FString>(TEXT("Cylinder")));
 	
@@ -77,12 +107,17 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 			return true;
 		}));
 	
-	// Target Component를 Dectai View에 설정
-	if (TargetComponent.IsValid())
+	// Target Component를 Dectai View에 설정 
+	if (CurrentEditMode == EEditMode::DataAsset && TargetDataAsset.IsValid())
+	{
+		DetailsView->SetObject(TargetDataAsset.Get());
+	}
+	else if (TargetComponent.IsValid())
 	{
 		DetailsView->SetObject(TargetComponent.Get());
 	}
 
+	
 	// UI 구성
 	ChildSlot
 	[
@@ -118,6 +153,16 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
                   .Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
               ]
 
+              // Config 선택 섹션 (DataAsset 모드에서만)
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(4.0f)
+              [
+                  CurrentEditMode == EEditMode::DataAsset
+                      ? CreateConfigSelectionSection()
+                      : SNullWidget::NullWidget
+              ]
+
               // Decal Transform 섹션
               + SVerticalBox::Slot()
               .AutoHeight()
@@ -139,7 +184,13 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
                   [
                       CreateToolShapeSection()
                   ]
-
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(4.0f)
+					[
+					CreatePreviewMeshSection()
+					]
+			
                   // DetailsView (기타 프로퍼티)
                   + SVerticalBox::Slot()
                   .FillHeight(1.0f)
@@ -154,19 +205,36 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
                   .Padding(8.0f)
                   [
                       SNew(SButton)
-                      .Text(LOCTEXT("Refresh", "Refresh Preview"))
+						.Text_Lambda([this]()->FText
+						{
+							if (CurrentEditMode == EEditMode::DataAsset)
+							{
+								return FText::FromString("Apply To Data Asset");
+							}
+								 return FText::FromString("Apply DecalSize to Component");
+						}) 
                       .HAlign(HAlign_Center)
                       .OnClicked_Lambda([this]()
                       {
-                          if (Viewport.IsValid())
-                          {
-                              Viewport->RefreshPreview();
-                          }
-                          return FReply::Handled();
+                      	  if (CurrentEditMode == EEditMode::DataAsset)
+                      	  {
+							  SaveToDataAsset();
+						  }
+						  else
+						  {
+							  SaveToComponent();
+						  }
+						  return FReply::Handled();
                       })
                   ]
               ] 
       ];
+
+	if (CurrentEditMode == EEditMode::DataAsset && TargetDataAsset.IsValid() && Viewport.IsValid())
+	{
+		LoadConfigFromDataAsset(CurrentConfigID, CurrentSurfaceType);
+	}
+	
   }
 
 
@@ -204,6 +272,37 @@ void SDecalSizeEditorWindow::OpenWindow(UDestructionProjectileComponent* Compone
 	FSlateApplication::Get().AddWindow(Window);
 }
 
+void SDecalSizeEditorWindow::OpenWindowForDataAsset(UDecalMaterialDataAsset* DataAsset)
+{
+	if (!DataAsset)
+	{
+		return;
+	}
+ 
+	TSharedRef<SWindow> Window = SNew(SWindow)
+		.Title(FText::FromString(FString::Printf(TEXT("Decal Size Editor - %s"), *DataAsset->GetName())))
+		.ClientSize(FVector2D(1200, 600))
+		.SupportsMinimize(true)
+		.SupportsMaximize(true);
+
+	TSharedRef<SDecalSizeEditorWindow> EditorWidget = SNew(SDecalSizeEditorWindow)
+		.TargetDataAsset(DataAsset);
+
+	Window->SetContent(EditorWidget);
+
+
+    //창 닫을 때 delegate
+    Window->SetOnWindowClosed(FOnWindowClosed::CreateLambda(
+        [EditorWidget](const TSharedRef<SWindow>&) {
+            EditorWidget->SaveToDataAsset();
+
+        }
+    ));
+
+	FSlateApplication::Get().AddWindow(Window);
+	
+}
+
 TSharedRef<SWidget> SDecalSizeEditorWindow::CreateMaterialSection()
 {
 	
@@ -233,7 +332,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateMaterialSection()
 				.FillWidth(0.7f)
 				[
 					SNew(SObjectPropertyEntryBox)
-					.AllowedClass(UMaterialInterface::StaticClass())
+					.AllowedClass(UMaterialInstance::StaticClass())
 					.ObjectPath_Lambda([this]() -> FString
 					{
 						return SelectedDecalMaterial ? SelectedDecalMaterial->GetPathName() : FString();
@@ -360,7 +459,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateMaterialSection()
 
                     return FReply::Handled();
                 })
-            ]
+            ] 
 		];
 }
 
@@ -930,6 +1029,769 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateToolShapeSection()
                   ]
               ]
           ];
+}
+
+TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
+{ 
+	 return SNew(SExpandableArea)
+          .AreaTitle(FText::FromString("Config Selection"))
+          .InitiallyCollapsed(false)
+          .BodyContent()
+          [
+              SNew(SHorizontalBox)
+
+              + SHorizontalBox::Slot()
+              .FillWidth(0.3f)
+              .VAlign(VAlign_Center)
+              [
+                  SNew(STextBlock)
+                  .Text(FText::FromString("Edit Config"))
+              ]
+
+              + SHorizontalBox::Slot()
+              .FillWidth(0.5f)
+              [
+                  SNew(SComboBox<TSharedPtr<FName>>)
+                  .OptionsSource(&ConfigIDList)
+                  .OnSelectionChanged_Lambda([this](TSharedPtr<FName> NewValue, ESelectInfo::Type)
+                  {
+                      if (NewValue.IsValid())
+                      {
+                          SaveToDataAsset();
+                      	  OnConfigIDSelected(*NewValue);
+                      }
+                  })
+                  .OnGenerateWidget_Lambda([](TSharedPtr<FName> Item)
+                  {
+                      return SNew(STextBlock).Text(FText::FromName(*Item));
+                  })
+                  .Content()
+                  [
+                  		SNew(STextBlock)
+                      .Text_Lambda([this]() -> FText
+                      {
+                          return FText::FromName(CurrentConfigID);
+                      })
+                  ]
+              ]
+
+              + SHorizontalBox::Slot()
+              .AutoWidth()
+              .Padding(4.0f, 0.0f)
+              [
+                  SNew(SButton)
+                  .Text(FText::FromString("+"))
+                  .OnClicked_Lambda([this]()
+                  {
+                      if (TargetDataAsset.IsValid())
+                      {
+                          // 새 Config 이름 생성 
+                      	 AddNewConfigID(); 
+                      }
+                      return FReply::Handled();
+                  })
+              ]
+
+              + SHorizontalBox::Slot()
+              .AutoWidth()
+               .Padding(4.0f)
+                [
+                    SNew(SHorizontalBox)
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.3f)
+                    .VAlign(VAlign_Center)
+                    [
+                        SNew(STextBlock)
+                            .Text(FText::FromString("Rename"))
+                    ] 
+
+                    + SHorizontalBox::Slot()
+                    .FillWidth(0.5f)
+                    [
+                    	SNew(SEditableTextBox)
+                            .Text_Lambda([this]()->FText
+                                {
+                                    return FText::FromName(CurrentConfigID);
+                                })
+                            .OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
+                                {
+                                    if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+                                    {
+                                        RenameCurrentConfigID(FName(*NewText.ToString()));
+                                    } 
+                                })
+                    ]
+                ]
+
+          	+ SHorizontalBox::Slot()
+			 .AutoWidth()
+			 .Padding(4.0f)
+			 [
+				 SNew(SHorizontalBox)
+
+				 + SHorizontalBox::Slot()
+				 .FillWidth(0.3f)
+				 .VAlign(VAlign_Center)
+				 [
+					 SNew(STextBlock)
+					 .Text(FText::FromString("Config ID"))
+					 .ToolTipText(FText::FromString("Projectile에서 이 ID로 Config를 찾습니다"))
+				 ]
+
+				 + SHorizontalBox::Slot()
+				 .FillWidth(0.5f)
+				 [
+					 SNew(SEditableTextBox)
+					 .Text_Lambda([this]() -> FText
+					 {
+						 return FText::FromName(CurrentConfigID);  // 멤버 변수 추가 필요
+					 })
+					 .OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type)
+					 {
+						 CurrentConfigID = FName(*NewText.ToString());
+					 })
+				 ]
+			 ]
+          ];
+}
+
+TSharedRef<SWidget> SDecalSizeEditorWindow::CreatePreviewMeshSection()
+{
+ return SNew(SExpandableArea)
+          .AreaTitle(FText::FromString("Preview Mesh"))
+          .InitiallyCollapsed(false)
+          .BodyContent()
+          [
+              SNew(SVerticalBox)
+
+              // Mesh 선택
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(4.0f)
+              [
+                  SNew(SHorizontalBox)
+                  + SHorizontalBox::Slot().FillWidth(0.3f).VAlign(VAlign_Center)
+                  [ SNew(STextBlock).Text(FText::FromString("Mesh")) ]
+                  + SHorizontalBox::Slot().FillWidth(0.7f)
+                  [
+                      SNew(SObjectPropertyEntryBox)
+                      .AllowedClass(UStaticMesh::StaticClass())
+                      .ObjectPath_Lambda([this]() -> FString
+                      {
+                          return (Viewport.IsValid() && Viewport->GetPreviewMesh())
+                              ? Viewport->GetPreviewMesh()->GetPathName() : FString();
+                      })
+                      .OnObjectChanged_Lambda([this](const FAssetData& AssetData)
+                      {
+                          if (Viewport.IsValid())
+                          {
+                              Viewport->SetPreviewMesh(Cast<UStaticMesh>(AssetData.GetAsset()));
+                          }
+                      })
+                  ]
+              ]
+
+              // Location 라벨
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(4.0f, 8.0f, 4.0f, 4.0f)
+              [
+                  SNew(STextBlock)
+                  .Text(FText::FromString("Location"))
+                  .Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+              ]
+
+              // Location X, Y, Z
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(8.0f, 2.0f)
+              [
+                  SNew(SHorizontalBox)
+
+                  // X
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("X")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-1000.0f).MaxValue(1000.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshLocation().X : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FVector Loc = Viewport->GetPreviewMeshLocation();
+                                  Loc.X = V;
+                                  Viewport->SetPreviewMeshLocation(Loc);
+                              }
+                          })
+                      ]
+                  ]
+
+                  // Y
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  .Padding(4.0f, 0.0f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("Y")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-1000.0f).MaxValue(1000.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshLocation().Y : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FVector Loc = Viewport->GetPreviewMeshLocation();
+                                  Loc.Y = V;
+                                  Viewport->SetPreviewMeshLocation(Loc);
+                              }
+                          })
+                      ]
+                  ]
+
+                  // Z
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  .Padding(4.0f, 0.0f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("Z")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-1000.0f).MaxValue(1000.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshLocation().Z : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FVector Loc = Viewport->GetPreviewMeshLocation();
+                                  Loc.Z = V;
+                                  Viewport->SetPreviewMeshLocation(Loc);
+                              }
+                          })
+                      ]
+                  ]
+              ]
+
+              // Rotation 라벨
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(4.0f, 8.0f, 4.0f, 4.0f)
+              [
+                  SNew(STextBlock)
+                  .Text(FText::FromString("Rotation"))
+                  .Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+              ]
+
+              // Rotation Pitch, Yaw, Roll
+              + SVerticalBox::Slot()
+              .AutoHeight()
+              .Padding(8.0f, 2.0f)
+              [
+                  SNew(SHorizontalBox)
+
+                  // Pitch
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("P")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-180.0f).MaxValue(180.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshRotation().Pitch : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FRotator Rot = Viewport->GetPreviewMeshRotation();
+                                  Rot.Pitch = V;
+                                  Viewport->SetPreviewMeshRotation(Rot);
+                              }
+                          })
+                      ]
+                  ]
+
+                  // Yaw
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  .Padding(4.0f, 0.0f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("Y")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-180.0f).MaxValue(180.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshRotation().Yaw : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FRotator Rot = Viewport->GetPreviewMeshRotation();
+                                  Rot.Yaw = V;
+                                  Viewport->SetPreviewMeshRotation(Rot);
+                              }
+                          })
+                      ]
+                  ]
+
+                  // Roll
+                  + SHorizontalBox::Slot()
+                  .FillWidth(0.33f)
+                  .Padding(4.0f, 0.0f)
+                  [
+                      SNew(SHorizontalBox)
+                      + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                      [ SNew(STextBlock).Text(FText::FromString("R")) ]
+                      + SHorizontalBox::Slot().FillWidth(1.0f)
+                      [
+                          SNew(SSpinBox<float>)
+                          .MinValue(-180.0f).MaxValue(180.0f)
+                          .Value_Lambda([this]() {
+                              return Viewport.IsValid() ? Viewport->GetPreviewMeshRotation().Roll : 0.0f;
+                          })
+                          .OnValueChanged_Lambda([this](float V) {
+                              if (Viewport.IsValid()) {
+                                  FRotator Rot = Viewport->GetPreviewMeshRotation();
+                                  Rot.Roll = V;
+                                  Viewport->SetPreviewMeshRotation(Rot);
+                              }
+                          })
+                      ]
+                  ]
+              ]
+	    ];
+}
+
+void SDecalSizeEditorWindow::SaveToComponent()
+{
+	if (!TargetComponent.IsValid() || !Viewport.IsValid())
+	{
+		return;
+	}
+
+	FVector CurrentDecalSize = Viewport->GetDecalSize();
+
+	TargetComponent->bUseDecalSizeOverride = true;
+	TargetComponent->DecalSizeOverride = CurrentDecalSize;
+
+	FTransform DecalTransform = Viewport->GetDecalTransform();
+	TargetComponent->DecalLocationOffset = DecalTransform.GetLocation();
+	TargetComponent->DecalRotationOffset = DecalTransform.GetRotation().Rotator();
+
+	TargetComponent->MarkPackageDirty();
+}
+
+void SDecalSizeEditorWindow::SaveToDataAsset()
+{
+	if (!TargetDataAsset.IsValid() || !Viewport.IsValid())
+	{
+		return;
+	}
+
+	// 현재 선택된 Config 가져오기
+	FDecalSizeConfig* Config = GetCurrentDecalConfig();
+	if (!Config)
+	{
+		return;
+	}
+
+	Config->DecalMaterial = SelectedDecalMaterial;
+	Config->DecalSize = Viewport->GetDecalSize();
+
+	FTransform DecalTransform = Viewport->GetDecalTransform();
+	Config->LocationOffset = DecalTransform.GetLocation();
+	Config->RotationOffset = DecalTransform.GetRotation().Rotator();
+
+#if WITH_EDITORONLY_DATA
+	// Tool Shape
+	TargetDataAsset->ToolShapeLocationInEditor = Viewport->GetToolShapeLocation();
+	TargetDataAsset->ToolShapeRotationInEditor = Viewport->GetToolShapeRotation();
+	TargetDataAsset->SphereRadiusInEditor = Viewport->GetPreviewSphereRadius();
+	TargetDataAsset->CylinderRadiusInEditor = Viewport->GetPreviewCylinderRadius();
+	TargetDataAsset->CylinderHeightInEditor = Viewport->GetPreviewCylinderHeight();
+
+	// Preview Mesh
+	TargetDataAsset->PreviewMeshInEditor = Viewport->GetPreviewMesh();
+	TargetDataAsset->PreviewMeshLocationInEditor = Viewport->GetPreviewMeshLocation();
+	TargetDataAsset->PreviewMeshRotationInEditor = Viewport->GetPreviewMeshRotation();
+#endif
+
+	TargetDataAsset->MarkPackageDirty();
+}
+
+
+void SDecalSizeEditorWindow::LoadConfigFromDataAsset(FName ConfigID, FName SurfaceType)
+{
+	if (!TargetDataAsset.IsValid() || !Viewport.IsValid())
+	{
+		return;
+	}
+
+	FDecalSizeConfig Config;
+	if (TargetDataAsset->GetConfig(ConfigID, SurfaceType, Config))
+	{
+		SelectedDecalMaterial = Config.DecalMaterial;
+
+		// Transform 먼저 설정
+		FTransform DecalTransform;
+		DecalTransform.SetLocation(Config.LocationOffset);
+		DecalTransform.SetRotation(Config.RotationOffset.Quaternion());
+		Viewport->SetDecalTransform(DecalTransform);
+         
+		Viewport->SetDecalSize(Config.DecalSize); 
+		Viewport->SetDecalMaterial(Config.DecalMaterial); 
+	}
+
+#if WITH_EDITOR
+	// Tool Shape
+	Viewport->SetToolShapeLocation(TargetDataAsset->ToolShapeLocationInEditor);
+	Viewport->SetToolShapeRotation(TargetDataAsset->ToolShapeRotationInEditor);
+	Viewport->SetPreviewSphere(TargetDataAsset->SphereRadiusInEditor);
+	Viewport->SetPreviewCylinderRadius(TargetDataAsset->CylinderRadiusInEditor);
+	Viewport->SetPreviewCylinderHeight(TargetDataAsset->CylinderHeightInEditor);
+ 
+	// Preview Mesh
+	Viewport->SetPreviewMesh(TargetDataAsset->PreviewMeshInEditor.Get());
+	Viewport->SetPreviewMeshLocation(TargetDataAsset->PreviewMeshLocationInEditor);
+	Viewport->SetPreviewMeshRotation(TargetDataAsset->PreviewMeshRotationInEditor);
+#endif
+	Viewport->RefreshPreview();
+} 
+ 
+
+void SDecalSizeEditorWindow::RefreshConfigIDList()
+{
+	ConfigIDList.Empty();
+
+	if (!TargetDataAsset.IsValid())
+	{
+		return;
+	}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	for (const FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		ConfigIDList.Add(MakeShared<FName>(Config.ConfigID));
+	}
+}
+
+void SDecalSizeEditorWindow::RefreshSurfaceTypeList()
+{
+	SurfaceTypeList.Empty();
+
+	if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone())
+	{
+		return;
+	}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// 현재 ConfigID에 해당하는 ProjectileConfig 찾기
+	for (const FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			// SurfaceConfigs의 모든 Key(SurfaceType) 추가
+			TArray<FName> SurfaceKeys;
+			Config.SurfaceConfigs.GetKeys(SurfaceKeys);
+
+			for (const FName& Key : SurfaceKeys)
+			{
+				SurfaceTypeList.Add(MakeShared<FName>(Key));
+			}
+			break;
+		}
+	}
+}
+FDecalSizeConfig* SDecalSizeEditorWindow::GetCurrentDecalConfig()
+{
+	if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone() || CurrentSurfaceType.IsNone())
+	{
+		return nullptr;
+	}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// ConfigID로 ProjectileConfig 찾기
+	for (FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			// SurfaceType으로 DecalConfig 찾기
+			return Config.SurfaceConfigs.Find(CurrentSurfaceType);
+		}
+	}
+
+	return nullptr;
+}
+
+void SDecalSizeEditorWindow::OnConfigIDSelected(FName SelectedConfigID)
+{
+	CurrentConfigID = SelectedConfigID;
+	CurrentSurfaceType = NAME_None;
+
+	RefreshSurfaceTypeList();
+
+	if (SurfaceTypeList.Num() > 0)
+	{
+		CurrentSurfaceType = *SurfaceTypeList[0];
+		OnSurfaceTypeSelected(CurrentSurfaceType);
+	}
+
+	//TODO: SUrface type 콤보박스 갱신
+}
+
+void SDecalSizeEditorWindow::OnSurfaceTypeSelected(FName SelectedSurfaceType)
+{
+	CurrentSurfaceType = SelectedSurfaceType;
+
+	FDecalSizeConfig* Config = GetCurrentDecalConfig();
+	if (Config && Viewport.IsValid())
+	{ 
+		Viewport->SetDecalMaterial(Config->DecalMaterial);
+		Viewport->SetDecalSize(Config->DecalSize);
+		// ... 기타 설정 적용
+		Viewport->RefreshPreview();
+	}
+}
+
+void SDecalSizeEditorWindow::AddNewConfigID()
+{
+	if (!TargetDataAsset.IsValid())
+	{
+		return;
+	}
+	
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// 고유한 이름 생성
+	FName NewConfigID = EnsureUniqueConfigID(FName("NewProjectile"));
+
+	// 새 ProjectileConfig 추가
+	FProjectileDecalConfig NewConfig;
+	NewConfig.ConfigID = NewConfigID;
+
+	// 기본 SurfaceType Default 추가
+	FDecalSizeConfig DefaultSurface;
+	NewConfig.SurfaceConfigs.Add(FName("Default"), DefaultSurface);
+
+	DataAsset->ProjectileConfigs.Add(NewConfig);
+	DataAsset->MarkPackageDirty();
+
+	// 목록 갱신 및 새 항목 선택
+	RefreshConfigIDList();
+	OnConfigIDSelected(NewConfigID);
+     
+}
+
+void SDecalSizeEditorWindow::AddNewSurfaceType()
+{
+	if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone())
+	{
+		return;
+	}
+	
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// 현재 ConfigID의 ProjectileConfig 찾기
+	for (FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			// 고유한 SurfaceType 이름 생성
+			FName NewSurfaceType = EnsureUniqueSurfaceType(FName("NewSurface"));
+
+			// 새 DecalConfig 추가
+			FDecalSizeConfig NewDecalConfig;
+			Config.SurfaceConfigs.Add(NewSurfaceType, NewDecalConfig);
+
+			DataAsset->MarkPackageDirty();
+
+			// 목록 갱신 및 새 항목 선택
+			RefreshSurfaceTypeList();
+			OnSurfaceTypeSelected(NewSurfaceType);
+			break;
+		}
+	}
+}
+
+FName SDecalSizeEditorWindow::EnsureUniqueConfigID(FName NewName)
+{
+	if (!TargetDataAsset.IsValid())
+	{
+		return FName();
+	} 
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// 중복 체크
+	auto IsConfigIDExists = [&]( FName Name )->bool
+	{ 
+		for (const FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+		{
+			if (Config.ConfigID == Name)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+	
+	if (!IsConfigIDExists(NewName))
+	{
+		return NewName;
+	}
+
+	// 중복이면 숫자 붙이기
+	FString BaseString = NewName.ToString();
+	int32 Counter = 1;
+
+	while (true)
+	{
+		FName TempName = FName(*FString::Printf(TEXT("%s_%d"), *BaseString, Counter));
+		if (!IsConfigIDExists(TempName))
+		{
+			return TempName;
+		}
+		Counter++;
+	}
+}
+
+FName SDecalSizeEditorWindow::EnsureUniqueSurfaceType(FName NewName)
+{  if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone())
+{
+	return FName();
+}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	// 현재 ConfigID의 SurfaceConfigs 찾기
+	for (const FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			if (!Config.SurfaceConfigs.Contains(NewName))
+			{
+				return NewName;
+			}
+
+			// 중복이면 숫자 붙이기
+			FString BaseString = NewName.ToString();
+			int32 Counter = 1;
+
+			while (true)
+			{
+				FName TempName = FName(*FString::Printf(TEXT("%s_%d"), *BaseString, Counter));
+				if (!Config.SurfaceConfigs.Contains(TempName))
+				{
+					return TempName;
+				}
+				Counter++;
+			}
+		}
+	}
+
+	return FName();
+}
+
+void SDecalSizeEditorWindow::DeleteCurrentConfigID()
+{
+	if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone())
+	{
+		return;
+	}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	DataAsset->ProjectileConfigs.RemoveAll([this](const FProjectileDecalConfig& Config)
+	{
+		return Config.ConfigID == CurrentConfigID;
+	});
+
+	DataAsset->MarkPackageDirty();
+
+	// 목록 갱신
+	CurrentConfigID = NAME_None;
+	CurrentSurfaceType = NAME_None;
+	RefreshConfigIDList();
+
+	// 첫 번째 항목 선택 (있다면)
+	if (ConfigIDList.Num() > 0)
+	{
+		OnConfigIDSelected(*ConfigIDList[0]);
+	}
+}
+
+void SDecalSizeEditorWindow::DeleteCurrentSurfaceType()
+{
+	if (!TargetDataAsset.IsValid() || CurrentConfigID.IsNone() || CurrentSurfaceType.IsNone())
+	{
+		return;
+	}
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	for (FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			Config.SurfaceConfigs.Remove(CurrentSurfaceType);
+			DataAsset->MarkPackageDirty();
+
+			// 목록 갱신
+			CurrentSurfaceType = NAME_None;
+			RefreshSurfaceTypeList();
+
+			// 첫 번째 항목 선택 (있다면)
+			if (SurfaceTypeList.Num() > 0)
+			{
+				OnSurfaceTypeSelected(*SurfaceTypeList[0]);
+			}
+			break;
+		}
+	}
+	
+}
+
+void SDecalSizeEditorWindow::RenameCurrentConfigID(FName NewName)
+{
+	if (NewName.IsNone() || NewName == CurrentConfigID || !TargetDataAsset.IsValid())
+	{
+		return;
+	}
+	
+	NewName = EnsureUniqueConfigID(NewName);
+
+	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+
+	for (FProjectileDecalConfig& Config : DataAsset->ProjectileConfigs)
+	{
+		if (Config.ConfigID == CurrentConfigID)
+		{
+			Config.ConfigID = NewName;
+			CurrentConfigID = NewName;
+			DataAsset->MarkPackageDirty();
+			RefreshConfigIDList();
+			break;
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

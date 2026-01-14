@@ -9,15 +9,20 @@ class UDestructionProjectileComponent;
 class SDecalSizeEditorViewport;
 class IDetailsView;
 
+struct FDecalSizeConfig;
+
 /**
  * Decal Size 편집 전용 에디터 윈도우  
  */
 
+class UDecalMaterialDataAsset; 
+
 class SDecalSizeEditorWindow : public SCompoundWidget, public FNotifyHook
 {
-public:
-	SLATE_BEGIN_ARGS(SDecalSizeEditorWindow) {} 
+public: 
+	SLATE_BEGIN_ARGS(SDecalSizeEditorWindow): _TargetComponent(nullptr), _TargetDataAsset(nullptr) {}
         SLATE_ARGUMENT(UDestructionProjectileComponent*, TargetComponent)
+		SLATE_ARGUMENT(UDecalMaterialDataAsset*, TargetDataAsset)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -28,6 +33,7 @@ public:
 	/** 위도우를 탭으로 여는 static 함수 */
 	static void OpenWindow(UDestructionProjectileComponent* Component);
 
+	static void OpenWindowForDataAsset(UDecalMaterialDataAsset* DataAsset);
 private:
 	TSharedRef<SWidget> CreateMaterialSection();
 
@@ -36,13 +42,38 @@ private:
 	/** propert 변경 콜백 */ 
 	virtual void NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, FProperty* PropertyThatChanged) override;
 
+	void SaveToComponent();
+	void SaveToDataAsset();
+	void LoadConfigFromDataAsset(FName ConfigID, FName SurfaceType);
+	 
+	void RefreshConfigIDList();           
+	void RefreshSurfaceTypeList();  
+
+	FDecalSizeConfig* GetCurrentDecalConfig();
+
+	void OnConfigIDSelected(FName SelectedConfigID);
+	void OnSurfaceTypeSelected(FName SelectedSurfaceType);
+
+	void AddNewConfigID();
+	void AddNewSurfaceType();
+
+	FName EnsureUniqueConfigID(FName NewName);
+	FName EnsureUniqueSurfaceType(FName NewName);
+
+	void DeleteCurrentConfigID();
+	void DeleteCurrentSurfaceType();
+
+	void RenameCurrentConfigID(FName NewName);
+	
 	/** UI 생성 헬퍼 */
 	TSharedRef<SWidget> CreateDecalTransformSection();
 	TSharedRef<SWidget> CreateToolShapeSection();
-	
+	TSharedRef<SWidget> CreateConfigSelectionSection();
+	TSharedRef<SWidget> CreatePreviewMeshSection();
 	
 	/** Target Component */
 	TWeakObjectPtr<UDestructionProjectileComponent> TargetComponent;
+	TWeakObjectPtr<UDecalMaterialDataAsset> TargetDataAsset;
 
 	/** Viewport Widget */
 	TSharedPtr<SDecalSizeEditorViewport> Viewport;
@@ -52,4 +83,20 @@ private:
 
 	/** Decal Material */
 	TObjectPtr<UMaterialInterface> SelectedDecalMaterial;
+
+	enum class EEditMode { Component, DataAsset };
+	EEditMode CurrentEditMode = EEditMode::Component;
+   
+	/** 현재 선택된 ConfigID (총알 종류) */
+	FName CurrentConfigID = NAME_None;
+	
+	/** 현재 선택된 SurfaceType (표면 재질) */
+	FName CurrentSurfaceType = NAME_None;
+   
+	/** ConfigID 목록 (콤보박스용) */
+	TArray<TSharedPtr<FName>> ConfigIDList;
+
+	/** SurfaceType 목록 (콤보박스용) - 현재 선택된 ConfigID의 Surface들 */
+	TArray<TSharedPtr<FName>> SurfaceTypeList;
+	
 };

@@ -13,6 +13,7 @@
 #include "NiagaraSystem.h"
 #include "Materials/MaterialInterface.h"
 #include "NetworkLogMacros.h"
+#include "Data/DecalMaterialDataAsset.h"
 #include "Debug/DestructionDebugger.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
 #include "HAL/PlatformTime.h"
@@ -267,6 +268,30 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		Request.ToolMeshPtr = ToolMeshPtr;
 		Request.ToolShape = ToolShape;
 	
+		int32 HitMaterialID = DestructComp->GetMaterialIDFromFaceIndex(Hit.FaceIndex);
+		if (HitMaterialID == 1)
+		{
+			Request.bSpawnDecal = false;
+		}
+		else
+		{
+			Request.bSpawnDecal = true;
+		}
+		FName SurfaceType = DestructComp->SurfaceType; 
+		Request.SurfaceType = SurfaceType;
+		if (DecalDataAsset)
+		{
+			FDecalSizeConfig FoundConfig;
+			if (DecalDataAsset->GetConfig(DecalConfigID, SurfaceType, FoundConfig))
+			{
+				Request.DecalSize = FoundConfig.DecalSize;
+				Request.DecalLocationOffset = FoundConfig.LocationOffset;
+				Request.DecalRotationOffset = FoundConfig.RotationOffset;
+				Request.DecalMaterial = FoundConfig.DecalMaterial;
+			}
+		} 
+
+
 		SetShapeParameters(Request);		
 	
 		if (NetworkComp)
@@ -353,6 +378,27 @@ bool UDestructionProjectileComponent::EnsureToolMesh()
 		*ToolMeshPtr = Source;
 	});
 
+	// Material 만들기 ( 구멍 내는 부분에 채워줄 material ) 
+	const int32 InternalMaterialID = 1;
+	
+	// Attributes 활성화
+	if (!ToolMeshPtr->HasAttributes())
+	{
+		ToolMeshPtr->EnableAttributes();
+	}
+
+	// MaterialID 속성 활성화
+	if (!ToolMeshPtr->Attributes()->HasMaterialID())
+	{
+		ToolMeshPtr->Attributes()->EnableMaterialID();
+	}
+
+	// 모든 삼각형에 Material ID 설정
+	UE::Geometry::FDynamicMeshMaterialAttribute* MaterialIDAttr = ToolMeshPtr->Attributes()->GetMaterialID();
+	for (int32 TriId : ToolMeshPtr->TriangleIndicesItr())
+	{
+		MaterialIDAttr->SetValue(TriId, InternalMaterialID);
+	}
 	return true;
 }
 
@@ -410,7 +456,7 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 		OutRequest.ShapeParams.bCapped = bCapped;
 		break;
 	}
-	GetCalculateDecalSize(OutRequest.DecalLocationOffset,  OutRequest.DecalRotationOffset, OutRequest.DecalSize ); 
+	GetCalculateDecalSize(OutRequest.SurfaceType, OutRequest.DecalLocationOffset,  OutRequest.DecalRotationOffset, OutRequest.DecalSize ); 
 
 	UE_LOG(LogTemp, Warning, TEXT("[Server] ToolShape: %d, ShapeParams - Radius: %.2f, Height: %.2f, RadiusSteps: %d"),
 		static_cast<int32>(OutRequest.ToolShape),
@@ -532,9 +578,23 @@ void UDestructionProjectileComponent::RequestDestructionManual(const FHitResult&
 	}
 }
 
-void UDestructionProjectileComponent::GetCalculateDecalSize(FVector& LocationOffset, FRotator& RotatorOffset,
+void UDestructionProjectileComponent::GetCalculateDecalSize(FName SurfaceType, FVector& LocationOffset, FRotator& RotatorOffset,
 	FVector& SizeOffset) const
 {
+	if (DecalDataAsset)
+	{
+		// SurfaceType이 없으면 Default 사용
+		FName ActualSurfaceType = SurfaceType.IsNone() ? FName("Default") : SurfaceType;
+
+		FDecalSizeConfig Config;
+		if (DecalDataAsset->GetConfig(DecalConfigID, ActualSurfaceType, Config))
+		{
+			LocationOffset = Config.LocationOffset;
+			RotatorOffset = Config.RotationOffset;
+			SizeOffset = Config.DecalSize;
+			return;
+		}
+	}
 	if (bUseDecalSizeOverride)
 	{
 		LocationOffset = DecalLocationOffset;

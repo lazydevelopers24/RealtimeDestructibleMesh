@@ -58,19 +58,26 @@ void SDecalSizeEditorViewport::Construct(const FArguments& InArgs)
 	else
 	{ 
 		DecalTransform = FTransform(
-	FRotator(0.0f, 0.0f, 90.0f),
-	FVector::ZeroVector,      
-			FVector::OneVector        
+			FRotator(0.0f, 0.0f, 90.0f),
+			FVector::ZeroVector,      
+			FVector(1.0f, 10.0f, 10.0f)
 		);
+
 		ToolShapeTransform = FTransform::Identity;
-		
+
+		PreviewSphereRadius = 10;
+		PreviewCylinderRadius = 10;
+		PreviewCylinderHeight = 5;
+		PreviewToolShape = EDestructionToolShape::Cylinder;
 	}
 	
 	// 프리뷰 씬 생성
 	FAdvancedPreviewScene::ConstructionValues CVS;
 	CVS.bCreatePhysicsScene = false;
 	CVS.LightBrightness = 3.0f;
-	CVS.SkyBrightness = 1.0f;
+	CVS.SkyBrightness = 1.0f;  
+	CVS.bDefaultLighting = true;       
+	CVS.bAllowAudioPlayback = false;
 	PreviewScene = MakeShared<FAdvancedPreviewScene>(CVS);
 	PreviewScene->SetFloorVisibility(false);
 
@@ -83,23 +90,59 @@ void SDecalSizeEditorViewport::Construct(const FArguments& InArgs)
 
 SDecalSizeEditorViewport::~SDecalSizeEditorViewport()
 {
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient.Reset(); 
+	}
+
 	if (PreviewScene.IsValid())
 	{
-		if (PreviewActor)
+		UWorld* World = PreviewScene->GetWorld();
+		if (World && PreviewActor && IsValid(PreviewActor))
 		{
-			PreviewScene->GetWorld()->DestroyActor(PreviewActor);
+			World->DestroyActor(PreviewActor);
 		}
 	}
+
+	PreviewActor = nullptr;
+	ProjectileMesh = nullptr;
+	ToolShapeWireframe = nullptr;
+	DecalPreviewComponent = nullptr;
+	DecalTargetSurface = nullptr;
+	DecalWireframe = nullptr;
 }
 
 void SDecalSizeEditorViewport::AddReferencedObjects(FReferenceCollector& Collector)
 {
-	Collector.AddReferencedObject(PreviewActor);
-	Collector.AddReferencedObject(ProjectileMesh);
-	Collector.AddReferencedObject(ToolShapeWireframe);
-	Collector.AddReferencedObject(DecalPreviewComponent);
-	Collector.AddReferencedObject(DecalTargetSurface);
-	Collector.AddReferencedObject(DecalWireframe);
+	if (PreviewActor)
+	{
+		Collector.AddReferencedObject(PreviewActor);
+	}
+	if (ProjectileMesh)
+	{
+		Collector.AddReferencedObject(ProjectileMesh);
+	}
+	if (ToolShapeWireframe)
+	{
+		Collector.AddReferencedObject(ToolShapeWireframe);
+	}
+	if (DecalPreviewComponent)
+	{
+		Collector.AddReferencedObject(DecalPreviewComponent);
+	}
+	if (DecalTargetSurface)
+	{
+		Collector.AddReferencedObject(DecalTargetSurface);
+	}
+	if (DecalWireframe)
+	{
+		Collector.AddReferencedObject(DecalWireframe);
+	}
+	if (DecalMaterial)
+	{
+		Collector.AddReferencedObject(DecalMaterial);
+	}
+
 }
 
 void SDecalSizeEditorViewport::RefreshPreview()
@@ -146,71 +189,81 @@ void SDecalSizeEditorViewport::RefreshPreview()
 	Root->RegisterComponent();
 
 
-	// 실제 projectile mesh를  가져오는 코드 
-	UDestructionProjectileComponent* Comp = TargetComponent.Get();
-	if (!Comp)
-	{
-		return;
-	}
+
+	// preview mesh는 항상 생성
 	ProjectileMesh = NewObject<UStaticMeshComponent>(PreviewActor);
 	ProjectileMesh->SetupAttachment(Root);
+	ProjectileMesh->SetRelativeLocation(FVector::ZeroVector);
+	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	
-	UObject* Outer = Comp->GetOuter();
-	UBlueprintGeneratedClass* BPClass = Cast<UBlueprintGeneratedClass>(Outer);
-
-	if (BPClass && BPClass->SimpleConstructionScript)
+	// 실제 projectile mesh를  가져오는 코드 
+	UDestructionProjectileComponent* Comp = TargetComponent.Get();
+	if (Comp)
 	{
-		USCS_Node* MyNode = nullptr;
-		USCS_Node* ParentNode = nullptr;
+	
+		UObject* Outer = Comp->GetOuter();
+		UBlueprintGeneratedClass* BPClass = Cast<UBlueprintGeneratedClass>(Outer);
 
-		const TArray<USCS_Node*>& AllNodes = BPClass->SimpleConstructionScript->GetAllNodes();
-
-		// 1. 내 노드 찾기
-		for (USCS_Node* Node : AllNodes)
+		if (BPClass && BPClass->SimpleConstructionScript)
 		{
-			if (Node->ComponentTemplate == Comp)
-			{
-				MyNode = Node;
-				break;
-			}
-		}
+			USCS_Node* MyNode = nullptr;
+			USCS_Node* ParentNode = nullptr;
 
-		// 2. 부모 노드 찾기 (ChildNodes 역탐색)
-		if (MyNode)
-		{
-			for (USCS_Node* PotentialParent : AllNodes)
+			const TArray<USCS_Node*>& AllNodes = BPClass->SimpleConstructionScript->GetAllNodes();
+
+			// 1. 내 노드 찾기
+			for (USCS_Node* Node : AllNodes)
 			{
-				if (PotentialParent->ChildNodes.Contains(MyNode))
+				if (Node->ComponentTemplate == Comp)
 				{
-					ParentNode = PotentialParent;
+					MyNode = Node;
 					break;
 				}
 			}
-		}
 
-		// 3. 부모가 StaticMeshComponent면 메시 복사
-		if (ParentNode && ParentNode->ComponentTemplate)
-		{
-			if (UStaticMeshComponent* ParentMesh = Cast<UStaticMeshComponent>(ParentNode->ComponentTemplate))
+			// 2. 부모 노드 찾기 (ChildNodes 역탐색)
+			if (MyNode)
 			{
-				ProjectileMesh->SetStaticMesh(ParentMesh->GetStaticMesh());
-				// 머티리얼도 복사
-				for (int32 i = 0; i < ParentMesh->GetNumMaterials(); ++i)
+				for (USCS_Node* PotentialParent : AllNodes)
 				{
-					ProjectileMesh->SetMaterial(i, ParentMesh->GetMaterial(i));
+					if (PotentialParent->ChildNodes.Contains(MyNode))
+					{
+						ParentNode = PotentialParent;
+						break;
+					}
 				}
-
-				ProjectileMesh->SetRelativeLocation(ParentMesh->GetRelativeLocation());
-				ProjectileMesh->SetRelativeRotation(ParentMesh->GetRelativeRotation());
-				ProjectileMesh->SetRelativeScale3D(ParentMesh->GetRelativeScale3D());
-
 			}
-		}
-	} 
 
-	ProjectileMesh->SetRelativeLocation(FVector::ZeroVector);
-	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			// 3. 부모가 StaticMeshComponent면 메시 복사
+			if (ParentNode && ParentNode->ComponentTemplate)
+			{
+				if (UStaticMeshComponent* ParentMesh = Cast<UStaticMeshComponent>(ParentNode->ComponentTemplate))
+				{
+					ProjectileMesh->SetStaticMesh(ParentMesh->GetStaticMesh());
+					// 머티리얼도 복사
+					for (int32 i = 0; i < ParentMesh->GetNumMaterials(); ++i)
+					{
+						ProjectileMesh->SetMaterial(i, ParentMesh->GetMaterial(i));
+					}
+
+					ProjectileMesh->SetRelativeLocation(ParentMesh->GetRelativeLocation());
+					ProjectileMesh->SetRelativeRotation(ParentMesh->GetRelativeRotation());
+					ProjectileMesh->SetRelativeScale3D(ParentMesh->GetRelativeScale3D());
+
+				}
+			}
+		} 
+	}
+	else if (PreviewMesh)
+	{
+		ProjectileMesh->SetStaticMesh(PreviewMesh);
+		ProjectileMesh->SetRelativeLocation(PreviewMeshLocation);
+		ProjectileMesh->SetRelativeRotation(PreviewMeshRotation);
+	}
 	ProjectileMesh->RegisterComponent();
+
+	
+
 	
 	// Tool Shape Wireframe
 	ToolShapeWireframe = NewObject<ULineBatchComponent>(PreviewActor);
@@ -288,6 +341,24 @@ void SDecalSizeEditorViewport::SetToolShapeRotation(const FRotator& InRotation)
 	SaveState();
 }
 
+void SDecalSizeEditorViewport::SetPreviewMesh(UStaticMesh* InPreviewMesh)
+{
+	PreviewMesh = InPreviewMesh;
+
+	if ( ProjectileMesh && InPreviewMesh)
+	{
+		ProjectileMesh->SetStaticMesh(InPreviewMesh);
+		ProjectileMesh->MarkRenderStateDirty();
+	}
+	
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+
+	RefreshPreview(); 
+}
+
 void SDecalSizeEditorViewport::SetPreviewToolShape(EDestructionToolShape NewShape)
 {
 	PreviewToolShape = NewShape;
@@ -315,8 +386,36 @@ void SDecalSizeEditorViewport::SetPreviewCylinderHeight(float InHeight)
 	UpdateToolShapeWireframe(); 
 	SaveState();
 }
- 
- 
+
+void SDecalSizeEditorViewport::SetPreviewMeshLocation(const FVector& InLocation)
+{
+	PreviewMeshLocation = InLocation;
+	
+	if (ProjectileMesh)
+	{
+		ProjectileMesh->SetRelativeLocation(InLocation);
+	}
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+}
+
+void SDecalSizeEditorViewport::SetPreviewMeshRotation(const FRotator& InRotator)
+{
+	PreviewMeshRotation = InRotator;
+
+	if (ProjectileMesh)
+	{
+		ProjectileMesh->SetRelativeRotation(InRotator);
+	}
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->Invalidate();
+	}
+}
+
+
 void SDecalSizeEditorViewport::UpdateDecalMesh()
 {
 	if (!DecalPreviewComponent)

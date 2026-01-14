@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Components/RealtimeDestructibleMeshComponent.h"
+#include "Components/RealtimeDestructibleMeshComponent.h" 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -29,6 +29,7 @@
 
 #include "BulletClusterComponent.h"
 #include "Algo/Unique.h"
+#include "Data/DecalMaterialDataAsset.h"
 
 //////////////////////////////////////////////////////////////////////////
 // FCompactDestructionOp 구현 (언리얼 내장 NetQuantize 사용)
@@ -748,7 +749,19 @@ bool URealtimeDestructibleMeshComponent::InitializeFromStaticMeshInternal(UStati
 		UE_LOG(LogTemp, Error, TEXT("Failed to copy mesh"));
 		return false;
 	}
+	
+	// 내부 material을 사용하기 위한 설정
+	if (ResultMesh)
+	{
+		ResultMesh->EditMesh([&](FDynamicMesh3& EditMesh) {
 
+			// Att 기능 활성화
+			EditMesh.EnableAttributes();
+
+			// Material ID 활성화 
+			EditMesh.Attributes()->EnableMaterialID();
+			});
+	}
 	// 5. 머티리얼 및 콜리전 복사
 	CopyMaterialsFromStaticMesh(InMesh);
 	SetComplexAsSimpleCollisionEnabled(true);
@@ -777,7 +790,7 @@ UDynamicMesh* URealtimeDestructibleMeshComponent::CreateToolMeshFromRequest(cons
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to create ToolMesh"));
 		return nullptr;
-	}
+	}  
 
 	return ToolMesh;
 }
@@ -1936,11 +1949,24 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 
 UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const FRealtimeDestructionRequest& Request)
 {
-	if (!HoleDecal)
+	if (!Request.bSpawnDecal)
 	{
 		return nullptr;
 	}
 
+	UMaterialInterface* MaterialToUse = nullptr;
+	FVector SizeToUse = FVector::ZeroVector;
+	FVector LocationOffsetToUse = FVector::ZeroVector;
+	FRotator RotationOffsetToUse = FRotator::ZeroRotator; 
+
+	if (Request.DecalMaterial)
+	{
+		MaterialToUse = Request.DecalMaterial; 
+		SizeToUse = Request.DecalSize;
+		LocationOffsetToUse = Request.DecalLocationOffset;
+		RotationOffsetToUse = Request.DecalRotationOffset;
+	}  
+	
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
@@ -1953,29 +1979,32 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 		return nullptr;
 	}
 
-	Decal->SetDecalMaterial(HoleDecal);
+	//Decal->SetDecalMaterial(HoleDecal);
+	Decal->SetDecalMaterial(MaterialToUse);
+	
 	//Request에 decalSize가 없을 때, 기본값 사용
-	Decal->DecalSize = Request.DecalSize.IsNearlyZero() ? DecalSize : Request.DecalSize;
-
+	//Decal->DecalSize = Request.DecalSize.IsNearlyZero() ? DecalSize : Request.DecalSize;
+	Decal->DecalSize = Request.DecalSize.IsNearlyZero() ? SizeToUse : Request.DecalSize;
+	
 	//데칼이 항상 보이도록 처리 
 	Decal->SetFadeScreenSize(0.0f);
 	Decal->FadeStartDelay = 0.0f;
-	Decal->FadeDuration = 0.0f;
+	Decal->FadeDuration = 0.0f; 
 	 
-	// decal 방향 설정
+	  
+	// decal 방향 설정 
+	FVector DecalForwardVector = -Request.ImpactNormal;  
 	FRotator DecalRotation = Request.ImpactNormal.Rotation();
 	 
 	FRotator TransformBasis = DecalRotation;
 	TransformBasis.Yaw += 180.0f;  // 에디터 좌표계와 일치시킴
+
 	FTransform DecalTransform(TransformBasis, Request.ImpactPoint);
 	FVector WorldOffset = DecalTransform.TransformVector(Request.DecalLocationOffset);
-	FVector DecalLocation = Request.ImpactPoint + WorldOffset;
-	  
+	FVector DecalLocation = Request.ImpactPoint + (Request.ImpactNormal * 0.5f) + WorldOffset;
+		
 
-	Decal->SetWorldLocationAndRotation(DecalLocation, DecalRotation);
-	  
-
-	// 액터에 등록
+	Decal->SetWorldLocationAndRotation(DecalLocation, DecalRotation); 
 	Decal->RegisterComponent(); 
 
 	return Decal;
@@ -2959,6 +2988,26 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 	}
 }
 
+
+int32 URealtimeDestructibleMeshComponent::GetMaterialIDFromFaceIndex(int32 FaceIndex)
+{
+	if (FaceIndex == INDEX_NONE)
+	{
+		return 0;
+	} 
+	 
+	if (UDynamicMesh* DynMesh = GetDynamicMesh())
+	{
+		const UE::Geometry::FDynamicMesh3& Mesh = DynMesh->GetMeshRef();
+
+		if (Mesh.HasAttributes() && Mesh.Attributes()->HasMaterialID())
+		{
+			return Mesh.Attributes()->GetMaterialID()->GetValue(FaceIndex);
+		}
+	}
+
+	return 0;
+}
 
 void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 {

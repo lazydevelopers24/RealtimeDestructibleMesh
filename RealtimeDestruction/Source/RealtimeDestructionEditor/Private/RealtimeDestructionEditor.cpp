@@ -1,6 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RealtimeDestructionEditor.h"
+
+#include "DecalMaterialDataAssetDetails.h"
 #include "Components/DestructionProjectileComponent.h"
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
@@ -8,6 +10,7 @@
 #include "DecalSizeEditorWindow.h" 
 #include "DestructionProjectileComponentDetails.h"
 #include "PropertyEditorModule.h"
+#include "Data/DecalMaterialDataAsset.h" 
 
 #define LOCTEXT_NAMESPACE "FRealtimeDestructionEditorModule"
 
@@ -30,6 +33,11 @@ void FRealtimeDestructionEditorModule::StartupModule()
 		UDestructionProjectileComponent::StaticClass()->GetFName(),
 		FOnGetDetailCustomizationInstance::CreateStatic(&FDestructionProjectileComponentDetails::MakeInstance)
 	);
+ 
+	PropertyModule.RegisterCustomClassLayout(
+		UDecalMaterialDataAsset::StaticClass()->GetFName(),
+		FOnGetDetailCustomizationInstance::CreateStatic(&FDecalMaterialDataAssetDetails::MakeInstance)
+	);
 
 	UE_LOG(LogTemp, Log, TEXT("RealtimeDestructionEditor module started"));
 }
@@ -47,8 +55,10 @@ void FRealtimeDestructionEditorModule::ShutdownModule()
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UDestructionProjectileComponent::StaticClass()->GetFName());
-		
-	}
+ 
+		PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+		PropertyModule.UnregisterCustomClassLayout(UDecalMaterialDataAsset::StaticClass()->GetFName()); 
+	} 
 
 	UE_LOG(LogTemp, Log, TEXT("RealtimeDestructionEditor module shutdown"));
 }

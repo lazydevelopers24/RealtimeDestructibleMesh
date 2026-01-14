@@ -1238,9 +1238,9 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 		return false;
 	}
 
-	using namespace UE::Geometry;
+	using namespace UE::Geometry; 
 
-	// 필요하다면 다른 연산으로 확장
+		// 필요하다면 다른 연산으로 확장
 	FMeshBoolean::EBooleanOp Op = FMeshBoolean::EBooleanOp::Difference;
 	switch (Operation)
 	{
@@ -1276,8 +1276,10 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 			CurrentToolTransform.AddToTranslation(RandomOffset);
 			CurrentToolTransform.SetRotation(CurrentToolTransform.GetRotation() * RandomRot);
 
-			UE_LOG(LogTemp, Log, TEXT("[Boolean] Attempt %d: Retrying with Jitter"), Attempt);
+			UE_LOG(LogTemp, Log, TEXT("[Boolean] Attempt %d: Retrying with Jitter"), Attempt); 
 		}
+
+		const int32 InternalMaterialID = 1;
 
 		// Mesh 연산
 		FMeshBoolean MeshBoolean(
@@ -1289,42 +1291,70 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 		MeshBoolean.bSimplifyAlongNewEdges = Options.bSimplifyOutput;
 		MeshBoolean.bWeldSharedEdges = false;
 
-		bool bSuccess = MeshBoolean.Compute();
-
-		if (bSuccess)
+		bool bSuccess = MeshBoolean.Compute(); 
+	if (bSuccess)
+	{
+	
+		// OutputMesh에 Attributes/MaterialID 활성화 
+		if (!OutputMesh->HasAttributes())
 		{
-			/*
-			 * welding 처리
-			 * 열린 메시를 닫힌 메시로 만듬
-			 */
-			FMergeCoincidentMeshEdges Welder(OutputMesh);
-			Welder.MergeSearchTolerance = 0.001;
+			OutputMesh->EnableAttributes();
+		}
+		if (!OutputMesh->Attributes()->HasMaterialID())
+		{
+			OutputMesh->Attributes()->EnableMaterialID();
+		}
 
-			Welder.Apply();
+		// PolyGroup 레이어가 없으면 활성화 (불리언 결과에 그룹 정보가 유지됨)
+		if (!OutputMesh->HasTriangleGroups())
+		{
+			OutputMesh->EnableTriangleGroups();
+		}
 
-			/*
-			 * 현재 사용되지 않는 코드임
-			 * bFillHoles의 true, false 여부와 관계없이 동일한 결과
-			 */
-			TArray<int> NewBoundaryEdges = MoveTemp(MeshBoolean.CreatedBoundaryEdges);
-			if (NewBoundaryEdges.Num() > 0 && Options.bFillHoles)
+		FDynamicMeshMaterialAttribute* MaterialIDAttr = OutputMesh->Attributes()->GetMaterialID();
+		 
+		// PolyGroup ID를 이용한 정확한 할당
+		int32 ToolGroupID = 1; // ToolMesh에서 설정한 ID와 일치해야 함 
+		for (int32 TriID : OutputMesh->TriangleIndicesItr())
+		{
+			if (OutputMesh->GetTriangleGroup(TriID) == ToolGroupID)
 			{
-				FMeshBoundaryLoops OpenBoundary(OutputMesh, false);
-				TSet<int> ConsiderEdges(NewBoundaryEdges);
-				OpenBoundary.EdgeFilterFunc = [&ConsiderEdges](int EID)
-				{
-					return ConsiderEdges.Contains(EID);
-				};
-				OpenBoundary.Compute();
-
-				for (FEdgeLoop& Loop : OpenBoundary.Loops)
-				{
-					UE::Geometry::FMinimalHoleFiller Filler(OutputMesh, Loop);
-					Filler.Fill();
-				}
+				MaterialIDAttr->SetValue(TriID, InternalMaterialID);
 			}
+		}
 
-			return true;
+		/*
+			* welding 처리
+			* 열린 메시를 닫힌 메시로 만듬
+			*/
+		FMergeCoincidentMeshEdges Welder(OutputMesh);
+		Welder.MergeSearchTolerance = 0.001;
+
+		Welder.Apply();
+
+		/*
+			* 현재 사용되지 않는 코드임
+			* bFillHoles의 true, false 여부와 관계없이 동일한 결과
+			*/
+		TArray<int> NewBoundaryEdges = MoveTemp(MeshBoolean.CreatedBoundaryEdges);
+		if (NewBoundaryEdges.Num() > 0 && Options.bFillHoles)
+		{
+			FMeshBoundaryLoops OpenBoundary(OutputMesh, false);
+			TSet<int> ConsiderEdges(NewBoundaryEdges);
+			OpenBoundary.EdgeFilterFunc = [&ConsiderEdges](int EID)
+			{
+				return ConsiderEdges.Contains(EID);
+			};
+			OpenBoundary.Compute();
+
+			for (FEdgeLoop& Loop : OpenBoundary.Loops)
+			{
+				UE::Geometry::FMinimalHoleFiller Filler(OutputMesh, Loop);
+				Filler.Fill();
+			}
+		}
+
+		return true;
 		}
 		// 실패한 경우 Clear 후 재시도
 		OutputMesh->Clear();

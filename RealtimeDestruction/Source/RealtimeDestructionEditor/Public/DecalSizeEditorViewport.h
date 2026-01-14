@@ -40,11 +40,15 @@ public:
 	/** ToolShape 크기 설정 */
 	void SetToolShapeLocation(const FVector& InLocation);
 	void SetToolShapeRotation(const FRotator& InRotation);
-	
+
+	void SetPreviewMesh(UStaticMesh* InPreviewMesh);
 	void SetPreviewToolShape(EDestructionToolShape NewShape);
 	void SetPreviewSphere(float InRadius);
 	void SetPreviewCylinderRadius(float InRadius);
 	void SetPreviewCylinderHeight( float InHeight);
+
+	void SetPreviewMeshLocation(const FVector& InLocation);
+	void SetPreviewMeshRotation(const FRotator& InRotator);
 
 	FVector GetToolShapeLocation() const { return ToolShapeTransform.GetLocation(); }
 	FRotator GetToolShapeRotation() const { return ToolShapeTransform.GetRotation().Rotator(); }
@@ -53,7 +57,11 @@ public:
 	float GetPreviewSphereRadius() const { return PreviewSphereRadius; }
 	float GetPreviewCylinderRadius() const { return PreviewCylinderRadius; }
 	float GetPreviewCylinderHeight() const { return PreviewCylinderHeight; }
- 
+	UStaticMesh* GetPreviewMesh() const { return PreviewMesh; }
+
+	FVector GetPreviewMeshLocation() const { return PreviewMeshLocation; }
+	FRotator GetPreviewMeshRotation() const { return PreviewMeshRotation; }
+	
 	/** 프리뷰 메시만 업데이트 (전체 Refresh 없이) */ 
 	void UpdateDecalMesh();   
 	void UpdateDecalWireframe();
@@ -87,14 +95,19 @@ private:
 	class ULineBatchComponent* DecalWireframe = nullptr;
 	class UStaticMeshComponent* ProjectileMesh = nullptr;
 	class ULineBatchComponent* ToolShapeWireframe = nullptr; 
-  
+	TObjectPtr<UStaticMesh> PreviewMesh = nullptr;
+
 	/** Decal Preview Tranform */
-	FTransform DecalTransform;
+	FTransform DecalTransform; 
 	FVector DecalSize = FVector(1.0f, 50.0f, 50.0f);
 
 	/** ToolShape Preview Transform */
 	EDestructionToolShape PreviewToolShape = EDestructionToolShape::Cylinder;
 	FTransform ToolShapeTransform;
+
+	/** Preview Mesh Data */
+	FVector PreviewMeshLocation = FVector::ZeroVector;
+	FRotator PreviewMeshRotation = FRotator::ZeroRotator;
 
 	void UpdateToolShapeWireframe();
  
