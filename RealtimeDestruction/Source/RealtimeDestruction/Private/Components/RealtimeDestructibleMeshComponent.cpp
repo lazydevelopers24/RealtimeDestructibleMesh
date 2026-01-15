@@ -478,12 +478,12 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 				DisconnectedCells_SubCell,
 				CellState);
 
-			// ForCellLevelAPICompatibility: Phase4 미구현 상태이기 때문에 데이터 넘기기 위한 임시 변수
-			// Phase 4 구현되면 삭제하고 NewDetachedGroupsWithSubCells 사용할 것
-			TArray<TArray<int32>> ForCellLevelAPICompatibility; 
+			// CellState에 SubCell 정보 포함하여 저장
+			// ForCellLevelAPICompatibility: Phase4가 Cell 레벨 API 사용 중이라 임시 변수 유지
+			TArray<TArray<int32>> ForCellLevelAPICompatibility;
 			for (const FDetachedGroupWithSubCell& Group : NewDetachedGroupsWithSubCells)
 			{
-				CellState.AddDetachedGroup(Group.DetachedCellIds);
+				CellState.AddDetachedGroup(Group);  // SubCell 정보 포함하여 저장
 				ForCellLevelAPICompatibility.Add(Group.DetachedCellIds);
 			}
 

@@ -600,6 +600,35 @@ struct REALTIMEDESTRUCTION_API FDestructionResult
 };
 
 /**
+ * SubCell 기반 Detached Group
+ * Cell 단위 분리 판정 후 인접 SubCell까지 포함하는 확장된 그룹
+ */
+USTRUCT(BlueprintType)
+struct REALTIMEDESTRUCTION_API FDetachedGroupWithSubCell
+{
+	GENERATED_BODY()
+
+	/** 완전히 분리된 Cell ID 목록 (Cell 단위 BFS로 판정) */
+	UPROPERTY()
+	TArray<int32> DetachedCellIds;
+
+	/**
+	 * 추가로 포함된 SubCell 목록 (SubCell Flooding으로 판정)
+	 * Key: CellId, Value: 해당 Cell에서 포함된 SubCellId 목록
+	 * - Detached Cell과 인접한 살아있는 SubCell들
+	 * - Flooding 경계의 죽은 SubCell들
+	 */
+	UPROPERTY()
+	TMap<int32, FIntArray> IncludedSubCells;
+
+	/** 그룹이 비어있는지 확인 */
+	bool IsEmpty() const
+	{
+		return DetachedCellIds.Num() == 0 && IncludedSubCells.Num() == 0;
+	}
+};
+
+/**
  * 런타임 셀 상태 (Replicated)
  * 파괴된 셀과 분리된 셀 그룹 관리
  */
@@ -614,7 +643,7 @@ struct REALTIMEDESTRUCTION_API FCellState
 
 	/** 분리된 셀 그룹 (아직 파편으로 스폰되지 않은 상태) */
 	UPROPERTY()
-	TArray<FIntArray> DetachedGroups;
+	TArray<FDetachedGroupWithSubCell> DetachedGroups;
 
 	/**
 	 * Subcell 상태 관리.
@@ -651,9 +680,9 @@ struct REALTIMEDESTRUCTION_API FCellState
 	/** 셀이 분리 대기 중인지 확인 */
 	bool IsCellDetached(int32 CellId) const
 	{
-		for (const FIntArray& Group : DetachedGroups)
+		for (const FDetachedGroupWithSubCell& Group : DetachedGroups)
 		{
-			if (Group.Values.Contains(CellId))
+			if (Group.DetachedCellIds.Contains(CellId))
 			{
 				return true;
 			}
@@ -670,12 +699,24 @@ struct REALTIMEDESTRUCTION_API FCellState
 		}
 	}
 
-	/** 분리된 그룹 추가 */
+	/** 분리된 그룹 추가 (Cell ID만, 하위 호환용) */
 	void AddDetachedGroup(const TArray<int32>& CellIds)
 	{
-		FIntArray Group;
-		Group.Values = CellIds;
+		FDetachedGroupWithSubCell Group;
+		Group.DetachedCellIds = CellIds;
+		DetachedGroups.Add(MoveTemp(Group));
+	}
+
+	/** 분리된 그룹 추가 (SubCell 정보 포함) */
+	void AddDetachedGroup(const FDetachedGroupWithSubCell& Group)
+	{
 		DetachedGroups.Add(Group);
+	}
+
+	/** 분리된 그룹 추가 (SubCell 정보 포함, Move) */
+	void AddDetachedGroup(FDetachedGroupWithSubCell&& Group)
+	{
+		DetachedGroups.Add(MoveTemp(Group));
 	}
 
 	/** 분리된 그룹을 파괴 상태로 전환 (파편 스폰 후 호출) */
@@ -683,10 +724,25 @@ struct REALTIMEDESTRUCTION_API FCellState
 	{
 		if (DetachedGroups.IsValidIndex(GroupIndex))
 		{
-			for (int32 CellId : DetachedGroups[GroupIndex].Values)
+			const FDetachedGroupWithSubCell& Group = DetachedGroups[GroupIndex];
+
+			// DetachedCellIds → DestroyedCells
+			for (int32 CellId : Group.DetachedCellIds)
 			{
 				DestroyedCells.Add(CellId);
 			}
+
+			// IncludedSubCells → SubCellStates에서 Dead 처리
+			for (const auto& SubCellPair : Group.IncludedSubCells)
+			{
+				const int32 CellId = SubCellPair.Key;
+				FSubCell& SubCellState = SubCellStates.FindOrAdd(CellId);
+				for (int32 SubCellId : SubCellPair.Value.Values)
+				{
+					SubCellState.DestroySubCell(SubCellId);
+				}
+			}
+
 			DetachedGroups.RemoveAt(GroupIndex);
 		}
 	}
@@ -694,11 +750,23 @@ struct REALTIMEDESTRUCTION_API FCellState
 	/** 모든 분리 그룹을 파괴 상태로 전환 */
 	void MoveAllDetachedToDestroyed()
 	{
-		for (const FIntArray& Group : DetachedGroups)
+		for (const FDetachedGroupWithSubCell& Group : DetachedGroups)
 		{
-			for (int32 CellId : Group.Values)
+			// DetachedCellIds → DestroyedCells
+			for (int32 CellId : Group.DetachedCellIds)
 			{
 				DestroyedCells.Add(CellId);
+			}
+
+			// IncludedSubCells → SubCellStates에서 Dead 처리
+			for (const auto& SubCellPair : Group.IncludedSubCells)
+			{
+				const int32 CellId = SubCellPair.Key;
+				FSubCell& SubCellState = SubCellStates.FindOrAdd(CellId);
+				for (int32 SubCellId : SubCellPair.Value.Values)
+				{
+					SubCellState.DestroySubCell(SubCellId);
+				}
 			}
 		}
 		DetachedGroups.Empty();
@@ -709,35 +777,6 @@ struct REALTIMEDESTRUCTION_API FCellState
 	{
 		DestroyedCells.Empty();
 		DetachedGroups.Empty();
-	}
-};
-
-/**
- * SubCell 기반 Detached Group
- * Cell 단위 분리 판정 후 인접 SubCell까지 포함하는 확장된 그룹
- */
-USTRUCT(BlueprintType)
-struct REALTIMEDESTRUCTION_API FDetachedGroupWithSubCell
-{
-	GENERATED_BODY()
-
-	/** 완전히 분리된 Cell ID 목록 (Cell 단위 BFS로 판정) */
-	UPROPERTY()
-	TArray<int32> DetachedCellIds;
-
-	/**
-	 * 추가로 포함된 SubCell 목록 (SubCell Flooding으로 판정)
-	 * Key: CellId, Value: 해당 Cell에서 포함된 SubCellId 목록
-	 * - Detached Cell과 인접한 살아있는 SubCell들 (주황)
-	 * - Flooding 경계의 죽은 SubCell들 (빗금)
-	 */
-	UPROPERTY()
-	TMap<int32, FIntArray> IncludedSubCells;
-
-	/** 그룹이 비어있는지 확인 */
-	bool IsEmpty() const
-	{
-		return DetachedCellIds.Num() == 0 && IncludedSubCells.Num() == 0;
 	}
 };
 
