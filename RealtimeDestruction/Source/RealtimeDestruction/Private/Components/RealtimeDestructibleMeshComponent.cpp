@@ -364,7 +364,7 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 
 void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FRealtimeDestructionRequest& Request)
 {
-	constexpr bool bSubCellTestEnabled = false;
+	constexpr bool bSubCellTestEnabled = true;
 	
 	TArray<int32> NewlyDestroyedCells;
 
@@ -463,15 +463,48 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			//=====================================================================
 			// [SubCell Test] Phase 3: 분리된 셀 그룹화
 			//=====================================================================
-			TArray<TArray<int32>> NewDetachedGroups_SubCell = FCellDestructionSystem::GroupDetachedCells(
+			// TArray<TArray<int32>> NewDetachedGroupsWithoutSubCells = FCellDestructionSystem::GroupDetachedCells(
+			// 	GridCellCache,
+			// 	DisconnectedCells_SubCell,
+			// 	CellState.DestroyedCells);
+			//
+			// for (const TArray<int32>& Group : NewDetachedGroupsWithoutSubCells)
+			// {
+			// 	CellState.AddDetachedGroup(Group);
+			// }
+
+			TArray<FDetachedGroupWithSubCell> NewDetachedGroupsWithSubCells = FCellDestructionSystem::GroupDetachedCellsWithSubCells(
 				GridCellCache,
 				DisconnectedCells_SubCell,
-				CellState.DestroyedCells);
+				CellState);
 
-			for (const TArray<int32>& Group : NewDetachedGroups_SubCell)
+			// ForCellLevelAPICompatibility: Phase4 미구현 상태이기 때문에 데이터 넘기기 위한 임시 변수
+			// Phase 4 구현되면 삭제하고 NewDetachedGroupsWithSubCells 사용할 것
+			TArray<TArray<int32>> ForCellLevelAPICompatibility; 
+			for (const FDetachedGroupWithSubCell& Group : NewDetachedGroupsWithSubCells)
 			{
-				CellState.AddDetachedGroup(Group);
+				CellState.AddDetachedGroup(Group.DetachedCellIds);
+				ForCellLevelAPICompatibility.Add(Group.DetachedCellIds);
 			}
+
+			// // Phase 3 디버그 로그: SubCell Flooding 결과
+			// for (int32 GroupIdx = 0; GroupIdx < NewDetachedGroupsWithSubCells.Num(); ++GroupIdx)
+			// {
+			// 	const FDetachedGroupWithSubCell& Group = NewDetachedGroupsWithSubCells[GroupIdx];
+			// 	UE_LOG(LogTemp, Log, TEXT("[SubCell Test] Phase 3 Group[%d]: %d DetachedCells, %d ConnectedCells with flooded SubCells"),
+			// 		GroupIdx, Group.DetachedCellIds.Num(), Group.IncludedSubCells.Num());
+			//
+			// 	for (const auto& SubCellPair : Group.IncludedSubCells)
+			// 	{
+			// 		FString SubCellList;
+			// 		for (int32 SubCellId : SubCellPair.Value.Values)
+			// 		{
+			// 			SubCellList += FString::Printf(TEXT("%d "), SubCellId);
+			// 		}
+			// 		UE_LOG(LogTemp, Log, TEXT("[SubCell Test]   ConnectedCell[%d]: SubCells=[%s]"),
+			// 			SubCellPair.Key, *SubCellList.TrimEnd());
+			// 	}
+			// }
 
 			//=====================================================================
 			// [SubCell Test] Phase 4: 서버 → 클라이언트 Multicast
@@ -479,7 +512,7 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			TArray<FDetachedDebrisInfo> DebrisToSend_SubCell;
 			static int32 DebrisIdCounter_SubCell = 0;
 
-			for (const TArray<int32>& Group : NewDetachedGroups_SubCell)
+			for (const TArray<int32>& Group : ForCellLevelAPICompatibility)
 			{
 				FDetachedDebrisInfo DebrisInfo;
 				DebrisInfo.DebrisId = ++DebrisIdCounter_SubCell;
@@ -509,7 +542,7 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			CellState.MoveAllDetachedToDestroyed();
 
 			UE_LOG(LogTemp, Log, TEXT("[SubCell Test] Complete: %d cells disconnected (%d groups)"),
-				DisconnectedCells_SubCell.Num(), NewDetachedGroups_SubCell.Num());
+				DisconnectedCells_SubCell.Num(), ForCellLevelAPICompatibility.Num());
 		}
 
 		return;

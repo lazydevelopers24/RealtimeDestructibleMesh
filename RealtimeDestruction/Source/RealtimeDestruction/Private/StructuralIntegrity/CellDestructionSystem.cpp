@@ -678,6 +678,213 @@ namespace SubCellBFSHelper
 		// Anchor에 도달하지 못함
 		return false;
 	}
+
+	/**
+	 * SubCell 내부 인접 테이블 (2x2x2 전용, 6방향)
+	 * 각 SubCell에서 6방향으로 인접한 SubCell ID (-1이면 해당 방향에 인접 없음)
+	 * 순서: -X, +X, -Y, +Y, -Z, +Z
+	 */
+	inline constexpr int32 SUBCELL_ADJACENCY[8][6] = {
+		// SubCell 0 (0,0,0): -X=없음, +X=1, -Y=없음, +Y=2, -Z=없음, +Z=4
+		{-1, 1, -1, 2, -1, 4},
+		// SubCell 1 (1,0,0): -X=0, +X=없음, -Y=없음, +Y=3, -Z=없음, +Z=5
+		{0, -1, -1, 3, -1, 5},
+		// SubCell 2 (0,1,0): -X=없음, +X=3, -Y=0, +Y=없음, -Z=없음, +Z=6
+		{-1, 3, 0, -1, -1, 6},
+		// SubCell 3 (1,1,0): -X=2, +X=없음, -Y=1, +Y=없음, -Z=없음, +Z=7
+		{2, -1, 1, -1, -1, 7},
+		// SubCell 4 (0,0,1): -X=없음, +X=5, -Y=없음, +Y=6, -Z=0, +Z=없음
+		{-1, 5, -1, 6, 0, -1},
+		// SubCell 5 (1,0,1): -X=4, +X=없음, -Y=없음, +Y=7, -Z=1, +Z=없음
+		{4, -1, -1, 7, 1, -1},
+		// SubCell 6 (0,1,1): -X=없음, +X=7, -Y=4, +Y=없음, -Z=2, +Z=없음
+		{-1, 7, 4, -1, 2, -1},
+		// SubCell 7 (1,1,1): -X=6, +X=없음, -Y=5, +Y=없음, -Z=3, +Z=없음
+		{6, -1, 5, -1, 3, -1},
+	};
+
+	/**
+	 * 반대 방향 반환
+	 * 0(-X) <-> 1(+X), 2(-Y) <-> 3(+Y), 4(-Z) <-> 5(+Z)
+	 */
+	inline constexpr int32 GetOppositeDirection(int32 Direction)
+	{
+		return Direction ^ 1;  // 0<->1, 2<->3, 4<->5
+	}
+
+	/**
+	 * 특정 방향의 경계 SubCell ID 목록 반환 (4개)
+	 * @param Direction - 0:-X, 1:+X, 2:-Y, 3:+Y, 4:-Z, 5:+Z
+	 */
+	inline void GetBoundarySubCellIds(int32 Direction, int32 OutIds[4])
+	{
+		const FBoundarySubCellPair* Pairs = GetBoundaryPairs(Direction);
+		if (Pairs)
+		{
+			for (int32 i = 0; i < 4; ++i)
+			{
+				OutIds[i] = Pairs[i].Current;
+			}
+		}
+	}
+
+	/**
+	 * Detached Cell 경계에서 Connected Cell 내부로 SubCell Flooding
+	 * 경계 SubCell에서 시작하여 Dead SubCell을 만날 때까지 확장
+	 *
+	 * @param CellState - 셀 상태
+	 * @param ConnectedCellId - Connected Cell ID
+	 * @param DirectionFromDetached - Detached → Connected 방향 (0-5)
+	 * @return Flooding된 SubCell ID 목록
+	 */
+	TArray<int32> FloodSubCellsFromBoundary(
+		const FCellState& CellState,
+		int32 ConnectedCellId,
+		int32 DirectionFromDetached)
+	{
+		TArray<int32> Result;
+
+		// Detached → Connected 방향의 반대 = Connected Cell에서 Detached와 맞닿은 면
+		const int32 BoundaryDirection = GetOppositeDirection(DirectionFromDetached);
+
+		// 경계 SubCell ID들 가져오기
+		int32 BoundarySubCellIds[4];
+		GetBoundarySubCellIds(BoundaryDirection, BoundarySubCellIds);
+
+		// BFS를 위한 자료구조
+		TSet<int32> Visited;
+		TQueue<int32> Queue;
+
+		// 경계 SubCell들을 시작점으로 추가
+		for (int32 i = 0; i < 4; ++i)
+		{
+			const int32 SubCellId = BoundarySubCellIds[i];
+			if (!Visited.Contains(SubCellId))
+			{
+				Visited.Add(SubCellId);
+				Queue.Enqueue(SubCellId);
+			}
+		}
+
+		// BFS 탐색
+		while (!Queue.IsEmpty())
+		{
+			int32 CurrentSubCellId;
+			Queue.Dequeue(CurrentSubCellId);
+
+			const bool bIsAlive = CellState.IsSubCellAlive(ConnectedCellId, CurrentSubCellId);
+
+			// 결과에 추가 (살아있든 죽었든)
+			Result.Add(CurrentSubCellId);
+
+			// 죽은 SubCell이면 확장 중단 (경계 역할)
+			if (!bIsAlive)
+			{
+				continue;
+			}
+
+			// 살아있는 SubCell이면 인접 SubCell로 확장
+			for (int32 Dir = 0; Dir < 6; ++Dir)
+			{
+				const int32 NeighborSubCellId = SUBCELL_ADJACENCY[CurrentSubCellId][Dir];
+
+				// 유효하지 않거나 이미 방문한 SubCell은 스킵
+				if (NeighborSubCellId < 0 || Visited.Contains(NeighborSubCellId))
+				{
+					continue;
+				}
+
+				Visited.Add(NeighborSubCellId);
+				Queue.Enqueue(NeighborSubCellId);
+			}
+		}
+
+		return Result;
+	}
+
+	/**
+	 * Detached 그룹의 경계 Cell 정보
+	 */
+	struct FBoundaryCellInfo
+	{
+		int32 BoundaryCellId = INDEX_NONE;
+		TArray<TPair<int32, int32>> AdjacentConnectedCells;  // (CellId, Direction)
+	};
+
+	/**
+	 * Detached 그룹에서 경계 Cell 목록 추출 (인접 Connected Cell 정보 포함)
+	 */
+	TArray<FBoundaryCellInfo> GetGroupBoundaryCellsWithAdjacency(
+		const FGridCellCache& Cache,
+		const TArray<int32>& GroupCellIds,
+		const FCellState& CellState)
+	{
+		TArray<FBoundaryCellInfo> Result;
+
+		// 빠른 검색을 위해 그룹 Cell들을 Set으로 변환
+		TSet<int32> GroupCellSet;
+		GroupCellSet.Reserve(GroupCellIds.Num());
+		for (int32 CellId : GroupCellIds)
+		{
+			GroupCellSet.Add(CellId);
+		}
+
+		// 각 그룹 Cell에 대해 경계 여부 판정
+		for (int32 CellId : GroupCellIds)
+		{
+			FBoundaryCellInfo Info;
+			Info.BoundaryCellId = CellId;
+
+			const FIntVector CellCoord = Cache.IdToCoord(CellId);
+
+			// 6방향 이웃 탐색
+			for (int32 Dir = 0; Dir < 6; ++Dir)
+			{
+				const FIntVector NeighborCoord = CellCoord + FIntVector(
+					DIRECTION_OFFSETS[Dir][0],
+					DIRECTION_OFFSETS[Dir][1],
+					DIRECTION_OFFSETS[Dir][2]
+				);
+
+				// 유효하지 않은 좌표는 스킵
+				if (!Cache.IsValidCoord(NeighborCoord))
+				{
+					continue;
+				}
+
+				const int32 NeighborCellId = Cache.CoordToId(NeighborCoord);
+
+				// 그룹에 속한 Cell은 스킵
+				if (GroupCellSet.Contains(NeighborCellId))
+				{
+					continue;
+				}
+
+				// 존재하지 않는 Cell은 스킵
+				if (!Cache.GetCellExists(NeighborCellId))
+				{
+					continue;
+				}
+
+				// 파괴된 Cell은 스킵 (Connected Cell만 대상)
+				if (CellState.DestroyedCells.Contains(NeighborCellId))
+				{
+					continue;
+				}
+
+				// Connected Cell 발견 → 인접 목록에 추가
+				Info.AdjacentConnectedCells.Add(TPair<int32, int32>(NeighborCellId, Dir));
+			}
+
+			// 인접한 Connected Cell이 하나라도 있으면 경계 Cell
+			if (Info.AdjacentConnectedCells.Num() > 0)
+			{
+				Result.Add(MoveTemp(Info));
+			}
+		}
+
+		return Result;
+	}
 }
 
 TSet<int32> FCellDestructionSystem::FindDisconnectedCellsWithSubCells(
@@ -743,4 +950,69 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCellsWithSubCells(
 	}
 
 	return Disconnected;
+}
+
+TArray<FDetachedGroupWithSubCell> FCellDestructionSystem::GroupDetachedCellsWithSubCells(
+	const FGridCellCache& Cache,
+	const TSet<int32>& DisconnectedCells,
+	const FCellState& CellState)
+{
+	using namespace SubCellBFSHelper;
+
+	TArray<FDetachedGroupWithSubCell> Results;
+
+	//=========================================================================
+	// Phase 1: 기존 로직으로 Disconnected Cell 그룹화
+	//=========================================================================
+	TArray<TArray<int32>> CellGroups = GroupDetachedCells(Cache, DisconnectedCells, CellState.DestroyedCells);
+
+	//=========================================================================
+	// Phase 2: 각 그룹에 대해 SubCell Flooding
+	//=========================================================================
+	for (const TArray<int32>& CellGroup : CellGroups)
+	{
+		FDetachedGroupWithSubCell GroupResult;
+		GroupResult.DetachedCellIds = CellGroup;
+
+		// 경계 Cell들과 인접 Connected Cell 정보 수집
+		TArray<FBoundaryCellInfo> BoundaryCells = GetGroupBoundaryCellsWithAdjacency(Cache, CellGroup, CellState);
+
+		// 각 경계 Cell에서 인접 Connected Cell로 Flooding
+		for (const FBoundaryCellInfo& BoundaryInfo : BoundaryCells)
+		{
+			for (const TPair<int32, int32>& Adjacent : BoundaryInfo.AdjacentConnectedCells)
+			{
+				const int32 ConnectedCellId = Adjacent.Key;
+				const int32 Direction = Adjacent.Value;
+
+				// Flooding 수행
+				TArray<int32> FloodedSubCells = FloodSubCellsFromBoundary(CellState, ConnectedCellId, Direction);
+
+				// 결과 병합 (중복 제거)
+				if (FloodedSubCells.Num() > 0)
+				{
+					FIntArray* ExistingSubCells = GroupResult.IncludedSubCells.Find(ConnectedCellId);
+					if (ExistingSubCells)
+					{
+						// 기존 목록에 추가 (중복 제거)
+						for (int32 SubCellId : FloodedSubCells)
+						{
+							ExistingSubCells->Values.AddUnique(SubCellId);
+						}
+					}
+					else
+					{
+						// 새 항목 추가
+						FIntArray NewSubCells;
+						NewSubCells.Values = MoveTemp(FloodedSubCells);
+						GroupResult.IncludedSubCells.Add(ConnectedCellId, MoveTemp(NewSubCells));
+					}
+				}
+			}
+		}
+
+		Results.Add(MoveTemp(GroupResult));
+	}
+
+	return Results;
 }

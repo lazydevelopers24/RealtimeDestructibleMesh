@@ -113,6 +113,20 @@ public:
 		const TSet<int32>& DisconnectedCells,
 		const TSet<int32>& DestroyedCells);
 
+	/**
+	 * <<<SubCell Level API>>>
+	 * 분리된 셀들을 연결된 그룹으로 묶고, SubCell Flooding으로 경계 SubCell 포함
+	 *
+	 * @param Cache - 격자 캐시
+	 * @param DisconnectedCells - 분리된 셀들
+	 * @param CellState - 셀 상태 (SubCell 상태 접근용)
+	 * @return 그룹별 FDetachedGroupWithSubCell 목록
+	 */
+	static TArray<FDetachedGroupWithSubCell> GroupDetachedCellsWithSubCells(
+		const FGridCellCache& Cache,
+		const TSet<int32>& DisconnectedCells,
+		const FCellState& CellState);
+	
 	//=========================================================================
 	// 유틸리티
 	//=========================================================================
