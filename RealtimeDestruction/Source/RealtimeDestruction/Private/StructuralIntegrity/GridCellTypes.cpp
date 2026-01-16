@@ -252,6 +252,271 @@ bool FQuantizedDestructionInput::ContainsPoint(const FVector& Point) const
 	return false;
 }
 
+bool FQuantizedDestructionInput::IntersectsOBB(const FSubCellOBB& OBB) const
+{
+	// 양자화된 값을 cm 단위로 변환
+	const FVector Center = FVector(CenterMM.X, CenterMM.Y, CenterMM.Z) * 0.1f;
+	const float RadiusCm = RadiusMM * 0.1f;
+	const FVector BoxExtentCm = FVector(BoxExtentMM.X, BoxExtentMM.Y, BoxExtentMM.Z) * 0.1f;
+
+	switch (Type)
+	{
+	case EDestructionShapeType::Sphere:
+		{
+			// Sphere-OBB intersection: OBB 위의 가장 가까운 점이 구 안에 있는지 확인
+			const FVector ClosestPoint = OBB.GetClosestPoint(Center);
+			return FVector::DistSquared(ClosestPoint, Center) <= RadiusCm * RadiusCm;
+		}
+
+	case EDestructionShapeType::Box:
+		{
+			// OBB vs OBB intersection using SAT (Separating Axis Theorem)
+			// 15개 축 검사: 각 박스의 3축 + 9개 에지 교차 축
+
+			// Shape의 회전 및 축 계산
+			FQuat ShapeQuat = FQuat::Identity;
+			if (RotationCentidegrees != FIntVector::ZeroValue)
+			{
+				const FRotator ShapeRot(
+					RotationCentidegrees.X * 0.01f,
+					RotationCentidegrees.Y * 0.01f,
+					RotationCentidegrees.Z * 0.01f
+				);
+				ShapeQuat = ShapeRot.Quaternion();
+			}
+
+			const FVector ShapeAxes[3] = {
+				ShapeQuat.RotateVector(FVector::ForwardVector),
+				ShapeQuat.RotateVector(FVector::RightVector),
+				ShapeQuat.RotateVector(FVector::UpVector)
+			};
+
+			const FVector OBBAxes[3] = { OBB.AxisX, OBB.AxisY, OBB.AxisZ };
+
+			// 두 박스 중심 간의 벡터
+			const FVector D = OBB.Center - Center;
+
+			// 15개 축에 대해 분리 검사
+			auto TestAxis = [&](const FVector& Axis) -> bool
+			{
+				if (Axis.SizeSquared() < KINDA_SMALL_NUMBER)
+				{
+					return true; // 축이 너무 작으면 분리 불가로 처리
+				}
+
+				const FVector NormAxis = Axis.GetSafeNormal();
+
+				// Shape 박스의 축 투영 반경
+				float ShapeProjection = 0.0f;
+				ShapeProjection += FMath::Abs(FVector::DotProduct(ShapeAxes[0], NormAxis)) * BoxExtentCm.X;
+				ShapeProjection += FMath::Abs(FVector::DotProduct(ShapeAxes[1], NormAxis)) * BoxExtentCm.Y;
+				ShapeProjection += FMath::Abs(FVector::DotProduct(ShapeAxes[2], NormAxis)) * BoxExtentCm.Z;
+
+				// OBB의 축 투영 반경
+				float OBBProjection = 0.0f;
+				OBBProjection += FMath::Abs(FVector::DotProduct(OBBAxes[0], NormAxis)) * OBB.HalfExtents.X;
+				OBBProjection += FMath::Abs(FVector::DotProduct(OBBAxes[1], NormAxis)) * OBB.HalfExtents.Y;
+				OBBProjection += FMath::Abs(FVector::DotProduct(OBBAxes[2], NormAxis)) * OBB.HalfExtents.Z;
+
+				// 중심 거리의 투영
+				const float CenterDistance = FMath::Abs(FVector::DotProduct(D, NormAxis));
+
+				// 분리 축 테스트: 중심 거리 > 투영 반경 합이면 분리됨
+				return CenterDistance <= ShapeProjection + OBBProjection;
+			};
+
+			// Shape 박스의 3축 검사
+			for (int32 i = 0; i < 3; ++i)
+			{
+				if (!TestAxis(ShapeAxes[i]))
+				{
+					return false;
+				}
+			}
+
+			// OBB의 3축 검사
+			for (int32 i = 0; i < 3; ++i)
+			{
+				if (!TestAxis(OBBAxes[i]))
+				{
+					return false;
+				}
+			}
+
+			// 9개 에지 교차 축 검사 (ShapeAxis × OBBAxis)
+			for (int32 i = 0; i < 3; ++i)
+			{
+				for (int32 j = 0; j < 3; ++j)
+				{
+					const FVector CrossAxis = FVector::CrossProduct(ShapeAxes[i], OBBAxes[j]);
+					if (!TestAxis(CrossAxis))
+					{
+						return false;
+					}
+				}
+			}
+
+			// 모든 축에서 분리 실패 = 교차
+			return true;
+		}
+
+	case EDestructionShapeType::Cylinder:
+		{
+			// Cylinder-OBB intersection
+			// 원통은 Z축 정렬로 가정 (기존 코드와 동일한 가정)
+			// OBB를 원통의 로컬 공간에서 검사
+
+			// Z 범위 검사: OBB의 Z축 투영 범위와 원통의 Z 범위
+			// OBB의 8개 꼭지점의 Z 좌표 범위 계산
+			float OBBMinZ = FLT_MAX, OBBMaxZ = -FLT_MAX;
+			for (int32 i = 0; i < 8; ++i)
+			{
+				const FVector LocalCorner(
+					((i & 1) ? OBB.HalfExtents.X : -OBB.HalfExtents.X),
+					((i & 2) ? OBB.HalfExtents.Y : -OBB.HalfExtents.Y),
+					((i & 4) ? OBB.HalfExtents.Z : -OBB.HalfExtents.Z)
+				);
+				const FVector WorldCorner = OBB.LocalToWorld(LocalCorner);
+				OBBMinZ = FMath::Min(OBBMinZ, WorldCorner.Z);
+				OBBMaxZ = FMath::Max(OBBMaxZ, WorldCorner.Z);
+			}
+
+			// Z 범위 분리 검사
+			if (OBBMaxZ < Center.Z - BoxExtentCm.Z || OBBMinZ > Center.Z + BoxExtentCm.Z)
+			{
+				return false;
+			}
+
+			// XY 평면에서 원과 OBB의 2D 교차 검사
+			// OBB를 XY 평면에 투영한 사각형과 원의 교차
+			float MinDistSq = FLT_MAX;
+
+			// OBB의 8개 꼭지점 중 XY 평면에서 원 중심에 가장 가까운 점 찾기
+			for (int32 i = 0; i < 8; ++i)
+			{
+				const FVector LocalCorner(
+					((i & 1) ? OBB.HalfExtents.X : -OBB.HalfExtents.X),
+					((i & 2) ? OBB.HalfExtents.Y : -OBB.HalfExtents.Y),
+					((i & 4) ? OBB.HalfExtents.Z : -OBB.HalfExtents.Z)
+				);
+				const FVector WorldCorner = OBB.LocalToWorld(LocalCorner);
+				const float DistSq = FMath::Square(WorldCorner.X - Center.X) + FMath::Square(WorldCorner.Y - Center.Y);
+				MinDistSq = FMath::Min(MinDistSq, DistSq);
+			}
+
+			// 꼭지점 중 하나라도 원 안에 있으면 교차
+			if (MinDistSq <= RadiusCm * RadiusCm)
+			{
+				return true;
+			}
+
+			// OBB 중심이 원 안에 있는지
+			const float CenterDistSq = FMath::Square(OBB.Center.X - Center.X) + FMath::Square(OBB.Center.Y - Center.Y);
+			if (CenterDistSq <= RadiusCm * RadiusCm)
+			{
+				return true;
+			}
+
+			// OBB의 4개 에지(XY 평면 투영)와 원의 교차
+			// 보수적 근사: OBB 바운딩 원과 비교
+			const float OBBRadiusXY = FMath::Sqrt(
+				FMath::Square(OBB.HalfExtents.X * OBB.AxisX.X + OBB.HalfExtents.Y * OBB.AxisY.X) +
+				FMath::Square(OBB.HalfExtents.X * OBB.AxisX.Y + OBB.HalfExtents.Y * OBB.AxisY.Y)
+			) + FMath::Sqrt(
+				FMath::Square(OBB.HalfExtents.Z * OBB.AxisZ.X) +
+				FMath::Square(OBB.HalfExtents.Z * OBB.AxisZ.Y)
+			);
+
+			return CenterDistSq <= FMath::Square(RadiusCm + OBBRadiusXY);
+		}
+
+	case EDestructionShapeType::Line:
+		{
+			// Line-OBB intersection using Slab method
+			const FVector EndPt = FVector(EndPointMM.X, EndPointMM.Y, EndPointMM.Z) * 0.1f;
+			const float ThicknessCm = LineThicknessMM * 0.1f;
+
+			const FVector LineDir = EndPt - Center;
+			const float LineLength = LineDir.Size();
+
+			if (LineLength < KINDA_SMALL_NUMBER)
+			{
+				// 점으로 간주 - 점이 OBB 내부에 있는지
+				const FVector LocalPoint = OBB.WorldToLocal(Center);
+				return FMath::Abs(LocalPoint.X) <= OBB.HalfExtents.X + ThicknessCm &&
+				       FMath::Abs(LocalPoint.Y) <= OBB.HalfExtents.Y + ThicknessCm &&
+				       FMath::Abs(LocalPoint.Z) <= OBB.HalfExtents.Z + ThicknessCm;
+			}
+
+			// 두께를 고려하여 OBB 확장
+			const FSubCellOBB ExpandedOBB(
+				OBB.Center,
+				OBB.HalfExtents + FVector(ThicknessCm),
+				FQuat::FindBetweenNormals(FVector::ForwardVector, OBB.AxisX)
+			);
+			// 더 정확하게는 OBB 축을 직접 사용
+			FSubCellOBB TestOBB;
+			TestOBB.Center = OBB.Center;
+			TestOBB.HalfExtents = OBB.HalfExtents + FVector(ThicknessCm);
+			TestOBB.AxisX = OBB.AxisX;
+			TestOBB.AxisY = OBB.AxisY;
+			TestOBB.AxisZ = OBB.AxisZ;
+
+			// Slab method: 선분을 OBB의 로컬 공간으로 변환
+			const FVector LocalStart = TestOBB.WorldToLocal(Center);
+			const FVector LocalEnd = TestOBB.WorldToLocal(EndPt);
+			const FVector LocalDir = LocalEnd - LocalStart;
+
+			float tMin = 0.0f;
+			float tMax = 1.0f;
+
+			// 각 축에 대해 slab 교차 계산
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				float Start, Dir, Extent;
+				switch (Axis)
+				{
+				case 0: Start = LocalStart.X; Dir = LocalDir.X; Extent = TestOBB.HalfExtents.X; break;
+				case 1: Start = LocalStart.Y; Dir = LocalDir.Y; Extent = TestOBB.HalfExtents.Y; break;
+				case 2: Start = LocalStart.Z; Dir = LocalDir.Z; Extent = TestOBB.HalfExtents.Z; break;
+				default: continue;
+				}
+
+				if (FMath::Abs(Dir) < KINDA_SMALL_NUMBER)
+				{
+					// 레이가 slab과 평행
+					if (Start < -Extent || Start > Extent)
+					{
+						return false; // slab 밖에서 평행 = 교차 없음
+					}
+				}
+				else
+				{
+					float t1 = (-Extent - Start) / Dir;
+					float t2 = (Extent - Start) / Dir;
+
+					if (t1 > t2)
+					{
+						Swap(t1, t2);
+					}
+
+					tMin = FMath::Max(tMin, t1);
+					tMax = FMath::Min(tMax, t2);
+
+					if (tMin > tMax)
+					{
+						return false; // 교차 구간 없음
+					}
+				}
+			}
+
+			return true; // 모든 slab과 교차
+		}
+	}
+
+	return false;
+}
+
 //=============================================================================
 // FGridCellCache
 //=============================================================================

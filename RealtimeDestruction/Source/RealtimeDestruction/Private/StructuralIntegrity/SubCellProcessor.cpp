@@ -2,6 +2,13 @@
 
 #include "StructuralIntegrity/SubCellProcessor.h"
 
+// SubCell 디버그 로그 활성화
+#define SUBCELL_DEBUG_LOG 0
+
+#if SUBCELL_DEBUG_LOG
+DEFINE_LOG_CATEGORY_STATIC(LogSubCellDebug, Log, All);
+#endif
+
 bool FSubCellProcessor::ProcessSubCellDestruction(
 	const FQuantizedDestructionInput& QuantizedShape,
 	const FTransform& MeshTransform,
@@ -17,16 +24,21 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 		return false;
 	}
 
-	// 1. Tool shape의 AABB로 후보 cell 필터링
+	// 1. Tool shape의 AABB로 후보 cell 필터링 (월드 공간)
 	const FBox ShapeAABB = ComputeShapeAABB(QuantizedShape);
 	const TArray<int32> CandidateCells = GridCache.GetCellsInAABB(ShapeAABB, MeshTransform);
+
+#if SUBCELL_DEBUG_LOG
+	UE_LOG(LogSubCellDebug, Log, TEXT("=== ProcessSubCellDestruction ==="));
+	UE_LOG(LogSubCellDebug, Log, TEXT("Shape Type: %d, CandidateCells: %d"), (int32)QuantizedShape.Type, CandidateCells.Num());
+#endif
 
 	if (CandidateCells.Num() == 0)
 	{
 		return false;
 	}
 
-	// 2. 각 후보 cell의 subcell 검사
+	// 2. 각 후보 cell의 subcell 검사 (월드 공간 OBB 교차 검사)
 	for (int32 CellId : CandidateCells)
 	{
 		// 이미 완전히 파괴된 cell은 스킵
@@ -41,7 +53,12 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 		bool bAnySubCellNewlyDead = false;
 		TArray<int32> NewlyDeadSubCells;
 
-		// 3. 각 subcell 중심점이 tool shape에 닿는지 검사
+#if SUBCELL_DEBUG_LOG
+		const FIntVector CellCoord = GridCache.IdToCoord(CellId);
+		UE_LOG(LogSubCellDebug, Log, TEXT("  Checking CellId=%d (Coord: %d,%d,%d)"), CellId, CellCoord.X, CellCoord.Y, CellCoord.Z);
+#endif
+
+		// 3. 각 subcell이 tool shape과 교차하는지 검사 (월드 공간 OBB)
 		for (int32 SubCellId = 0; SubCellId < SUBCELL_COUNT; ++SubCellId)
 		{
 			// 이미 dead인 subcell은 스킵
@@ -50,11 +67,17 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 				continue;
 			}
 
-			// SubCell 월드 중심점 계산
-			const FVector SubCellWorldCenter = GridCache.GetSubCellWorldCenter(CellId, SubCellId, MeshTransform);
+			// SubCell의 월드 공간 OBB (메시의 회전과 비균일 스케일 정확히 반영)
+			const FSubCellOBB SubCellOBB = GridCache.GetSubCellWorldOBB(CellId, SubCellId, MeshTransform);
 
-			// Tool shape와 충돌 검사 (양자화된 값 기반)
-			if (QuantizedShape.ContainsPoint(SubCellWorldCenter))
+			// 월드 공간에서 Shape-OBB 교차 검사
+			const bool bIntersects = QuantizedShape.IntersectsOBB(SubCellOBB);
+
+#if SUBCELL_DEBUG_LOG
+			UE_LOG(LogSubCellDebug, Log, TEXT("    SubCell %d: %s"),SubCellId, bIntersects ? TEXT("HIT") : TEXT("miss"));
+#endif
+
+			if (bIntersects)
 			{
 				SubCellState.DestroySubCell(SubCellId);
 				bAnySubCellNewlyDead = true;
@@ -71,6 +94,15 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 		{
 			OutAffectedCells.Add(CellId);
 
+#if SUBCELL_DEBUG_LOG
+			FString DeadSubCellsStr;
+			for (int32 i = 0; i < SUBCELL_COUNT; ++i)
+			{
+				DeadSubCellsStr += SubCellState.IsSubCellAlive(i) ? TEXT("O") : TEXT("X");
+			}
+			UE_LOG(LogSubCellDebug, Log, TEXT("  -> CellId=%d SubCell States: [%s] (O=Alive, X=Dead)"), CellId, *DeadSubCellsStr);
+#endif
+
 			if (OutNewlyDeadSubCells && NewlyDeadSubCells.Num() > 0)
 			{
 				OutNewlyDeadSubCells->Add(CellId, MoveTemp(NewlyDeadSubCells));
@@ -81,6 +113,9 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 			{
 				InOutCellState.DestroyedCells.Add(CellId);
 				InOutCellState.SubCellStates.Remove(CellId);
+#if SUBCELL_DEBUG_LOG
+				UE_LOG(LogSubCellDebug, Log, TEXT("  -> CellId=%d FULLY DESTROYED"), CellId);
+#endif
 			}
 		}
 	}

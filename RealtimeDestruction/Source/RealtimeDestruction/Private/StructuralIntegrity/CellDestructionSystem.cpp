@@ -200,8 +200,7 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCells(
 TArray<TArray<int32>> FCellDestructionSystem::GroupDetachedCells(
 	const FGridCellCache& Cache,
 	const TSet<int32>& DisconnectedCells,
-	const TSet<int32>& DestroyedCells,
-	const bool bIncludeAdjacentCells)
+	const TSet<int32>& DestroyedCells)
 {
 	TArray<TArray<int32>> Groups;
 	TSet<int32> Visited;
@@ -241,41 +240,6 @@ TArray<TArray<int32>> FCellDestructionSystem::GroupDetachedCells(
 		}
 
 		Groups.Add(MoveTemp(Group));
-	}
-	
-	
-	//=========================================================================
-	// Phase 2 (optional): 각 그룹에 1-ring neighbors 추가 (경계 조각 처리)
-	// bIncludeAdjacentCells 플래그 설정시에만 적용.
-	// Mesh island 삭제시 외곽 조각이 남는 현상이 줄어들지만
-	// mesh island 영역 밖에서 과도한 파괴가 발생할 수 있음.
-	//=========================================================================
-	if (bIncludeAdjacentCells)
-	{
-		for (TArray<int32>& Group : Groups)
-		{
-			TSet<int32> GroupSet(Group);
-			TSet<int32> NeighborsToAdd;
-
-			// 그룹 내 모든 셀의 이웃 수집
-			for (int32 CellId : Group)
-			{
-				for (int32 Neighbor : Cache.GetCellNeighbors(CellId))
-				{
-					// 그룹에 없는 이웃만 추가 (Connected든 Destroyed든)
-					if (!GroupSet.Contains(Neighbor))
-					{
-						NeighborsToAdd.Add(Neighbor);
-					}
-				}
-			}
-
-			// 1-ring neighbors를 그룹에 추가
-			for (int32 Neighbor : NeighborsToAdd)
-			{
-				Group.Add(Neighbor);
-			}
-		}	
 	}
 	
 	return Groups;

@@ -94,6 +94,71 @@ struct FIntArray
 };
 
 /**
+ * SubCell용 Oriented Bounding Box (OBB)
+ * 월드 공간에서 회전된 직육면체를 표현
+ * Note: UE의 FOrientedBox와 이름 충돌 방지를 위해 별도 정의
+ */
+struct FSubCellOBB
+{
+	/** 박스 중심 (월드 좌표) */
+	FVector Center;
+
+	/** 반 크기 (각 로컬 축 방향) */
+	FVector HalfExtents;
+
+	/** 로컬 축 방향 (월드 공간, 정규화된 직교 벡터) */
+	FVector AxisX;
+	FVector AxisY;
+	FVector AxisZ;
+
+	FSubCellOBB()
+		: Center(FVector::ZeroVector)
+		, HalfExtents(FVector::ZeroVector)
+		, AxisX(FVector::ForwardVector)
+		, AxisY(FVector::RightVector)
+		, AxisZ(FVector::UpVector)
+	{}
+
+	FSubCellOBB(const FVector& InCenter, const FVector& InHalfExtents, const FQuat& Rotation)
+		: Center(InCenter)
+		, HalfExtents(InHalfExtents)
+	{
+		AxisX = Rotation.RotateVector(FVector::ForwardVector);
+		AxisY = Rotation.RotateVector(FVector::RightVector);
+		AxisZ = Rotation.RotateVector(FVector::UpVector);
+	}
+
+	/** 점을 OBB의 로컬 공간으로 변환 */
+	FVector WorldToLocal(const FVector& WorldPoint) const
+	{
+		const FVector Delta = WorldPoint - Center;
+		return FVector(
+			FVector::DotProduct(Delta, AxisX),
+			FVector::DotProduct(Delta, AxisY),
+			FVector::DotProduct(Delta, AxisZ)
+		);
+	}
+
+	/** OBB 로컬 공간의 점을 월드로 변환 */
+	FVector LocalToWorld(const FVector& LocalPoint) const
+	{
+		return Center + AxisX * LocalPoint.X + AxisY * LocalPoint.Y + AxisZ * LocalPoint.Z;
+	}
+
+	/** OBB 표면 위 또는 내부에서 주어진 점에 가장 가까운 점 계산 */
+	FVector GetClosestPoint(const FVector& WorldPoint) const
+	{
+		const FVector LocalPoint = WorldToLocal(WorldPoint);
+		const FVector ClampedLocal(
+			FMath::Clamp(LocalPoint.X, -HalfExtents.X, HalfExtents.X),
+			FMath::Clamp(LocalPoint.Y, -HalfExtents.Y, HalfExtents.Y),
+			FMath::Clamp(LocalPoint.Z, -HalfExtents.Z, HalfExtents.Z)
+		);
+		return LocalToWorld(ClampedLocal);
+	}
+};
+
+/**
  * 파괴 형태 정의
  * Note: 현재 원통은 Rotation 값은 있지만 계산에 포함되지 않아 항상 Z축과 평행한 방향만 지원.
  * 회전값 줄 경우 Line shape 사용할 것.
@@ -184,6 +249,15 @@ struct REALTIMEDESTRUCTION_API FQuantizedDestructionInput
 
 	/** 점이 파괴 영역 안에 있는지 확인 (양자화된 값 기반) */
 	bool ContainsPoint(const FVector& Point) const;
+
+	/**
+	 * OBB(Oriented Bounding Box)가 파괴 영역과 교차하는지 확인
+	 * 비균일 스케일 메시에서도 정확한 교차 판정을 위해 사용
+	 *
+	 * @param OBB - 월드 공간의 OBB
+	 * @return 교차 여부
+	 */
+	bool IntersectsOBB(const FSubCellOBB& OBB) const;
 };
 
 /**
@@ -497,7 +571,7 @@ struct REALTIMEDESTRUCTION_API FGridCellCache
 		const FVector CellMin = IdToLocalMin(CellId);
 		return CellMin + GetSubCellLocalOffset(SubCellId);
 	}
-
+	
 	/** SubCell 월드 중심점 */
 	FVector GetSubCellWorldCenter(int32 CellId, int32 SubCellId, const FTransform& MeshTransform) const
 	{
@@ -505,24 +579,33 @@ struct REALTIMEDESTRUCTION_API FGridCellCache
 		return MeshTransform.TransformPosition(LocalCenter);
 	}
 
-	/** SubCell 월드 바운딩 박스 */
-	FBox GetSubCellWorldBox(int32 CellId, int32 SubCellId, const FTransform& MeshTransform) const
+	/**
+	 * SubCell 월드 OBB (Oriented Bounding Box)
+	 * 메시의 회전과 비균일 스케일을 정확히 반영
+	 */
+	FSubCellOBB GetSubCellWorldOBB(int32 CellId, int32 SubCellId, const FTransform& MeshTransform) const
 	{
 		const FVector CellMin = IdToLocalMin(CellId);
 		const FIntVector SubCoord = SubCellIdToCoord(SubCellId);
 		const FVector SubCellSz = GetSubCellSize();
 
+		// 로컬 공간에서의 SubCell 중심
 		const FVector LocalMin = CellMin + FVector(
 			SubCoord.X * SubCellSz.X,
 			SubCoord.Y * SubCellSz.Y,
 			SubCoord.Z * SubCellSz.Z
 		);
-		const FVector LocalMax = LocalMin + SubCellSz;
+		const FVector LocalCenter = LocalMin + SubCellSz * 0.5f;
 
-		return FBox(
-			MeshTransform.TransformPosition(LocalMin),
-			MeshTransform.TransformPosition(LocalMax)
-		);
+		// 월드 공간으로 변환
+		const FVector WorldCenter = MeshTransform.TransformPosition(LocalCenter);
+
+		// 스케일이 적용된 반 크기 (로컬 SubCell 크기 × 트랜스폼 스케일)
+		const FVector TransformScale = MeshTransform.GetScale3D();
+		const FVector WorldHalfExtents = SubCellSz * 0.5f * TransformScale;
+
+		// OBB 생성 (회전만 적용, 스케일은 HalfExtents에 이미 반영됨)
+		return FSubCellOBB(WorldCenter, WorldHalfExtents, MeshTransform.GetRotation());
 	}
 
 	/** AABB 내에 있는 Cell ID 목록 반환 */

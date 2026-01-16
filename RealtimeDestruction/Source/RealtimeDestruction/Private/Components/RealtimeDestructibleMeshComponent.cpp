@@ -2556,22 +2556,22 @@ void URealtimeDestructibleMeshComponent::DrawGridCellDebug()
 		bFirstGridDraw = false;
 	}
 
-	// 파괴된 셀 개수 확인 로그 (1초마다)
-	static double LastLogTime = 0.0;
-	double CurrentTime = FPlatformTime::Seconds();
-	if (CurrentTime - LastLogTime > 1.0)
-	{
-		int32 DestroyedCount = 0;
-		int32 DetachedCount = 0;
-		for (int32 CellId : GridCellCache.GetValidCellIds())
-		{
-			if (CellState.DestroyedCells.Contains(CellId)) DestroyedCount++;
-			if (CellState.IsCellDetached(CellId)) DetachedCount++;
-		}
-		UE_LOG(LogTemp, Warning, TEXT("[DrawGridCellDebug] DestroyedCells.Num=%d, ValidCells에서 Destroyed=%d, Detached=%d, bShowDestroyedCells=%d"),
-			CellState.DestroyedCells.Num(), DestroyedCount, DetachedCount, bShowDestroyedCells);
-		LastLogTime = CurrentTime;
-	}
+	// // 파괴된 셀 개수 확인 로그 (1초마다)
+	// static double LastLogTime = 0.0;
+	// double CurrentTime = FPlatformTime::Seconds();
+	// if (CurrentTime - LastLogTime > 1.0)
+	// {
+	// 	int32 DestroyedCount = 0;
+	// 	int32 DetachedCount = 0;
+	// 	for (int32 CellId : GridCellCache.GetValidCellIds())
+	// 	{
+	// 		if (CellState.DestroyedCells.Contains(CellId)) DestroyedCount++;
+	// 		if (CellState.IsCellDetached(CellId)) DetachedCount++;
+	// 	}
+	// 	UE_LOG(LogTemp, Warning, TEXT("[DrawGridCellDebug] DestroyedCells.Num=%d, ValidCells에서 Destroyed=%d, Detached=%d, bShowDestroyedCells=%d"),
+	// 		CellState.DestroyedCells.Num(), DestroyedCount, DetachedCount, bShowDestroyedCells);
+	// 	LastLogTime = CurrentTime;
+	// }
 
 	// 1. 유효 셀만 그리기 (희소 배열)
 	for (int32 CellId : GridCellCache.GetValidCellIds())
