@@ -106,12 +106,14 @@ public:
 	 * @param Cache - 격자 캐시
 	 * @param DisconnectedCells - 분리된 셀들
 	 * @param DestroyedCells - 파괴된 셀들 (경계 제외용)
+	 * @param bIncludeAdjacentCells 1-ring neighbors까지 detached group에 추가
 	 * @return 그룹별 셀 ID 목록
 	 */
 	static TArray<TArray<int32>> GroupDetachedCells(
 		const FGridCellCache& Cache,
 		const TSet<int32>& DisconnectedCells,
-		const TSet<int32>& DestroyedCells);
+		const TSet<int32>& DestroyedCells,
+		const bool bIncludeAdjacentCells = false);
 
 	/**
 	 * <<<SubCell Level API>>>
