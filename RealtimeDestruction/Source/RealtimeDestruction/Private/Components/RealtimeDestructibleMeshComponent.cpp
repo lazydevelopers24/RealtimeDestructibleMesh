@@ -24,6 +24,7 @@
 
 #include "DrawDebugHelpers.h"
 #include "DynamicMesh/Operations/MergeCoincidentMeshEdges.h"
+#include "DynamicMesh/MeshTransforms.h"
 #include "Selections/MeshConnectedComponents.h"
 #include "Operations/MeshBoolean.h"
 #include "BooleanProcessor/RealtimeBooleanProcessor.h"
@@ -431,10 +432,17 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		// 히스토리에 추가 (NarrowPhase용)
 		DestructionInputHistory.Add(QuantizedInput);
 
-		UE_LOG(LogTemp, Log, TEXT("[SubCell Test] Phase 1: %d SubCells destroyed, %d Cells fully destroyed, %d Cells affected"),
+		// 파괴된 셀 축적 (Detached 발생 시까지 모음)
+		for (int32 CellId : DestructionResult.NewlyDestroyedCells)
+		{
+			AccumulatedDestroyedCellIds.AddUnique(CellId);
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[SubCell Test] Phase 1: %d SubCells destroyed, %d Cells fully destroyed, %d Cells affected, Accumulated=%d"),
 			DestructionResult.DeadSubCellCount,
 			DestructionResult.NewlyDestroyedCells.Num(),
-			DestructionResult.AffectedCells.Num());
+			DestructionResult.AffectedCells.Num(),
+			AccumulatedDestroyedCellIds.Num());
 
 		//=========================================================================
 		// [SubCell Test] Phase 2: SubCell 레벨 BFS로 분리된 Cell 찾기 (서버만)
@@ -535,8 +543,23 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 
 			if (DebrisToSend_SubCell.Num() > 0)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[SubCell Test] Phase 4: Multicast %d debris groups"), DebrisToSend_SubCell.Num());
-				MulticastDetachedDebris(DebrisToSend_SubCell);
+				// 총 셀 수 및 예상 바이트 계산
+				int32 TotalDebrisCells = 0;
+				for (const auto& Debris : DebrisToSend_SubCell)
+				{
+					TotalDebrisCells += Debris.CellIds.Num();
+				}
+				const int32 TotalCellIds = AccumulatedDestroyedCellIds.Num() + TotalDebrisCells;
+				const int32 EstimatedBytes = (AccumulatedDestroyedCellIds.Num() * 4) + (DebrisToSend_SubCell.Num() * 24) + (TotalDebrisCells * 4);
+
+				UE_LOG(LogTemp, Warning, TEXT("[SubCell] MulticastDetachedDebris SENDING - Debris=%d, DestroyedCells=%d, DebrisCells=%d, TotalCells=%d, ~%dKB"),
+					DebrisToSend_SubCell.Num(), AccumulatedDestroyedCellIds.Num(), TotalDebrisCells, TotalCellIds, EstimatedBytes / 1024);
+
+				// 축적된 파괴 셀 + 분리된 파편 정보 전송
+				MulticastDetachedDebris(DebrisToSend_SubCell, AccumulatedDestroyedCellIds);
+
+				// 전송 후 축적 초기화
+				AccumulatedDestroyedCellIds.Empty();
 			}
 
 			CellState.MoveAllDetachedToDestroyed();
@@ -565,11 +588,17 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 	// 직접 파괴된 셀 상태 업데이트
 	CellState.DestroyCells(NewlyDestroyedCells);
 
+	// 파괴된 셀 축적 (Detached 발생 시까지 모음)
+	for (int32 CellId : NewlyDestroyedCells)
+	{
+		AccumulatedDestroyedCellIds.AddUnique(CellId);
+	}
+
 	// 히스토리에 추가 (NarrowPhase용)
 	DestructionInputHistory.Add(QuantizedInput);
 
-	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction: %d cells directly destroyed"),
-		NewlyDestroyedCells.Num());
+	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction: %d cells directly destroyed, Accumulated=%d"),
+		NewlyDestroyedCells.Num(), AccumulatedDestroyedCellIds.Num());
 
 	//=========================================================================
 	// Phase 2: BFS로 앵커에서 분리된 셀 찾기 (서버에서만 실행)
@@ -637,15 +666,28 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		}
 
 		// Multicast로 클라이언트에 전송
+		// Multicast로 클라이언트에 전송 (축적된 파괴된 셀 ID 포함)
 		if (DebrisToSend.Num() > 0)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris SENDING - DebrisCount=%d"), DebrisToSend.Num());
+			// 총 셀 수 및 예상 바이트 계산
+			int32 TotalDebrisCells = 0;
+			for (const auto& Debris : DebrisToSend)
+			{
+				TotalDebrisCells += Debris.CellIds.Num();
+			}
+			const int32 TotalCellIds = AccumulatedDestroyedCellIds.Num() + TotalDebrisCells;
+			const int32 EstimatedBytes = (AccumulatedDestroyedCellIds.Num() * 4) + (DebrisToSend.Num() * 24) + (TotalDebrisCells * 4);
+
+			UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris SENDING - Debris=%d, DestroyedCells=%d, DebrisCells=%d, TotalCells=%d, ~%dKB"),
+				DebrisToSend.Num(), AccumulatedDestroyedCellIds.Num(), TotalDebrisCells, TotalCellIds, EstimatedBytes / 1024);
+
 			for (int32 i = 0; i < DebrisToSend.Num(); i++)
 			{
 				UE_LOG(LogTemp, Warning, TEXT("[GridCell]   Debris[%d]: ID=%d, CellCount=%d, Location=%s"),
 					i, DebrisToSend[i].DebrisId, DebrisToSend[i].CellIds.Num(), *DebrisToSend[i].InitialLocation.ToString());
 			}
-			MulticastDetachedDebris(DebrisToSend);
+			MulticastDetachedDebris(DebrisToSend, AccumulatedDestroyedCellIds);
+			AccumulatedDestroyedCellIds.Empty();
 		}
 
 		// 분리된 셀들을 파괴됨 상태로 이동
@@ -949,21 +991,46 @@ void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 		return;
 	}
 
-	// 디버그: 원점에 ToolMesh 스폰
+	// 디버그: 원본 메시 옆에 ToolMesh 스폰 (로컬→월드 변환 적용)
 	if (UWorld* World = GetWorld())
 	{
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-		AActor* DebugActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+		// 원본 메시 Transform 가져오기
+		FTransform MeshTransform = GetComponentTransform();
+
+		// ToolMesh 바운드 중심을 월드 좌표로 변환
+		FAxisAlignedBox3d ToolBounds = ToolMesh.GetBounds();
+		FVector ToolCenterLocal = FVector(ToolBounds.Center());
+		FVector ToolCenterWorld = MeshTransform.TransformPosition(ToolCenterLocal);
+
+		// 오른쪽으로 오프셋 (바운드 크기 기준)
+		FVector BoundsSize = FVector(ToolBounds.Extents()) * 2.0f * MeshTransform.GetScale3D();
+		FVector RightOffset = MeshTransform.GetRotation().GetRightVector() * (BoundsSize.Y + 100.0f);
+		FVector DebugLocation = ToolCenterWorld + RightOffset;
+
+		AActor* DebugActor = World->SpawnActor<AActor>(AActor::StaticClass(), DebugLocation, MeshTransform.Rotator(), SpawnParams);
 		if (DebugActor)
 		{
+			DebugActor->SetActorScale3D(MeshTransform.GetScale3D());
+
 			UDynamicMeshComponent* DebugComp = NewObject<UDynamicMeshComponent>(DebugActor);
 			DebugComp->RegisterComponent();
 			DebugActor->AddInstanceComponent(DebugComp);
-			*DebugComp->GetMesh() = ToolMesh;
+			DebugActor->SetRootComponent(DebugComp);
+
+			// ToolMesh 복사 후 중심을 원점으로 이동
+			FDynamicMesh3 CenteredToolMesh = ToolMesh;
+			MeshTransforms::Translate(CenteredToolMesh, -ToolBounds.Center());
+			*DebugComp->GetMesh() = CenteredToolMesh;
 			DebugComp->NotifyMeshUpdated();
-			UE_LOG(LogTemp, Warning, TEXT("DEBUG: ToolMesh spawned at origin"));
+
+			// 10초 후 삭제
+			DebugActor->SetLifeSpan(10.0f);
+
+			UE_LOG(LogTemp, Warning, TEXT("DEBUG: ToolMesh Center Local=%s, World=%s, BoundsSize=%s"),
+				*ToolCenterLocal.ToString(), *ToolCenterWorld.ToString(), *BoundsSize.ToString());
 		}
 	}
 
@@ -973,6 +1040,10 @@ void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 	BoolOptions.bSimplifyOutput = false;
 
 	int32 TotalChunksProcessed = 0;
+	FAxisAlignedBox3d ToolBounds = ToolMesh.GetBounds();
+
+	UE_LOG(LogTemp, Warning, TEXT("ToolMesh Bounds: Min=%s, Max=%s"),
+		*FVector(ToolBounds.Min).ToString(), *FVector(ToolBounds.Max).ToString());
 
 	for (int32 ChunkIdx = 0; ChunkIdx < ChunkMeshComponents.Num(); ++ChunkIdx)
 	{
@@ -981,6 +1052,22 @@ void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 
 		FDynamicMesh3* TargetMesh = ChunkMesh->GetMesh();
 		if (TargetMesh->TriangleCount() == 0) continue;
+
+		// AABB 겹침 체크
+		FAxisAlignedBox3d ChunkBounds = TargetMesh->GetBounds();
+		bool bBoundsOverlap = ChunkBounds.Intersects(ToolBounds);
+
+		UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: Bounds Min=%s Max=%s, Overlap=%s"),
+			ChunkIdx,
+			*FVector(ChunkBounds.Min).ToString(),
+			*FVector(ChunkBounds.Max).ToString(),
+			bBoundsOverlap ? TEXT("YES") : TEXT("NO"));
+
+		if (!bBoundsOverlap)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: SKIP (no bounds overlap)"), ChunkIdx);
+			continue;
+		}
 
 		FDynamicMesh3 ResultMesh;
 		bool bSuccess = FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(
@@ -991,9 +1078,25 @@ void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 			BoolOptions
 		);
 
-		if (bSuccess && ResultMesh.TriangleCount() > 0 && ResultMesh.TriangleCount() != TargetMesh->TriangleCount())
+		if (!bSuccess)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: %d -> %d tris"), ChunkIdx, TargetMesh->TriangleCount(), ResultMesh.TriangleCount());
+			UE_LOG(LogTemp, Error, TEXT("Chunk[%d]: Boolean FAILED"), ChunkIdx);
+		}
+		else if (ResultMesh.TriangleCount() == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: Result 0 tris (fully consumed)"), ChunkIdx);
+			// 완전히 제거된 경우도 적용
+			*TargetMesh = MoveTemp(ResultMesh);
+			ChunkMesh->NotifyMeshUpdated();
+			TotalChunksProcessed++;
+		}
+		else if (ResultMesh.TriangleCount() == TargetMesh->TriangleCount())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: No change (%d tris) - no actual intersection?"), ChunkIdx, TargetMesh->TriangleCount());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Chunk[%d]: %d -> %d tris (SUCCESS)"), ChunkIdx, TargetMesh->TriangleCount(), ResultMesh.TriangleCount());
 			*TargetMesh = MoveTemp(ResultMesh);
 			ChunkMesh->NotifyMeshUpdated();
 			TotalChunksProcessed++;
@@ -1025,9 +1128,6 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 	}
 
 	using namespace UE::Geometry;
-
-	// 작은 파편 기준: 바운딩 박스 볼륨 (cm^3)
-	const double SmallVolumeThreshold = 5000.0;  // 약 17x17x17 cm 이하
 
 	int32 TotalRemoved = 0;
 
@@ -1075,16 +1175,54 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 				Centroid /= ValidCount;
 				FVector WorldPos = MeshTransform.TransformPosition(FVector(Centroid));
 
-				// 볼륨 기반 작은 파편 판단
-				double Volume = BoundingBox.Volume();
-				bool bIsSmallFragment = (Volume <= SmallVolumeThreshold);
+				// 파괴된 셀과 겹침 판정 (면적 가중치 기반)
+				bool bOverlapsDestroyedCells = false;
+				double OverlapRatio = 0.0;
+				double TotalArea = 0.0;
+				double OverlapArea = 0.0;
 
-				// 디버그 색상: 빨강 = 작은 파편 (삭제), 초록 = 큰 구조물 (유지)
-				FColor PointColor = bIsSmallFragment ? FColor::Red : FColor::Green;
+				if (GridCellCache.IsValid() && CellState.DestroyedCells.Num() > 0)
+				{
+					for (int32 Tid : Comp.Indices)
+					{
+						if (!Mesh->IsTriangle(Tid)) continue;
+
+						// 슬리버 삼각형 필터링
+						double TriArea = Mesh->GetTriArea(Tid);
+						if (TriArea <= KINDA_SMALL_NUMBER) continue;
+
+						TotalArea += TriArea;
+
+						// 삼각형 중심점을 그리드 좌표로 변환
+						FVector3d TriCentroid = Mesh->GetTriCentroid(Tid);
+						FVector RelativePos = FVector(TriCentroid) - GridCellCache.GridOrigin;
+						FIntVector GridCoord(
+							FMath::FloorToInt(RelativePos.X / GridCellCache.CellSize.X),
+							FMath::FloorToInt(RelativePos.Y / GridCellCache.CellSize.Y),
+							FMath::FloorToInt(RelativePos.Z / GridCellCache.CellSize.Z)
+						);
+						int32 CellId = GridCellCache.CoordToId(GridCoord);
+
+						if (CellState.DestroyedCells.Contains(CellId))
+						{
+							OverlapArea += TriArea;
+						}
+					}
+
+					OverlapRatio = (TotalArea > KINDA_SMALL_NUMBER) ? (OverlapArea / TotalArea) : 0.0;
+
+					// 이중 조건: 최소 파괴 면적 + 비율 임계값
+					constexpr double MinDestroyedArea = 50.0;  // 최소 50 cm² 이상 겹쳐야 함
+					bOverlapsDestroyedCells = (OverlapArea > MinDestroyedArea) && (OverlapRatio >= 0.7);
+				}
+
+				// 디버그 색상: 빨강 = 삭제 대상, 초록 = 유지
+				FColor PointColor = bOverlapsDestroyedCells ? FColor::Red : FColor::Green;
 				DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
+				DrawDebugString(GetWorld(), WorldPos, FString::Printf(TEXT("%.0f%% (%.0fcm2)"), OverlapRatio * 100.0, OverlapArea), nullptr, PointColor, 10.0f);
 
-				// 작은 파편이면 파편 액터로 스폰 후 삭제
-				if (bIsSmallFragment)
+				// 파괴된 셀과 겹치면 파편 액터로 스폰 후 삭제
+				if (bOverlapsDestroyedCells)
 				{
 					// 메쉬 데이터 추출
 					TMap<int32, int32> OldToNewVertexMap;
@@ -1129,6 +1267,33 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 						UWorld* World = GetWorld();
 						if (World)
 						{
+							// 1. 유효성 검사 먼저 수행
+							FBox DebrisBounds(DebrisVertices);
+							FVector BoundsSize = DebrisBounds.GetSize();
+							float DebrisSize = BoundsSize.Size();
+							float MinAxisSize = FMath::Min3(BoundsSize.X, BoundsSize.Y, BoundsSize.Z);
+
+							// NaN/Inf 체크
+							bool bHasValidVerts = true;
+							for (const FVector& V : DebrisVertices)
+							{
+								if (V.ContainsNaN() || !FMath::IsFinite(V.X) || !FMath::IsFinite(V.Y) || !FMath::IsFinite(V.Z))
+								{
+									bHasValidVerts = false;
+									break;
+								}
+							}
+
+							// 물리 사용 가능 조건 (더 보수적)
+							// - 유효한 정점
+							// - 최소 12개 정점 (더 안정적인 Convex)
+							// - 전체 크기 5cm 이상
+							// - 각 축 최소 2cm 이상 (납작한 형태 방지)
+							bool bCanUsePhysics = bHasValidVerts
+								&& DebrisVertices.Num() >= 12
+								&& DebrisSize >= 5.0f
+								&& MinAxisSize >= 2.0f;
+
 							FActorSpawnParameters SpawnParams;
 							SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -1148,25 +1313,6 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 								ProcMesh->CreateMeshSection_LinearColor(0, DebrisVertices, DebrisTriangles, TArray<FVector>(), DebrisUVs,
 									TArray<FLinearColor>(), TArray<FProcMeshTangent>(), false);
 
-								// Convex Collision 생성 - 정점이 충분하고 유효할 때만
-								if (DebrisVertices.Num() >= 4)
-								{
-									// NaN 체크
-									bool bHasValidVerts = true;
-									for (const FVector& V : DebrisVertices)
-									{
-										if (!FMath::IsFinite(V.X) || !FMath::IsFinite(V.Y) || !FMath::IsFinite(V.Z))
-										{
-											bHasValidVerts = false;
-											break;
-										}
-									}
-									if (bHasValidVerts)
-									{
-										ProcMesh->AddCollisionConvexMesh(DebrisVertices);
-									}
-								}
-
 								// 원본 머티리얼 적용
 								if (ChunkMesh->GetNumMaterials() > 0)
 								{
@@ -1177,24 +1323,29 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 									}
 								}
 
-								// 액터에 연결
+								// ★ 순서 중요: RootComponent 설정 → RegisterComponent → SetActorLocation → Collision 추가
 								DebrisActor->SetRootComponent(ProcMesh);
 								ProcMesh->RegisterComponent();
 								DebrisActor->AddInstanceComponent(ProcMesh);
 
-								// 위치 명시적 설정
+								// 위치 명시적 설정 (Collision 추가 전에 반드시 설정)
 								DebrisActor->SetActorLocation(WorldPos);
 
-								// 물리 설정 - 정점이 4개 이상이고 데디케이티드 서버가 아닐 때만
-							// 서버에서는 파편 물리 시뮬레이션 스킵 (NaN 오류 방지)
-								if (DebrisVertices.Num() >= 4 && !IsRunningDedicatedServer())
+								// 물리 설정 - 유효성 검사 통과 + 데디케이티드 서버 아닐 때만
+								if (bCanUsePhysics && !IsRunningDedicatedServer())
 								{
-									ProcMesh->SetSimulatePhysics(true);
+									// ★ Transform 설정 완료 후에 Convex Collision 추가 (Local Space 좌표)
+									ProcMesh->AddCollisionConvexMesh(DebrisVertices);
+
+									// 질량 자동 계산 방지 - 고정 질량 사용
+									ProcMesh->SetMassOverrideInKg(NAME_None, 5.0f, true);
+
 									ProcMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 									ProcMesh->SetCollisionResponseToAllChannels(ECR_Block);
+									ProcMesh->SetSimulatePhysics(true);
 
 									// 약간 아래로 초기 속도
-									ProcMesh->SetPhysicsLinearVelocity(FVector(0, 0, -50));
+									ProcMesh->SetPhysicsLinearVelocity(FVector(0, 0, -50.0f));
 
 									// 랜덤 회전
 									FVector RandomAngular(
@@ -1204,16 +1355,25 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 									);
 									ProcMesh->SetPhysicsAngularVelocityInDegrees(RandomAngular);
 								}
+								else
+								{
+									// 물리 사용 불가 시 충돌 비활성화하고 렌더링만
+									ProcMesh->SetSimulatePhysics(false);
+									ProcMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+								}
 
 								// 10초 후 삭제
 								DebrisActor->SetLifeSpan(10.0f);
 
-								UE_LOG(LogTemp, Warning, TEXT("Debris Actor Location: %s, ProcMesh Location: %s"),
-									*DebrisActor->GetActorLocation().ToString(),
-									*ProcMesh->GetComponentLocation().ToString());
-
-								UE_LOG(LogTemp, Warning, TEXT("Debris Spawned: Pos=%s, Vertices=%d, Triangles=%d, Volume=%.1f"),
-									*WorldPos.ToString(), DebrisVertices.Num(), DebrisTriangles.Num() / 3, Volume);
+								UE_LOG(LogTemp, Warning, TEXT("Debris: Verts=%d, Size=%.1f, MinAxis=%.2f, Physics=%s %s"),
+									DebrisVertices.Num(), DebrisSize, MinAxisSize,
+									bCanUsePhysics ? TEXT("ON") : TEXT("OFF"),
+									!bCanUsePhysics ?
+										(!bHasValidVerts ? TEXT("(NaN)") :
+										 DebrisVertices.Num() < 12 ? TEXT("(Verts<12)") :
+										 DebrisSize < 5.0f ? TEXT("(Size<5)") :
+										 MinAxisSize < 2.0f ? TEXT("(Flat)") : TEXT(""))
+										: TEXT(""));
 
 								// 디버그: 스폰 위치에 파란 구체 표시
 								DrawDebugSphere(World, WorldPos, 20.0f, 8, FColor::Blue, false, 10.0f);
@@ -1241,7 +1401,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 
 	if (TotalRemoved > 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("CleanupSmallFragments: Removed %d small fragments (volume <= 5000 cm^3)"),
+		UE_LOG(LogTemp, Warning, TEXT("CleanupSmallFragments: Removed %d fragments (overlaps destroyed cells)"),
 			TotalRemoved);
 	}
 }
@@ -1419,7 +1579,9 @@ void URealtimeDestructibleMeshComponent::MulticastApplyOpsCompact_Implementation
 	ApplyOpsDeterministic(Ops);
 }
 
-void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(const TArray<FDetachedDebrisInfo>& DetachedDebris)
+void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
+	const TArray<FDetachedDebrisInfo>& DetachedDebris,
+	const TArray<int32>& DestroyedCellIds)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -1438,7 +1600,8 @@ void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
 	case NM_Client: NetModeStr = TEXT("Client"); break;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris RECEIVED - NetMode=%s, DebrisCount=%d"), *NetModeStr, DetachedDebris.Num());
+	UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris RECEIVED - NetMode=%s, DebrisCount=%d, DestroyedCells=%d"),
+		*NetModeStr, DetachedDebris.Num(), DestroyedCellIds.Num());
 
 	// DedicatedServer: 렌더링 안 하므로 삼각형 삭제 스킵
 	if (NetMode == NM_DedicatedServer)
@@ -1446,6 +1609,14 @@ void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
 		UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris SKIPPED (DedicatedServer - no rendering)"));
 		return;
 	}
+
+	// 클라이언트: 파괴된 셀 상태 업데이트 (Detached 전에 파괴된 셀들)
+	for (int32 CellId : DestroyedCellIds)
+	{
+		CellState.DestroyedCells.Add(CellId);
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[GridCell] Client DestroyedCells updated: +%d cells, Total=%d"),
+		DestroyedCellIds.Num(), CellState.DestroyedCells.Num());
 
 	// 클라이언트: 서버가 보낸 분리된 셀 그룹으로 파편 스폰
 	UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachedDebris PROCESSING on Client - %d debris groups"), DetachedDebris.Num());
@@ -1461,20 +1632,12 @@ void URealtimeDestructibleMeshComponent::MulticastDetachedDebris_Implementation(
 		}
 
 		// 셀 상태 업데이트 (Detached로 저장 - 주황색으로 표시됨)
-		// 나중에 메시 파괴 후 MoveDetachedToDestroyed() 호출하여 Destroyed로 이동
-		UE_LOG(LogTemp, Warning, TEXT("[GridCell] Client AddDetachedGroup BEFORE - CellIds.Num=%d, DetachedGroups.Num=%d"),
-			CellIds.Num(), CellState.DetachedGroups.Num());
 		CellState.AddDetachedGroup(CellIds);
-		UE_LOG(LogTemp, Warning, TEXT("[GridCell] Client AddDetachedGroup AFTER - DetachedGroups.Num=%d"),
-			CellState.DetachedGroups.Num());
 
 		// 클라이언트: 분리된 셀의 삼각형 삭제 (시각적 처리)
 		RemoveTrianglesForDetachedCells(CellIds);
 
-		// TODO: 파편 액터 스폰 (서버에서 복제되므로 클라에서는 스킵)
-		// 파편 액터는 서버에서 스폰하고 SetReplicateMovement(true)로 복제됨
-
-		UE_LOG(LogTemp, Warning, TEXT("  Debris ID: %d, Cells: %d, Location: %s, Triangles removed on client"),
+		UE_LOG(LogTemp, Warning, TEXT("  Debris ID: %d, Cells: %d, Location: %s"),
 			DebrisInfo.DebrisId, CellIds.Num(), *DebrisInfo.InitialLocation.ToString());
 	}
 
