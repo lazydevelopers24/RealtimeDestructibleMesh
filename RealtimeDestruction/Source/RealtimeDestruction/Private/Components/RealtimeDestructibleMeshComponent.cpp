@@ -365,7 +365,7 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 
 void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FRealtimeDestructionRequest& Request)
 {
-	constexpr bool bSubCellTestEnabled = false;
+	constexpr bool bSubCellTestEnabled = true;
 	
 	TArray<int32> NewlyDestroyedCells;
 	TSet<int32> DisconnectedCells;
@@ -472,6 +472,7 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			DestructionResult.AffectedCells);
 
 		UE_LOG(LogTemp, Log, TEXT("[SubCell] Phase 2: %d Cells disconnected"), DisconnectedCells.Num());
+
 	}
 	else
 	{

@@ -897,58 +897,78 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCellsWithSubCells(
 {
 	using namespace SubCellBFSHelper;
 
-	TSet<int32> Disconnected;
-	TSet<int32> ConfirmedConnected;
-	TSet<int32> Processed;
+	TSet<int32> Connected;
 
-	// 1. 분리 후보 수집: AffectedCells + 인접 Cell들
-	TSet<int32> Candidates;
-	for (int32 CellId : AffectedCells)
+	// 1. 모든 Anchor Cell에서 BFS 시작
+	TQueue<int32> Queue;
+	for (int32 CellId = 0; CellId < Cache.GetTotalCellCount(); CellId++)
 	{
-		// 파괴된 Cell은 제외
-		if (CellState.DestroyedCells.Contains(CellId))
+		if (Cache.GetCellExists(CellId) &&
+			Cache.GetCellIsAnchor(CellId) &&
+			!CellState.DestroyedCells.Contains(CellId) &&
+			HasAliveSubCell(CellId, CellState))
 		{
-			continue;
+			Queue.Enqueue(CellId);
+			Connected.Add(CellId);
 		}
+	}
 
-		Candidates.Add(CellId);
+	// 2. BFS: SubCell 경계 연결성으로 도달 가능한 모든 Cell 찾기
+	while (!Queue.IsEmpty())
+	{
+		int32 CurrCellId;
+		Queue.Dequeue(CurrCellId);
 
-		// 인접 Cell들도 추가 (경계 연결이 끊겼을 수 있음)
-		for (int32 NeighborId : Cache.GetCellNeighbors(CellId).Values)
+		const FIntVector CurrCoord = Cache.IdToCoord(CurrCellId);
+
+		for (int32 Dir = 0; Dir < 6; ++Dir)
 		{
-			if (!CellState.DestroyedCells.Contains(NeighborId))
+			const FIntVector NeighborCoord = CurrCoord + FIntVector(
+				DIRECTION_OFFSETS[Dir][0],
+				DIRECTION_OFFSETS[Dir][1],
+				DIRECTION_OFFSETS[Dir][2]
+			);
+
+			if (!Cache.IsValidCoord(NeighborCoord))
 			{
-				Candidates.Add(NeighborId);
+				continue;
+			}
+
+			const int32 NeighborCellId = Cache.CoordToId(NeighborCoord);
+
+			if (Connected.Contains(NeighborCellId))
+			{
+				continue;
+			}
+
+			if (!Cache.GetCellExists(NeighborCellId))
+			{
+				continue;
+			}
+
+			if (CellState.DestroyedCells.Contains(NeighborCellId))
+			{
+				continue;
+			}
+
+			// SubCell 경계 연결성 검사
+			if (HasConnectedBoundary(CurrCellId, NeighborCellId, Dir, CellState))
+			{
+				Connected.Add(NeighborCellId);
+				Queue.Enqueue(NeighborCellId);
 			}
 		}
 	}
 
-	// 2. 각 후보 Cell에서 SubCell BFS
-	for (int32 CandidateCell : Candidates)
+	// 3. 전체 Grid에서 Connected가 아닌 Cell = Disconnected
+	TSet<int32> Disconnected;
+	for (int32 CellId = 0; CellId < Cache.GetTotalCellCount(); CellId++)
 	{
-		if (Processed.Contains(CandidateCell))
+		if (Cache.GetCellExists(CellId) &&
+			!CellState.DestroyedCells.Contains(CellId) &&
+			!Connected.Contains(CellId))
 		{
-			continue;
-		}
-
-		// SubCell 레벨 BFS 수행
-		TSet<int32> VisitedCells;
-		const bool bReachedAnchor = PerformSubCellBFS(
-			Cache, CellState, CandidateCell, ConfirmedConnected, VisitedCells);
-
-		// 방문한 모든 Cell 처리
-		for (int32 VisitedCell : VisitedCells)
-		{
-			Processed.Add(VisitedCell);
-
-			if (bReachedAnchor)
-			{
-				ConfirmedConnected.Add(VisitedCell);
-			}
-			else
-			{
-				Disconnected.Add(VisitedCell);
-			}
+			Disconnected.Add(CellId);
 		}
 	}
 
