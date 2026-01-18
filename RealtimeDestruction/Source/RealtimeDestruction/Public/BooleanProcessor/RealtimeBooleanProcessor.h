@@ -5,15 +5,15 @@
 #include "CoreMinimal.h"
 #include "Components/DestructionTypes.h"  
 #include <atomic>
-#include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/MeshTangents.h"
 
-class UDynamicMeshComponent;
 ////////////////////////////////////////
 /******** forward declaration ********/
 namespace UE::Geometry
 {
 	class FDynamicMesh3;
 }
+class UDynamicMeshComponent;
 struct FRealtimeDestructionOp;
 struct FGeometryScriptMeshBooleanOptions;
 struct FGeometryScriptPlanarSimplifyOptions;
@@ -239,7 +239,7 @@ public:
 	int32 GetCurrentHoleCount() const { return CurrentHoleCount; }
 
 	void CancelAllOperations();
-
+	
 	int32 GetChunkHoleCount(int32 ChunkIndex) const { return ChunkHoleCount[ChunkIndex]; }
 	int32 GetChunkHoleCount(const UPrimitiveComponent* ChunkComponent) const;
 
@@ -249,20 +249,21 @@ public:
 		const EGeometryScriptBooleanOperation Operation,
 		const FGeometryScriptMeshBooleanOptions Options,
 		const FTransform& TargetTransform = FTransform::Identity,
-		const FTransform& ToolTransform = FTransform::Identity);
+		const FTransform& ToolTransform = FTransform::Identity
+		);
 
 	static void ApplySimplifyToPlanarAsync(UE::Geometry::FDynamicMesh3* TargetMesh, FGeometryScriptPlanarSimplifyOptions Options);
 
-private:
+private:	
 	void StartBooleanWorkerAsyncForChunk(FBulletHoleBatch&& InBatch, int32 Gen);	
-
+	
 	void StartUnionWorkerForChunk(FBulletHoleBatch&& InBatch, int32 BatchID, int32 ChunkIndex);
 	void TriggerSubtractWorkerForChunk(int32 ChunkIndex);
-
+	
 	void AccumulateSubtractDuration(int32 ChunkIndex, double CurrentSubDuration);
 
 	void UpdateSimplifyInterval(double CurrentSetMeshAvgCost);
-
+	
 	void UpdateUnionSize(int32 ChunkIndex, double DurationMs);
 
 	bool TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 ChunkIndex, int32 UnionCount);
@@ -274,6 +275,8 @@ private:
 
 	/** Subtract 연산 비용 측정기 */
 	void UpdateSubtractAvgCost(double CostMs);
+
+	void UpdateHoleNormalAndTangents(UE::Geometry::FDynamicMesh3& MeshToSet, int32 HoleMaterialID);
 
 
 private:
@@ -289,7 +292,7 @@ private:
 	int DebugNormalQueueCount;
 
 	FChunkProcessState ChunkStates;
-
+	
 	// 청크 변경 이력 관리
 	// 불리연 연산이 완료되고 SetMesh할 때 증가
 	TArray<std::atomic<int32>> ChunkGenerations;
@@ -313,7 +316,7 @@ private:
 
 	// defaut 값 부터 테스트
 	int32 AngleThreshold = 0.001;
-
+	
 	int32 MaxInterval = 0;
 	int32 InitInterval = 0;
 
@@ -325,7 +328,7 @@ private:
 	FBooleanThreadTuner AutoTuner;
 
 	bool bEnableMultiWorkers;
-	
+
 	/** 현재 Union 작업 중인 Worker 수 */
 	std::atomic<int32> ActiveUnionWorkers{ 0 };
 

@@ -301,7 +301,7 @@ bool URealtimeDestructibleMeshComponent::RequestDestruction(const FRealtimeDestr
 		UE_LOG(LogTemp, Warning, TEXT("Async flag is false. Please turn true"));
 		return false;
 	}
-	 
+	
 	if (bEnableClustering && BulletClusterComponent)
 	{
 		BulletClusterComponent->RegisterRequest(Request); 
@@ -329,33 +329,33 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 		TempDecal = SpawnTemporaryDecal(Request);
 	}
 
-		// 기본 관통을 Enqeue
-		EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
+	// 기본 관통을 Enqeue
+	EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
 
-		// Offset에 따라 추가 관통처리
-		if (bIsPenetration)
+	// Offset에 따라 추가 관통처리
+	if (bIsPenetration)
+	{
+		FRealtimeDestructionRequest PenetrationRequest = Request;
+
+		/*
+		 * deprecated_realdestruction
+		 */
+		// Cylinder 중심을 벽 중간으로 이동 (Normal 반대 방향으로 Height/2만큼)
+		FVector Offset = Request.ImpactNormal * (-AdjustPenetration * 0.5f);
+		PenetrationRequest.ImpactPoint = Request.ImpactPoint + Offset;
+		PenetrationRequest.ToolShape = EDestructionToolShape::Cylinder;
+
+		if (bDebugPenetration)
 		{
-			FRealtimeDestructionRequest PenetrationRequest = Request;
-
-			/*
-			 * deprecated_realdestruction
-			 */
-			 // Cylinder 중심을 벽 중간으로 이동 (Normal 반대 방향으로 Height/2만큼)
-			FVector Offset = Request.ImpactNormal * (-AdjustPenetration * 0.5f);
-			PenetrationRequest.ImpactPoint = Request.ImpactPoint + Offset;
-			PenetrationRequest.ToolShape = EDestructionToolShape::Cylinder;
-
-			if (bDebugPenetration)
-			{
-				// 시각화
-				DrawDebugLine(GetWorld(), Request.ImpactPoint, PenetrationRequest.ImpactPoint,
-					FColor::Red, false, 5.0f, 0, 3.0f);
-			}
-
-			// 구멍을 추가로 내주는거니, Decal을 필요없다. 
-			EnqueueRequestLocal(PenetrationRequest, true, nullptr);
+			// 시각화
+			DrawDebugLine(GetWorld(), Request.ImpactPoint, PenetrationRequest.ImpactPoint,
+				FColor::Red, false, 5.0f, 0, 3.0f);
 		}
-		return true;
+
+		// 구멍을 추가로 내주는거니, Decal을 필요없다. 
+		EnqueueRequestLocal(PenetrationRequest, true, nullptr);
+	}
+	return true;
 	
 }
 
@@ -371,10 +371,10 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 	{
 		return;
 	}
-	
+
 	FDestructionResult DestructionResult;
 	TSet<int32> DisconnectedCells;
-	
+
 	// Request를 FDestructionShape로 변환
 	FCellDestructionShape Shape;
 	Shape.Center = Request.ImpactPoint;
@@ -420,10 +420,10 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			CellState);
 	}
 
-	if (!DestructionResult.HasAnyDestruction())
-	{
-		return; // 파괴 없음
-	}
+		if (!DestructionResult.HasAnyDestruction())
+		{
+			return; // 파괴 없음
+		}
 
 	// 가장 최근 파괴된 셀 디버그 시각화를 위한 정보 갱신
 	if (DestructionResult.NewlyDestroyedCells.Num() > 0)
@@ -432,8 +432,8 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		RecentDirectDestroyedCellIds.Append(DestructionResult.NewlyDestroyedCells);
 	}
 
-	// 히스토리에 추가 (NarrowPhase용)
-	DestructionInputHistory.Add(QuantizedInput);
+		// 히스토리에 추가 (NarrowPhase용)
+		DestructionInputHistory.Add(QuantizedInput);
 
 	// 파괴된 셀 데이터 전송 (클라이언트 CellState 동기화)
 	if (DestructionResult.NewlyDestroyedCells.Num() > 0)
@@ -447,32 +447,32 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 			DestructionResult.DeadSubCellCount,
 			DestructionResult.NewlyDestroyedCells.Num(),
 			DestructionResult.AffectedCells.Num());
-	}
+		}
 	else
-	{
+		{
 		UE_LOG(LogTemp, Log, TEXT("[Update Cell State] Phase 1: %d cells directly destroyed"),
 			DestructionResult.NewlyDestroyedCells.Num());
-	}
+			}
 
-	//=====================================================================
+			//=====================================================================
 	// Phase 2: BFS로 앵커에서 분리된 셀 찾기
-	//=====================================================================
+			//=====================================================================
 	if (bEnableSubcell)
-	{
+			{
 		DisconnectedCells = FCellDestructionSystem::FindDisconnectedCellsWithSubCells(
 			GridCellCache,
 			CellState,
 			DestructionResult.AffectedCells);
-	}
+				}
 	else
-	{
+			{
 		DisconnectedCells = FCellDestructionSystem::FindDisconnectedCells(
-			GridCellCache,
-			CellState.DestroyedCells);
+		GridCellCache,
+		CellState.DestroyedCells);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Cell] Phase 2: %d Cells disconnected"), DisconnectedCells.Num());
-	
+
 	if (DisconnectedCells.Num() > 0)
 	{
 		//=====================================================================
@@ -500,18 +500,18 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		for (const TArray<int32>& Group : NewDetachedGroups)
 		{
 			RemoveTrianglesForDetachedCells(Group);
-		}
+			}
 
 		CellState.MoveAllDetachedToDestroyed();
 
 		UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction [Server]: %d cells disconnected (%d groups)"),
 			DisconnectedCells.Num(), NewDetachedGroups.Num());
-	}
+		}
 	else
-	{
+		{
 		// 분리된 셀 없어도 파괴된 셀 있으면 파편 정리 (RemoveTrianglesForDetachedCells 통하지 않으므로)
 		CleanupSmallFragments();
-	}
+			}
 
 	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction Complete: Destroyed=%d, DetachedGroups=%d"),
 		CellState.DestroyedCells.Num(), CellState.DetachedGroups.Num());
@@ -1074,11 +1074,11 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 				if (bShowCellSpawnPosition)
 				{
 					FColor PointColor = bShouldRemove ? FColor::Red : FColor::Green;
-					DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
+				DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
 					DrawDebugString(GetWorld(), WorldPos, FString::Printf(TEXT("%s (%d/%d destroyed)"),
 						bShouldRemove ? TEXT("Detached") : TEXT("Anchored"), DestroyedCellCount, TotalCellCount), nullptr, PointColor, 10.0f);
 				}
-				
+
 				// 모든 셀이 파괴된 컴포넌트는 파편으로 스폰 후 삭제
 				if (bShouldRemove)
 				{
@@ -1236,10 +1236,10 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 								// 디버그: 스폰 위치에 파란 구체 표시
 								if (bShowCellSpawnPosition)
 								{
-									DrawDebugSphere(World, WorldPos, 20.0f, 8, FColor::Blue, false, 10.0f);
-								}
+								DrawDebugSphere(World, WorldPos, 20.0f, 8, FColor::Blue, false, 10.0f);
 							}
 						}
+					}
 					}
 
 					// 원본 메쉬에서 삼각형 삭제
@@ -1511,7 +1511,7 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Client] BFS result: No disconnected cells"));
 		return;
-	}
+		}
 
 	UE_LOG(LogTemp, Warning, TEXT("[Client] BFS result: %d disconnected cells"), DisconnectedCells.Num());
 
@@ -2918,7 +2918,7 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 	  
 	// decal 방향 설정 
 	FRotator DecalRotation = Request.ImpactNormal.Rotation() + RotationOffsetToUse;
-
+	 
 	if (Request.bRandomRotation)
 	{
 		float RandomRoll = FMath::RandRange(0.0f, 360.0f);
@@ -2932,7 +2932,7 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 	FVector DecalLocation = Request.ImpactPoint + (Request.ImpactNormal * 0.5f) + WorldOffset;
 		
 
-	Decal->SetWorldLocationAndRotation(DecalLocation, DecalRotation);
+	Decal->SetWorldLocationAndRotation(DecalLocation, DecalRotation); 
 
 	
 	Decal->RegisterComponent();   
@@ -2980,7 +2980,7 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGeometryCollection: No transforms in GeometryCollection."));
 		return 0;
 	}
-	 
+
 	// Geometry Group에서 실제 메시 데이터 가져오기
 	const TManagedArray<FVector3f>& Vertices = GC.Vertex;
 	const TManagedArray<int32>& BoneMap = GC.BoneMap;
@@ -3687,8 +3687,8 @@ int32 URealtimeDestructibleMeshComponent::GetMaterialIDFromFaceIndex(int32 FaceI
 	if (FaceIndex == INDEX_NONE)
 	{
 		return 0;
-	}
-
+	} 
+	 
 	if (UDynamicMesh* DynMesh = GetDynamicMesh())
 	{
 		const UE::Geometry::FDynamicMesh3& Mesh = DynMesh->GetMeshRef();
@@ -3909,7 +3909,7 @@ void URealtimeDestructibleMeshComponent::RevertFracture()
 
 	ChunkMeshComponents.Empty();
 	GridToChunkMap.Reset();
-	
+
 	bChunkMeshesValid = false;
 	SetSourceMeshEnabled(true);
 
@@ -4037,7 +4037,7 @@ void FRealtimeDestructibleMeshComponentInstanceData::ApplyToComponent(
 			if (!DestructComp->GridCellCache.IsValid())
 			{
 				UE_LOG(LogTemp, Log, TEXT("ApplyToComponent: GridCellCache is invalid, rebuilding..."));
-				DestructComp->BuildGridCells();
+			DestructComp->BuildGridCells();
 			}
 			else
 			{

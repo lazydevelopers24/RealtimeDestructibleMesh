@@ -62,7 +62,7 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 	/** Tool Shape 파라미터 (네트워크 직렬화용) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FDestructionToolShapeParams ShapeParams;
-
+	  
 	/** RTT 측정용 클라이언트 전송 시간 (클라이언트에서만 설정) */
 	UPROPERTY()
 	double ClientSendTime = 0.0;
@@ -75,7 +75,7 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector ToolCenterWorld = FVector::ZeroVector;
-	
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector DecalSize = FVector::ZeroVector;
 
@@ -534,7 +534,7 @@ public:
 	void ApplyBooleanOperationResult(FDynamicMesh3&& NewMesh, const int32 ChunkIndex, bool bDelayedCollisionUpdate);
 	
 	// 타겟메시의 idle이나 원하는 딜레이를 주고 Async로 collision 갱신하는 함수
-	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);
+	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);		
 
 	/*************************************************/
 	void SetSourceMeshEnabled(bool bSwitch);
@@ -668,7 +668,7 @@ protected:
 
 	/** Multi Worker, Subtract 체크용 */
 	TArray<uint64> ChunkSubtractBusyBits;
-	
+
 	/** Chunk 메시가 유효한지 (빌드 완료 여부) */
 	UPROPERTY()
 	bool bChunkMeshesValid = false;
@@ -773,7 +773,7 @@ public:
 	 * @param InitialVelocity - 초기 속도 (폭발 방향)
 	 */
 	void SpawnDebrisFromCells(const TArray<int32>& DetachedCellIds, const FVector& InitialLocation, const FVector& InitialVelocity);
-	
+
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|ChunkMesh")
 	int32 GetChunkMeshCount() const { return ChunkMeshComponents.Num(); }
 

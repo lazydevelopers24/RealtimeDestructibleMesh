@@ -13,6 +13,7 @@
 #include "Components/DecalComponent.h"
 #include "GeometryScript/MeshSimplifyFunctions.h"
 #include "ProfilingDebugging/CountersTrace.h"
+#include "DynamicMesh/MeshTangents.h"
 
 // DEUBUG용 
 #include "DynamicMesh/Operations/MergeCoincidentMeshEdges.h"
@@ -272,120 +273,120 @@ void FRealtimeBooleanProcessor::StartUnionWorkerForChunk(FBulletHoleBatch&& InBa
 	}
 
 	UE::Tasks::Launch(UE_SOURCE_LOCATION, [
-		OwnerComponent = OwnerComponent,
-		LifeTimeToken = LifeTime,
-		Batch = MoveTemp(InBatch),
-		BatchID,		
-		ChunkIndex,
-		this
-	]()mutable
-		{
-			FRealtimeBooleanProcessor* Processor = LifeTimeToken->Processor.load();
-			if (!Processor)
-			{
-				ActiveUnionWorkers.fetch_sub(1);
-				return;
-			}
+		                  OwnerComponent = OwnerComponent,
+		                  LifeTimeToken = LifeTime,
+		                  Batch = MoveTemp(InBatch),
+		                  BatchID,
+		                  ChunkIndex,
+		                  this
+	                  ]()mutable
+	                  {
+		                  FRealtimeBooleanProcessor* Processor = LifeTimeToken->Processor.load();
+		                  if (!Processor)
+		                  {
+			                  ActiveUnionWorkers.fetch_sub(1);
+			                  return;
+		                  }
 
-			// Union 수행 (Chunk 메시 접근 없음 - ToolMesh들만 합침)
-			FDynamicMesh3 CombinedToolMesh;
-			TArray<TWeakObjectPtr<UDecalComponent>> Decals;
-			int32 UnionCount = 0;
+		                  // Union 수행 (Chunk 메시 접근 없음 - ToolMesh들만 합침)
+		                  FDynamicMesh3 CombinedToolMesh;
+		                  TArray<TWeakObjectPtr<UDecalComponent>> Decals;
+		                  int32 UnionCount = 0;
 
-			int32 BatchCount = Batch.Num();
-			TArray<FTransform> ToolTransforms = MoveTemp(Batch.ToolTransforms);
-			TArray<TWeakObjectPtr<UDecalComponent>> TemporaryDecals = MoveTemp(Batch.TemporaryDecals);
+		                  int32 BatchCount = Batch.Num();
+		                  TArray<FTransform> ToolTransforms = MoveTemp(Batch.ToolTransforms);
+		                  TArray<TWeakObjectPtr<UDecalComponent>> TemporaryDecals = MoveTemp(Batch.TemporaryDecals);
 		                  TArray<TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe>> ToolMeshPtrs = MoveTemp(
 			                  Batch.ToolMeshPtrs);
 
-			bool bIsFirst = true;
+		                  bool bIsFirst = true;
 
 
 		                  {
 			                  TRACE_CPUPROFILER_EVENT_SCOPE("MultiWorker_Union");
-			for (int32 i = 0; i < BatchCount; ++i)
-			{
-				if (!ToolMeshPtrs[i].IsValid())
-				{
-					continue;
-				}
-				 
-				FTransform ToolTransform = MoveTemp(ToolTransforms[i]); 
-				TWeakObjectPtr<UDecalComponent> TemporaryDecal = MoveTemp(TemporaryDecals[i]);
-				
-				// 메시가 비어있으면 스킵 (크래시 방지)
-				FDynamicMesh3 CurrentTool = *(ToolMeshPtrs[i]);
-				if (CurrentTool.TriangleCount() == 0)
-				{
+			                  for (int32 i = 0; i < BatchCount; ++i)
+			                  {
+				                  if (!ToolMeshPtrs[i].IsValid())
+				                  {
+					                  continue;
+				                  }
+
+				                  FTransform ToolTransform = MoveTemp(ToolTransforms[i]);
+				                  TWeakObjectPtr<UDecalComponent> TemporaryDecal = MoveTemp(TemporaryDecals[i]);
+
+				                  // 메시가 비어있으면 스킵 (크래시 방지)
+				                  FDynamicMesh3 CurrentTool = *(ToolMeshPtrs[i]);
+				                  if (CurrentTool.TriangleCount() == 0)
+				                  {
 					                  UE_LOG(LogTemp, Warning,
 					                         TEXT(
 						                         "[UnionWorkerForChunk] Skipping empty ToolMesh at ChunkIndex %d, item %d"
 					                         ), ChunkIndex, i);
-					continue;
-				}
+					                  continue;
+				                  }
 
 
-				//FDynamicMesh3 CurrentTool = MoveTemp(*(ToolMeshPtrs[i]));
-				MeshTransforms::ApplyTransform(CurrentTool, (FTransformSRT3d)ToolTransform, true);
+				                  //FDynamicMesh3 CurrentTool = MoveTemp(*(ToolMeshPtrs[i]));
+				                  MeshTransforms::ApplyTransform(CurrentTool, (FTransformSRT3d)ToolTransform, true);
 
-				if (TemporaryDecal.IsValid())
-				{
-					Decals.Add(TemporaryDecal);
-				}
+				                  if (TemporaryDecal.IsValid())
+				                  {
+					                  Decals.Add(TemporaryDecal);
+				                  }
 
-				if (bIsFirst)
-				{
-					CombinedToolMesh = MoveTemp(CurrentTool);
-					bIsFirst = false;
-					UnionCount++;
-				}
-				else
-				{
-					FDynamicMesh3 UnionResult;
-					FMeshBoolean MeshUnion(
-						&CombinedToolMesh, FTransform::Identity,
-						&CurrentTool, FTransform::Identity,
-						&UnionResult, FMeshBoolean::EBooleanOp::Union
-					);
+				                  if (bIsFirst)
+				                  {
+					                  CombinedToolMesh = MoveTemp(CurrentTool);
+					                  bIsFirst = false;
+					                  UnionCount++;
+				                  }
+				                  else
+				                  {
+					                  FDynamicMesh3 UnionResult;
+					                  FMeshBoolean MeshUnion(
+						                  &CombinedToolMesh, FTransform::Identity,
+						                  &CurrentTool, FTransform::Identity,
+						                  &UnionResult, FMeshBoolean::EBooleanOp::Union
+					                  );
 
-					if (MeshUnion.Compute())
-					{
-						CombinedToolMesh = MoveTemp(UnionResult);
-						UnionCount++;
-					}
-					else
-					{
+					                  if (MeshUnion.Compute())
+					                  {
+						                  CombinedToolMesh = MoveTemp(UnionResult);
+						                  UnionCount++;
+					                  }
+					                  else
+					                  {
 						                  UE_LOG(LogTemp, Warning,
 						                         TEXT("[UnionWorkerForChunk] Union failed at ChunkIndex %d, item %d"),
 						                         ChunkIndex, i);
 					                  }
-					}
-				}
-			}
+				                  }
+			                  }
+		                  }
 
 
-			if (UnionCount > 0 && CombinedToolMesh.TriangleCount() > 0)
-			{
+		                  if (UnionCount > 0 && CombinedToolMesh.TriangleCount() > 0)
+		                  {
 			                  UE_LOG(LogTemp, Log,
 			                         TEXT("[UnionWorkerForChunk] ChunkIndex %d, BatchID %d - UnionCount: %d"),
-					ChunkIndex, BatchID, UnionCount);
+			                         ChunkIndex, BatchID, UnionCount);
 
-				FUnionResult Result;
-				Result.BatchID = BatchID;
-				// Result.Generation = Gen;
-				Result.PendingCombinedToolMesh = MoveTemp(CombinedToolMesh);
-				Result.Decals = MoveTemp(Decals);
-				Result.UnionCount = UnionCount;
-				Result.ChunkIndex = ChunkIndex;
+			                  FUnionResult Result;
+			                  Result.BatchID = BatchID;
+			                  // Result.Generation = Gen;
+			                  Result.PendingCombinedToolMesh = MoveTemp(CombinedToolMesh);
+			                  Result.Decals = MoveTemp(Decals);
+			                  Result.UnionCount = UnionCount;
+			                  Result.ChunkIndex = ChunkIndex;
 
-				// Chunk별 Queue에 Enqueue
-				Processor->ChunkUnionResultsQueues[ChunkIndex]->Enqueue(MoveTemp(Result));
+			                  // Chunk별 Queue에 Enqueue
+			                  Processor->ChunkUnionResultsQueues[ChunkIndex]->Enqueue(MoveTemp(Result));
 
-				// Subtract Worker 트리거
-				Processor->TriggerSubtractWorkerForChunk(ChunkIndex);
-			} 
-			ActiveUnionWorkers.fetch_sub(1);
-		});
+			                  // Subtract Worker 트리거
+			                  Processor->TriggerSubtractWorkerForChunk(ChunkIndex);
+		                  }
+		                  ActiveUnionWorkers.fetch_sub(1);
+	                  });
 }
 
 
@@ -521,12 +522,11 @@ void FRealtimeBooleanProcessor::TriggerSubtractWorkerForChunk(int32 ChunkIndex)
 						{
 							TRACE_CPUPROFILER_EVENT_SCOPE("MultiWorker_Boolean");
 							bSuccess = ApplyMeshBooleanAsync(
-							&WorkMesh,
-							&Result.PendingCombinedToolMesh,
-							&ResultMesh,
-							EGeometryScriptBooleanOperation::Subtract,
-							Options
-						);
+								&WorkMesh,
+								&Result.PendingCombinedToolMesh,
+								&ResultMesh,
+								EGeometryScriptBooleanOperation::Subtract,
+								Options);
 						}
 
 						CurrentSubDuration = FPlatformTime::Seconds() - CurrentSubDuration;						
@@ -534,7 +534,6 @@ void FRealtimeBooleanProcessor::TriggerSubtractWorkerForChunk(int32 ChunkIndex)
 						if (bSuccess)
 						{
 							Processor->AccumulateSubtractDuration(ChunkIndex, CurrentSubDuration);
-							Processor->TrySimplify(ResultMesh, ChunkIndex, Result.UnionCount);
 							
 							{
 								TRACE_CPUPROFILER_EVENT_SCOPE("MultiWorker_Simplify");
@@ -571,7 +570,7 @@ void FRealtimeBooleanProcessor::TriggerSubtractWorkerForChunk(int32 ChunkIndex)
 									
 									{
 										TRACE_CPUPROFILER_EVENT_SCOPE("MultiWorker_Apply");
-									OwnerComponent->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
+										OwnerComponent->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
 									}
 									++Processor->ChunkGenerations[ChunkIndex];
 
@@ -657,6 +656,112 @@ void FRealtimeBooleanProcessor::UpdateSubtractAvgCost(double CostMs)
 		SubtractCostAccum = SubtractAvgCostMs;
 		SubtractCostSampleCount = 1;
 	}
+}
+
+void FRealtimeBooleanProcessor::UpdateHoleNormalAndTangents(FDynamicMesh3& MeshToSet, int32 HoleMaterialID)
+{
+    FDynamicMeshMaterialAttribute* MaterialIDAttr = MeshToSet.Attributes()->GetMaterialID();
+    
+    // 1. 구멍(Hole)을 구성하는 정점들의 '위치'를 수집
+    // (ID는 다르지만 위치가 같은 벽면 정점을 찾기 위함)
+    TArray<FVector3d> HoleVertPositions;
+    HoleVertPositions.Reserve(MeshToSet.VertexCount() / 4);
+    
+    for (int32 TriID : MeshToSet.TriangleIndicesItr())
+    {
+        int32 MatID = MaterialIDAttr ? MaterialIDAttr->GetValue(TriID) : 0;
+        if (MatID == HoleMaterialID)
+        {
+            FIndex3i Tri = MeshToSet.GetTriangle(TriID);
+            HoleVertPositions.Add(MeshToSet.GetVertex(Tri.A));
+            HoleVertPositions.Add(MeshToSet.GetVertex(Tri.B));
+            HoleVertPositions.Add(MeshToSet.GetVertex(Tri.C));
+        }
+    }
+    
+    // 2. "벽면(Wall)" 삼각형 중에서, 구멍 위치와 맞닿아 있는 삼각형 찾기
+    struct FDebugTriangle
+    {
+        FVector A, B, C;
+    };
+    TArray<FDebugTriangle> TrianglesToDraw;
+    TrianglesToDraw.Reserve(100);
+    
+    const double ToleranceSq = 0.01 * 0.01; // 오차 범위
+    
+    for (int32 TriID : MeshToSet.TriangleIndicesItr())
+    {
+        int32 MatID = MaterialIDAttr ? MaterialIDAttr->GetValue(TriID) : 0;
+        
+        // 벽면 삼각형만 검사 (구멍 자체는 그리지 않음)
+        if (MatID != HoleMaterialID)
+        {
+            FIndex3i Tri = MeshToSet.GetTriangle(TriID);
+            FVector3d VA = MeshToSet.GetVertex(Tri.A);
+            FVector3d VB = MeshToSet.GetVertex(Tri.B);
+            FVector3d VC = MeshToSet.GetVertex(Tri.C);
+    
+            bool bIsConnectedToHole = false;
+    
+            // 삼각형의 정점 3개 중 하나라도 '구멍 위치'와 겹치는지 확인
+            // (최적화를 위해 하나라도 찾으면 즉시 break)
+            auto CheckIsSeam = [&](const FVector3d& WallPos) -> bool
+            {
+                for (const FVector3d& HolePos : HoleVertPositions)
+                {
+                    if (FVector3d::DistSquared(WallPos, HolePos) < ToleranceSq)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            };
+    
+            if (CheckIsSeam(VA) || CheckIsSeam(VB) || CheckIsSeam(VC))
+            {
+                // 당첨! 이 삼각형이 바로 아티팩트가 발생하는 "경계면 삼각형"입니다.
+                TrianglesToDraw.Add({ (FVector)VA, (FVector)VB, (FVector)VC });
+            }
+        }
+    }
+    
+    // 3. GameThread에서 와이어프레임 그리기
+    if (TrianglesToDraw.Num() > 0)
+    {
+        AsyncTask(ENamedThreads::GameThread, [TrianglesToDraw, OwnerComponent = OwnerComponent]()
+        {
+            if (OwnerComponent.IsValid())
+            {
+                FTransform CompTransform = OwnerComponent->GetComponentTransform();
+                UWorld* World = OwnerComponent->GetWorld();
+    
+                if (World)
+                {
+                    const float Duration = 1.5f;
+                    const float Thickness = 5.5f;
+                    const FColor DrawColor = FColor::Green;
+    
+                    for (const FDebugTriangle& Tri : TrianglesToDraw)
+                    {
+                        // 로컬 -> 월드 변환
+                        FVector WA = CompTransform.TransformPosition(Tri.A);
+                        FVector WB = CompTransform.TransformPosition(Tri.B);
+                        FVector WC = CompTransform.TransformPosition(Tri.C);
+    
+                        // 삼각형 변(Edge) 그리기
+                        DrawDebugLine(World, WA, WB, DrawColor, false, Duration, 0, Thickness);
+                        DrawDebugLine(World, WB, WC, DrawColor, false, Duration, 0, Thickness);
+                        DrawDebugLine(World, WC, WA, DrawColor, false, Duration, 0, Thickness);
+                        
+                        // (선택) 삼각형 노말 방향 표시 (노란색 선)
+                        FVector Center = (WA + WB + WC) / 3.0f;
+                        FVector Normal = ((WB - WA) ^ (WC - WA)).GetSafeNormal();
+                        DrawDebugLine(World, Center, Center + Normal * 50.0f, FColor::Yellow, false, Duration * 2.0f, 0, Thickness);
+                    }
+                }
+            }
+        });
+    }
 }
 
 void FRealtimeBooleanProcessor::UpdateUnionSize(int32 ChunkIndex, double DurationMs)
@@ -769,8 +874,8 @@ void FRealtimeBooleanProcessor::KickProcessIfNeededPerChunk()
 
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE("GatherOps");
-	GatherOps(HighPriorityQueue, HighPriorityMap, HighPriorityOrder, DebugHighQueueCount);
-	GatherOps(NormalPriorityQueue, NormalPriorityMap, NormalPriorityOrder, DebugNormalQueueCount);
+		GatherOps(HighPriorityQueue, HighPriorityMap, HighPriorityOrder, DebugHighQueueCount);
+		GatherOps(NormalPriorityQueue, NormalPriorityMap, NormalPriorityOrder, DebugNormalQueueCount);
 	}
 
 	auto ProcessTargetMesh = [&](TMap<UDynamicMeshComponent*, FBulletHoleBatch>& OpMap,
@@ -962,6 +1067,15 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 					WorkMesh = MoveTemp(ResultMesh);
 
 					Processor->AccumulateSubtractDuration(ChunkIndex, CurrentSubDuration);
+
+					{
+						// 메시 단순화
+						TRACE_CPUPROFILER_EVENT_SCOPE("ChunkBooleanAsync_Simplify");
+						bool bIsSimplified = Processor->TrySimplify(WorkMesh, ChunkIndex, UnionCount);
+				}
+
+					
+					Processor->UpdateUnionSize(ChunkIndex, CurrentSubDuration * 1000.0);
 				}
 				else
 				{ 
@@ -969,16 +1083,6 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 					FChunkState& State = Processor->ChunkStates.GetState(ChunkIndex);
 					State.SubtractDurationAccum = 0;
 					State.DurationAccumCount = 0;
-				}
-			}
-
-			// 메시 단순화
-			if (bSubtractSuccess)
-			{
-				if (ChunkIndex != INDEX_NONE)
-				{
-					TRACE_CPUPROFILER_EVENT_SCOPE("ChunkBooleanAsync_Simplify");
-					bool bIsSimplified = Processor->TrySimplify(WorkMesh, ChunkIndex, UnionCount);
 				}
 			}
 
@@ -1163,7 +1267,6 @@ bool FRealtimeBooleanProcessor::TrySimplify(UE::Geometry::FDynamicMesh3& WorkMes
 	if (bShouldSimplify)
 	{
 		State.Reset();	
-		
 		FGeometryScriptPlanarSimplifyOptions SimplifyOptions;
 		// SimplifyOptions.bAutoCompact = true;
 		SimplifyOptions.bAutoCompact = false;
@@ -1237,9 +1340,9 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 		return false;
 	}
 
-	using namespace UE::Geometry;
+	using namespace UE::Geometry; 
 
-	// 필요하다면 다른 연산으로 확장
+		// 필요하다면 다른 연산으로 확장
 	FMeshBoolean::EBooleanOp Op = FMeshBoolean::EBooleanOp::Difference;
 	switch (Operation)
 	{
@@ -1275,7 +1378,7 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 			CurrentToolTransform.AddToTranslation(RandomOffset);
 			CurrentToolTransform.SetRotation(CurrentToolTransform.GetRotation() * RandomRot);
 
-			UE_LOG(LogTemp, Log, TEXT("[Boolean] Attempt %d: Retrying with Jitter"), Attempt);
+			UE_LOG(LogTemp, Log, TEXT("[Boolean] Attempt %d: Retrying with Jitter"), Attempt); 
 		}
 
 		const int32 InternalMaterialID = 1;
@@ -1290,10 +1393,9 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 		MeshBoolean.bSimplifyAlongNewEdges = Options.bSimplifyOutput;
 		MeshBoolean.bWeldSharedEdges = false;
 
-		bool bSuccess = MeshBoolean.Compute();
+		bool bSuccess = MeshBoolean.Compute(); 
 	if (bSuccess)
 	{
-	
 		// OutputMesh에 Attributes/MaterialID 활성화 
 		if (!OutputMesh->HasAttributes())
 		{
@@ -1317,43 +1419,40 @@ bool FRealtimeBooleanProcessor::ApplyMeshBooleanAsync(const UE::Geometry::FDynam
 		for (int32 TriID : OutputMesh->TriangleIndicesItr())
 		{
 			if (OutputMesh->GetTriangleGroup(TriID) == ToolGroupID)
-		{
+			{
 				MaterialIDAttr->SetValue(TriID, InternalMaterialID);
 			}
 		}
 
-			/*
-			 * welding 처리
-			 * 열린 메시를 닫힌 메시로 만듬
-			 */
-			FMergeCoincidentMeshEdges Welder(OutputMesh);
-			Welder.MergeSearchTolerance = 0.001;
-
-			Welder.Apply();
-
-			/*
-			 * 현재 사용되지 않는 코드임
-			 * bFillHoles의 true, false 여부와 관계없이 동일한 결과
-			 */
-			TArray<int> NewBoundaryEdges = MoveTemp(MeshBoolean.CreatedBoundaryEdges);
-			if (NewBoundaryEdges.Num() > 0 && Options.bFillHoles)
+		/*
+			 * 열린 엣지에 대해서 Weld
+			*/
+			if (MeshBoolean.CreatedBoundaryEdges.Num() > 0)
 			{
-				FMeshBoundaryLoops OpenBoundary(OutputMesh, false);
-				TSet<int> ConsiderEdges(NewBoundaryEdges);
-				OpenBoundary.EdgeFilterFunc = [&ConsiderEdges](int EID)
-				{
-					return ConsiderEdges.Contains(EID);
-				};
-				OpenBoundary.Compute();
+				// 열린 엣지 선별
+				TSet<int32> EdgeSet(MeshBoolean.CreatedBoundaryEdges);
+				
+		FMergeCoincidentMeshEdges Welder(OutputMesh);
+				// welding할 엣지
+				Welder.EdgesToMerge = &EdgeSet;
+				/*
+				 * 한 엣지에 대해 1:1로 대응되는 엣지만 병합
+				 * 엣지 A에 대해서 병합 후보로 B, C가 존재하는 경우 (A, B) or (A, C) 쌍이 생김
+				 * 어떤 엣지와 병합할 지 애매한 경우 제외
+				 */
+				Welder.OnlyUniquePairs = true;
+				// 속성은 weld하지 않도록 비활성화
+				Welder.bWeldAttrsOnMergedEdges = false;
 
-				for (FEdgeLoop& Loop : OpenBoundary.Loops)
-				{
-					UE::Geometry::FMinimalHoleFiller Filler(OutputMesh, Loop);
-					Filler.Fill();
-				}
-			}
+				// 같은 정점인지 판별하는 오차
+				Welder.MergeVertexTolerance = 0.001;
+				// 엣지/정점의 병합 후보를 탐색하는 범위
+		Welder.MergeSearchTolerance = 0.001;
 
-			return true;
+		Welder.Apply();
+		}
+
+		return true;
 		}
 		// 실패한 경우 Clear 후 재시도
 		OutputMesh->Clear();
@@ -1369,11 +1468,111 @@ void FRealtimeBooleanProcessor::ApplySimplifyToPlanarAsync(UE::Geometry::FDynami
 	{
 		return;
 	}
-	using namespace UE::Geometry;
 
+	if (!TargetMesh->HasAttributes())
+	{
+		TargetMesh->EnableAttributes();
+	}
+	
+	FDynamicMeshAttributeSet* Attributes = TargetMesh->Attributes();
+	const bool bHasMaterialID = Attributes && Attributes->HasMaterialID();
+	
+	const FDynamicMeshMaterialAttribute* MaterialID = bHasMaterialID ? Attributes->GetMaterialID() : nullptr;
+	const FDynamicMeshUVOverlay* PrimaryUV = (Attributes) ? Attributes->PrimaryUV() : nullptr;
+	
+	// 표면(MaterialID = 0)에서 seam/material 경계를 collapse하지 않고 보호하는 플래그
+	// material이 없으면 표면 판정이 불가능해서 비활성화
+	const bool bSurfaceOnlyProtection = bHasMaterialID;
+	const int32 SurfacematerialID = 0;
+	
+	// Edge가 표면(MatID = 0) 삼각형에 속하는 지 검사하는 람다
+	// bSurfaceOnlyProtection플래그가 true일 때만 호출되는 걸 전제로함
+	auto EdgeTouchesSurface = [&](int32 EdgeID) -> bool
+	{
+		const FIndex2i EdgeTris = TargetMesh->GetEdgeT(EdgeID);
+		if (EdgeTris.A >= 0 && MaterialID->GetValue(EdgeTris.A) == SurfacematerialID)
+		{
+			return true;
+		}
+	
+		if (EdgeTris.B >= 0 && MaterialID->GetValue(EdgeTris.B) == SurfacematerialID)
+		{
+			return true;
+		}
+	
+		return false;
+	};
+
+	/*
+	 * 제약조건 설정 : 표면(MatID = 0)에서 아래 엣지 보호
+	 * - UV Seam Edge(Primary UV Seam)
+	 * - MaterialID Boundary Edge
+	 * - Boundary Edge(Open Edge)는 전역 플래그Simplifier.MeshBoundaryContraint로 보호	 
+	 * - 내부(MatID = 1)는 seam collapse 허용
+	 */
+	TOptional<FMeshConstraints> ExternalConstraints;
+	ExternalConstraints.Emplace();
+	FMeshConstraints& Constraints = ExternalConstraints.GetValue();
+	const FEdgeConstraint NoCollapseEdge(EEdgeRefineFlags::NoCollapse);
+	
+	// 표면 보호 로직, MatID가 존재할 때만 실행
+	if (bSurfaceOnlyProtection)
+	{
+		// 모든 엣지 순회하며 보호 대상 선별
+		for (int32 EdgeID : TargetMesh->EdgeIndicesItr())
+		{
+			// Boundary Edge는 전역 플래그로 보호할 예정이라 스킵
+			if (TargetMesh->IsBoundaryEdge(EdgeID))
+			{
+				continue;
+			}
+	
+			// 표면이 아닌 Edge 스킵
+			if (!EdgeTouchesSurface(EdgeID))
+			{
+				continue;
+			}
+	
+			// UV Seam Edge 보호
+			if (PrimaryUV && PrimaryUV->IsSeamEdge(EdgeID))
+			{
+				Constraints.SetOrUpdateEdgeConstraint(EdgeID, NoCollapseEdge);
+				continue;
+			}
+	
+			// material이 다른 Edge 보호(material boundary)
+			const FIndex2i EdgeTris = TargetMesh->GetEdgeT(EdgeID);
+			if (EdgeTris.A >= 0 && EdgeTris.B >= 0)
+			{
+				const int32 MatA = MaterialID->GetValue(EdgeTris.A);
+				const int32 MatB = MaterialID->GetValue(EdgeTris.B);
+				if (MatA != MatB)
+				{
+					Constraints.SetOrUpdateEdgeConstraint(EdgeID, NoCollapseEdge);
+				}
+			}
+		}
+	}	
+	
 	FQEMSimplification Simplifier(TargetMesh);
 
-	Simplifier.CollapseMode = FQEMSimplification::ESimplificationCollapseModes::AverageVertexPosition;
+	// Boundary Edge 보호
+	// Boundary Edge : 인접 삼각형이 1개인 모서리
+	Simplifier.MeshBoundaryConstraint = EEdgeRefineFlags::NoCollapse;
+	
+	// 내부 단순화를 위해서 전역 seam collapse는 허용, 표면 seam은 ExternalContraints로 제한
+	Simplifier.bAllowSeamCollapse = true;
+	
+	/*	 
+	 * Simplify 연산은 두 정점을 하나로 합치고, 합칠 때 새 정점 위치를 정해야함
+	 * MinimalExistingVertexError 옵션은 두 정점을 합칠 때 기존 정점을 선택해서 새로운 위치로 설정한다.
+	 * 다른 옵션은 원래 존재하지 않은 위치가 새 좌표가 생기고, 이게 누적되면 표면에서 조금씩 이탈한다.
+	 * 이러한 이탈 현상을 위치 드리프트라고함
+	 */
+	Simplifier.CollapseMode = FQEMSimplification::ESimplificationCollapseModes::MinimalExistingVertexError;
+	
+	Simplifier.SetExternalConstraints(MoveTemp(ExternalConstraints));
+	
 	Simplifier.SimplifyToMinimalPlanar(FMath::Max(0.00001, Options.AngleThreshold));
 
 	if (Options.bAutoCompact)
