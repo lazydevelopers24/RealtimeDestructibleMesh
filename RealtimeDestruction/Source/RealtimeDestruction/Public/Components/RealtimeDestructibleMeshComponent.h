@@ -478,6 +478,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FName SurfaceType = FName("Default");
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced")
+	bool bEnableSubcell = true;
+	
 	/** 데이터 유지를 위한 함수 */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
 

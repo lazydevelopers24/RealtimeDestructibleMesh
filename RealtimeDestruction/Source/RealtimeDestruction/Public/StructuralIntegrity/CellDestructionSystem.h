@@ -33,6 +33,22 @@ public:
 		const TSet<int32>& DestroyedCells);
 
 	/**
+	 * 파괴 형상으로 파괴된 셀 ID 계산
+	 * 중심점 + 꼭지점 하이브리드 방식 사용
+	 *
+	 * @param Cache - 격자 캐시
+	 * @param Shape - 파괴 형상 (양자화됨)
+	 * @param MeshTransform - 메시 월드 트랜스폼
+	 * @param InOutCellState - 셀 상태 (DestroyedCells 제외용)
+	 * @return NewlyDestroyedCells만 채워진 FDestructionResult
+	 */
+	static FDestructionResult CalculateDestroyedCells(
+		const FGridCellCache& Cache,
+		const FQuantizedDestructionInput& Shape,
+		const FTransform& MeshTransform,
+		FCellState& InOutCellState);
+
+	/**
 	 * 단일 셀이 파괴되었는지 판정
 	 * Phase 1: 중심점 검사 (빠른 판정)
 	 * Phase 2: 꼭지점 과반수 검사 (경계 케이스)

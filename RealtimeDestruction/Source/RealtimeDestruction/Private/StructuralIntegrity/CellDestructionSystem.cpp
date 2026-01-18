@@ -109,6 +109,18 @@ TArray<int32> FCellDestructionSystem::CalculateDestroyedCells(
 	return NewlyDestroyed;
 }
 
+FDestructionResult FCellDestructionSystem::CalculateDestroyedCells(
+	const FGridCellCache& Cache,
+	const FQuantizedDestructionInput& Shape,
+	const FTransform& MeshTransform,
+	FCellState& InOutCellState)
+{
+	FDestructionResult Result;
+	Result.NewlyDestroyedCells = CalculateDestroyedCells(Cache, Shape, MeshTransform, InOutCellState.DestroyedCells);
+	InOutCellState.DestroyCells(Result.NewlyDestroyedCells);
+	return Result;
+}
+
 bool FCellDestructionSystem::IsCellDestroyed(
 	const FGridCellCache& Cache,
 	int32 CellId,
