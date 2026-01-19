@@ -1163,6 +1163,24 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 								&& DebrisVertices.Num() >= 12
 								&& DebrisSize >= 5.0f
 								&& MinAxisSize >= 2.0f;
+							if (!bCanUsePhysics)
+							{
+								UE_LOG(LogTemp, Verbose, TEXT("Debris skipped: Verts=%d, Size=%.1f, MinAxis=%.2f %s"),
+									DebrisVertices.Num(), DebrisSize, MinAxisSize,
+									!bHasValidVerts ? TEXT("(NaN)") :
+									DebrisVertices.Num() < 12 ? TEXT("(Verts<12)") :
+									DebrisSize < 5.0f ? TEXT("(Size<5)") :
+									MinAxisSize < 2.0f ? TEXT("(Flat)") : TEXT(""));
+
+								// 원본 메쉬에서 삼각형 삭제 (PCM 스폰 안해도 반드시 수행)
+								for (int32 Tid : Comp.Indices)
+								{
+									Mesh->RemoveTriangle(Tid);
+								}
+								RemovedCount++;
+								continue;
+							}
+
 
 							FActorSpawnParameters SpawnParams;
 							SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
