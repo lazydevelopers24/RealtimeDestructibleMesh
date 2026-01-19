@@ -19,7 +19,7 @@
 #include "GeometryScript/MeshPrimitiveFunctions.h"
 #include "HAL/PlatformTime.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "Misc/MessageDialog.h"  
+#include "Misc/MessageDialog.h" 
 #include "Engine/OverlapResult.h"
 
 #if WITH_EDITOR
@@ -197,6 +197,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 				SphereRadius != OverrideDecalConfig.SphereRadius ||
 				ToolShape != OverrideDecalConfig.ToolShape);
 
+			SurfaceMargin = OverrideDecalConfig.CylinderHeight;
 			CylinderRadius = OverrideDecalConfig.CylinderRadius;
 			CylinderHeight = OverrideDecalConfig.CylinderHeight;
 			SphereRadius = OverrideDecalConfig.SphereRadius;
@@ -205,8 +206,13 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 			if (bShapeChanged && ToolMeshPtr.IsValid())
 			{
 				ToolMeshPtr.Reset();
+				if (!EnsureToolMesh())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
 			}
+				
 		}
+	}
 	}
 	
 	float ToolRadius = ToolShape == EDestructionToolShape::Cylinder ? CylinderRadius : SphereRadius;
@@ -261,10 +267,10 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		}
 	}	
  
-	
 	FVector Direction = GetToolDirection(Hit, Owner);
 	FVector ToolStart = Hit.ImpactPoint;
 	FVector ToolEnd = ToolStart + (Direction * CylinderHeight);
+	UE_LOG(LogTemp, Display, TEXT("CylinderDebug/Depth %f"), CylinderHeight);
 	TArray<int32> LineAlongChunkIndices;
 	LineAlongChunkIndices.Reserve(DestructComp->GetChunkNum());
 	DestructComp->FindChunksAlongLine(ToolStart, ToolEnd, ToolRadius, LineAlongChunkIndices, false);
@@ -276,14 +282,6 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		}
 	}
 
-	if (!ToolMeshPtr.IsValid())
-	{
-		if (!EnsureToolMesh())
-		{
-			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
-		}
-	}
-	
 	APawn* InstigatorPawn = Owner->GetInstigator();
 	APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
 	UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
@@ -339,6 +337,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	
 		if (NetworkComp)
 		{
+			UE_LOG(LogTemp, Display, TEXT("CylinderDebug/Network"));
 			// NetworkComp가 서버/클라이언트/스탠드얼론 모두 처리
 			NetworkComp->RequestDestruction(DestructComp, Request);
 		}
@@ -359,14 +358,14 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		}
 	}
 	
-	// 이벤트 브로드캐스트
-	OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
+		// 이벤트 브로드캐스트
+		OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
 	
-	// 투사체 제거
-	if (bDestroyOnHit)
-	{
-		Owner->Destroy();
-	}
+		// 투사체 제거
+		if (bDestroyOnHit)
+		{
+			Owner->Destroy();
+		}
 }
 
 void UDestructionProjectileComponent::ProcessSphereDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FVector& ExplosionCenter)
@@ -664,14 +663,14 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 		break;
 		}
 	case EDestructionToolShape::Sphere:
-	{
+		{
 		OutRequest.Depth = SphereRadius;
 		if (OutRequest.ToolCenterWorld.IsZero())
 		{
 			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint + (OutRequest.ToolForwardVector * PenetrationOffset);
 
 		}
-	}
+		}
 		break;
 	default:
 		{

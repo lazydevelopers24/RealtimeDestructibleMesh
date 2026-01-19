@@ -331,9 +331,6 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 		TempDecal = SpawnTemporaryDecal(Request);
 	}
 
-	// 기본 관통을 Enqeue
-	EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
-
 	// Offset에 따라 추가 관통처리
 	if (bIsPenetration)
 	{
@@ -364,10 +361,16 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 		}
 
 		// 구멍을 추가로 내주는거니, Decal을 필요없다. 
-		EnqueueRequestLocal(PenetrationRequest, true, nullptr);
+		EnqueueRequestLocal(PenetrationRequest, true, TempDecal);
+		UE_LOG(LogTemp, Display, TEXT("CylinderDebug/Pen"));
+	}
+	else
+	{
+		// 기본 관통을 Enqeue
+		EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
+		UE_LOG(LogTemp, Display, TEXT("CylinderDebug/No Pen"));
 	}
 	return true;
-	
 }
 
 //=============================================================================
@@ -474,7 +477,7 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 						DirtyChunkIndices.Add(NeighborChunkIdx);
 					}
 				}
-			}
+	}
 
 			for (int32 ChunkIdx : DirtyChunkIndices)
 			{
@@ -587,6 +590,18 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		// 분리된 셀 없어도 파괴된 셀 있으면 파편 정리 (RemoveTrianglesForDetachedCells 통하지 않으므로)
 		CleanupSmallFragments();
 			}
+
+	if (bEnableStructuralIntegrity && bEnableSubcell)
+	{
+		ProcessDecalRemoval(DestructionResult);
+		if (DisconnectedCells.Num() > 0)
+		{
+			FDestructionResult DetachResult;
+			DetachResult.NewlyDestroyedCells = DisconnectedCells.Array();
+
+			ProcessDecalRemoval(DetachResult);
+		}
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction Complete: Destroyed=%d, DetachedGroups=%d"),
 		CellState.DestroyedCells.Num(), CellState.DetachedGroups.Num());
@@ -1586,7 +1601,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 				if (bShowCellSpawnPosition)
 				{
 					FColor PointColor = bShouldRemove ? FColor::Red : FColor::Green;
-					DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
+				DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
 					DrawDebugString(GetWorld(), WorldPos, FString::Printf(TEXT("%s (%d/%d destroyed)"),
 						bShouldRemove ? TEXT("Detached") : TEXT("Anchored"), DestroyedCellCount, TotalCellCount), nullptr, PointColor, 10.0f);
 				}
@@ -1766,10 +1781,10 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 								// 디버그: 스폰 위치에 파란 구체 표시
 								if (bShowCellSpawnPosition)
 								{
-									DrawDebugSphere(World, WorldPos, 20.0f, 8, FColor::Blue, false, 10.0f);
-								}
+								DrawDebugSphere(World, WorldPos, 20.0f, 8, FColor::Blue, false, 10.0f);
 							}
 						}
+					}
 					}
 
 					// 원본 메쉬에서 삼각형 삭제
@@ -3074,6 +3089,159 @@ void URealtimeDestructibleMeshComponent::SetSourceMeshEnabled(bool bEnabled)
 	// 물리 상태 강제 갱신
 	RecreatePhysicsState();
 }
+
+void URealtimeDestructibleMeshComponent::RegisterDecalToSubCells(UDecalComponent* Decal, const FRealtimeDestructionRequest& Request)
+{
+	if (!Decal)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RegisterDecalToSubCells : Decal Invalid"));
+		return;
+	}
+
+	if (!GridCellCache.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RegisterDecalToSubCells : Grid Cell Invalid"));
+		return;
+	}
+
+	FManagedDecal NewDecal;
+	NewDecal.Decal = TWeakObjectPtr(Decal);
+
+	// 데칼의 로컬 x축으로의 탐색 깊이 설정
+	// 셀 사이즈보다 살짝 작게 탐색
+	// 셀 사이즈와 동일하거나 
+	constexpr float SearchDepthRatio = 0.7f;
+	const float MaxCellSize = GridCellSize.GetMax();
+	const float TargetDepth = SearchDepthRatio * MaxCellSize;
+
+	// 데칼 크기 보정
+	// box extent는 박스의 절반
+	FVector EffectiveExtent = Decal->DecalSize;
+	EffectiveExtent.X = TargetDepth * 0.5f;
+
+	// 박스의 중심점을 밀어넣어서 [0 ~ Depth]범위 탐색
+	FVector SearchCenter = Decal->GetComponentLocation();
+
+	FCellDestructionShape DecalShape;
+	DecalShape.Type = EDestructionShapeType::Box;
+	DecalShape.Center = SearchCenter;
+	DecalShape.BoxExtent = EffectiveExtent;
+	DecalShape.Rotation = Decal->GetComponentRotation();
+
+	FQuantizedDestructionInput QuantizedDecal = FQuantizedDestructionInput::FromDestructionShape(DecalShape);
+
+	// 데칼 영역 내의 후보 cell 탐색
+	FBox ThinLocalBox(-EffectiveExtent, EffectiveExtent);
+	FTransform ThinBoxTransform(Decal->GetComponentQuat(), SearchCenter);
+	FBox ThinWorldBox = ThinLocalBox.TransformBy(ThinBoxTransform);
+	TArray<int32> CandidateCells = GridCellCache.GetCellsInAABB(ThinWorldBox, GetComponentTransform());
+	
+	// DrawDebugBox(GetWorld(), ThinWorldBox.GetCenter(), ThinWorldBox.GetExtent(), FColor::Cyan, false, 5.0f);
+
+	const FTransform& MeshTransform = GetComponentTransform();
+	
+	for (int32 CellID : CandidateCells)
+	{
+		if (CellState.DestroyedCells.Contains(CellID))
+		{
+			continue;
+		}
+
+		const FSubCell* SubCellState = CellState.SubCellStates.Find(CellID);
+		uint8 CoveredMask = 0;
+
+		for (int32 SubCellID = 0; SubCellID < SUBCELL_COUNT; ++SubCellID)
+		{
+			// 죽은 cell은 생략
+			if (SubCellState && !SubCellState->IsSubCellAlive(SubCellID))
+			{
+				continue;
+			}
+
+			// 데칼 박스와 셀의 박스 교차검사
+			FSubCellOBB SubCellOBB = GridCellCache.GetSubCellWorldOBB(CellID, SubCellID, MeshTransform);
+			if (QuantizedDecal.IntersectsOBB(SubCellOBB))
+			{
+				CoveredMask |= (1 << SubCellID);
+			}
+		}
+
+		if (CoveredMask != 0)
+		{
+			FSubCellCoverage Coverage;
+			Coverage.CellID = CellID;
+			Coverage.SubCellMask = CoveredMask;
+			NewDecal.CoveredCells.Add(Coverage);
+		}
+	}
+
+	if (NewDecal.CoveredCells.Num() > 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Decal remove/Add Decal %p"), NewDecal.Decal.Get());
+		ActiveDecals.Add(NewDecal);
+	}
+}
+
+void URealtimeDestructibleMeshComponent::ProcessDecalRemoval(const FDestructionResult& Result)
+{
+	if (ActiveDecals.Num() == 0)
+	{
+		return;
+	}
+
+	if (!Result.HasAnyDestruction())
+	{
+		return;
+	}
+
+	for (int32 DecalIndex = ActiveDecals.Num() - 1; DecalIndex >= 0; DecalIndex--)
+	{
+		FManagedDecal& Decal = ActiveDecals[DecalIndex];
+
+		if (!Decal.Decal.IsValid())
+		{
+			ActiveDecals.RemoveAtSwap(DecalIndex);
+			continue;
+		}
+
+		for (int32 CoverageIndex = Decal.CoveredCells.Num() - 1; CoverageIndex >= 0; CoverageIndex--)
+		{
+			FSubCellCoverage& Coverage = Decal.CoveredCells[CoverageIndex];
+
+			// 셀 파괴 검사
+			if (Result.NewlyDestroyedCells.Contains(Coverage.CellID))
+			{
+				Decal.CoveredCells.RemoveAtSwap(CoverageIndex);
+				continue;
+			}
+
+			// 새롭게 죽은 셀의 비트를 끈다.
+			if (const FIntArray* DeadSubCells = Result.NewlyDeadSubCells.Find(Coverage.CellID))
+			{
+				for (int32 DeadSubCellID : DeadSubCells->Values)
+				{
+					Coverage.SubCellMask &= ~(1 << DeadSubCellID);
+				}
+
+				if (Coverage.SubCellMask == 0)
+				{
+					Decal.CoveredCells.RemoveAtSwap(CoverageIndex);
+				}
+			}
+		}
+
+		if (Decal.CoveredCells.Num() == 0)
+		{
+			if (UDecalComponent* DecalToRemove = Decal.Decal.Get())
+			{
+				UE_LOG(LogTemp, Display, TEXT("Decal remove/Remove Decal %p"), DecalToRemove);
+				DecalToRemove->DestroyComponent();
+			}
+			ActiveDecals.RemoveAtSwap(DecalIndex);
+		}
+	}
+}
+
 void URealtimeDestructibleMeshComponent::OnRegister()
 {
 	Super::OnRegister();
@@ -3494,7 +3662,7 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 	//Request에 decalSize가 없을 때, 기본값 사용
 	//Decal->DecalSize = Request.DecalSize.IsNearlyZero() ? DecalSize : Request.DecalSize;
 	Decal->DecalSize = Request.DecalSize.IsNearlyZero() ? SizeToUse : Request.DecalSize;
-
+	
 	// Sphere타입은 폭발 중심과의 거리에 반비례하여 데칼 크기 조절
 	// (projectile 도 동일하게 처리해도 무방)
 	if (Request.ToolShape == EDestructionToolShape::Sphere)
@@ -3555,6 +3723,8 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 
 	
 	Decal->RegisterComponent();   
+
+	RegisterDecalToSubCells(Decal, Request);
 
 	return Decal;
 }

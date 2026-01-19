@@ -287,3 +287,25 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
 
 };
 
+USTRUCT()
+struct FSubCellCoverage
+{
+    GENERATED_BODY()
+
+    int32 CellID = INDEX_NONE;
+    uint8 SubCellMask = 0;
+};
+
+USTRUCT()
+struct FManagedDecal
+{
+    GENERATED_BODY()
+
+    TWeakObjectPtr<UDecalComponent> Decal;
+    TArray<FSubCellCoverage> CoveredCells;
+
+    bool IsValid() const
+    {
+        return Decal.IsValid() && CoveredCells.Num() > 0;
+    }
+};

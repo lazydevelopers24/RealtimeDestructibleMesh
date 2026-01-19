@@ -564,6 +564,7 @@ public:
 
 	/*************************************************/
 	void SetSourceMeshEnabled(bool bSwitch);
+	
 protected:
 	//////////////////////////////////////////////////////////////////////////
 	// Mesh Settings
@@ -591,9 +592,16 @@ protected:
 
 	UDecalComponent* SpawnTemporaryDecal(const FRealtimeDestructionRequest& Request);
 
+	void RegisterDecalToSubCells(UDecalComponent* Decal, const FRealtimeDestructionRequest& Request);
+
+	void ProcessDecalRemoval(const FDestructionResult& Result);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	TObjectPtr<UDecalMaterialDataAsset> DecalDataAsset = nullptr;
-
+ 
+	UPROPERTY()
+	TArray<FManagedDecal> ActiveDecals;
+ 
 	/**
 	 * 이 메시가 받을 수 있는 최대 구멍 개수
 	 *
@@ -892,7 +900,7 @@ protected:
 
 	/** 최근 직접 파괴된 셀 ID (디버그 강조 표시용) */
 	TSet<int32> RecentDirectDestroyedCellIds;
-
+	
 	/** 디버그 텍스트 갱신. 메시 업데이트시에만 수행하는 식으로 업데이트 빈도 제어 */
 	void UpdateDebugText();
 
