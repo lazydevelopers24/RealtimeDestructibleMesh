@@ -29,8 +29,6 @@
 #include "Operations/MeshBoolean.h"
 #include "BooleanProcessor/RealtimeBooleanProcessor.h"
 
-#include <ThirdParty/skia/skia-simplify.h>
-
 #include "BulletClusterComponent.h"
 #include "Algo/Unique.h"
 #include "StructuralIntegrity/CellDestructionSystem.h"
@@ -177,6 +175,7 @@ URealtimeDestructibleMeshComponent::~URealtimeDestructibleMeshComponent()
 		BooleanProcessor->Shutdown();
 		BooleanProcessor.Reset();
 	}
+	// ChunkComponent들은 UPROPERTY이므로 GC에 의해 자동 정리됨
 }
 
 UMaterialInterface* URealtimeDestructibleMeshComponent::GetMaterial(int32 ElementIndex) const
@@ -451,6 +450,40 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 	if (DestructionResult.NewlyDestroyedCells.Num() > 0)
 	{
 		MulticastDestroyedCells(DestructionResult.NewlyDestroyedCells);
+
+		// 서버 Cell Collision: 파괴된 셀과 이웃 셀의 청크를 dirty 마킹
+		if (bServerCellCollisionInitialized)
+		{
+			TSet<int32> DirtyChunkIndices;
+			for (int32 CellId : DestructionResult.NewlyDestroyedCells)
+			{
+				// 해당 셀의 청크
+				int32 ChunkIdx = GetCollisionChunkIndexForCell(CellId);
+				if (ChunkIdx != INDEX_NONE)
+				{
+					DirtyChunkIndices.Add(ChunkIdx);
+				}
+
+				// 이웃 셀들의 청크도 dirty (새로 표면이 될 수 있음)
+				const FIntArray& Neighbors = GridCellCache.GetCellNeighbors(CellId);
+				for (int32 NeighborId : Neighbors.Values)
+				{
+					int32 NeighborChunkIdx = GetCollisionChunkIndexForCell(NeighborId);
+					if (NeighborChunkIdx != INDEX_NONE)
+					{
+						DirtyChunkIndices.Add(NeighborChunkIdx);
+					}
+				}
+			}
+
+			for (int32 ChunkIdx : DirtyChunkIndices)
+			{
+				MarkCollisionChunkDirty(ChunkIdx);
+			}
+
+			UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Marked %d chunks dirty from %d destroyed cells"),
+				DirtyChunkIndices.Num(), DestructionResult.NewlyDestroyedCells.Num());
+		}
 	}
 
 	if (bEnableSubcell)
@@ -516,6 +549,36 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 
 		CellState.MoveAllDetachedToDestroyed();
 
+		// 서버 Cell Collision: 분리된 셀들의 청크도 dirty 마킹
+		if (bServerCellCollisionInitialized)
+		{
+			TSet<int32> DetachedDirtyChunks;
+			for (int32 CellId : DisconnectedCells)
+			{
+				int32 ChunkIdx = GetCollisionChunkIndexForCell(CellId);
+				if (ChunkIdx != INDEX_NONE)
+				{
+					DetachedDirtyChunks.Add(ChunkIdx);
+				}
+				// 이웃 셀 청크도 dirty (새 표면 될 수 있음)
+				const FIntArray& Neighbors = GridCellCache.GetCellNeighbors(CellId);
+				for (int32 NeighborId : Neighbors.Values)
+				{
+					int32 NeighborChunkIdx = GetCollisionChunkIndexForCell(NeighborId);
+					if (NeighborChunkIdx != INDEX_NONE)
+					{
+						DetachedDirtyChunks.Add(NeighborChunkIdx);
+					}
+				}
+			}
+			for (int32 ChunkIdx : DetachedDirtyChunks)
+			{
+				MarkCollisionChunkDirty(ChunkIdx);
+			}
+			UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Marked %d chunks dirty from %d detached cells"),
+				DetachedDirtyChunks.Num(), DisconnectedCells.Num());
+		}
+
 		UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction [Server]: %d cells disconnected (%d groups)"),
 			DisconnectedCells.Num(), NewDetachedGroups.Num());
 		}
@@ -556,6 +619,443 @@ int32 URealtimeDestructibleMeshComponent::GridCellIdToChunkId(int32 GridCellId) 
 
 	const int32 GridIndex = GridX + GridY * SliceCount.X + GridZ * SliceCount.X * SliceCount.Y;
 	return GridToChunkMap.IsValidIndex(GridIndex) ? GridToChunkMap[GridIndex] : INDEX_NONE;
+}
+
+//=============================================================================
+// 서버 Cell Box Collision (Chunked BodySetup + Surface Voxel)
+//=============================================================================
+
+void URealtimeDestructibleMeshComponent::BuildServerCellCollision()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(BuildServerCellCollision);
+
+	// Cell Box Collision 비활성화 시 원본 메시 콜리전 사용
+	if (!bEnableServerCellCollision)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Disabled, using original mesh collision"));
+		return;
+	}
+
+	// 서버(데디케이티드/리슨)에서만 실행
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (!GridCellCache.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerCellCollision] GridCellCache is not valid, skipping"));
+		return;
+	}
+
+	// 동적 청크 분할 수 계산
+	const int32 TotalCells = GridCellCache.GetValidCellCount();
+	if (TotalCells == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerCellCollision] No valid cells, skipping"));
+		return;
+	}
+
+	// 목표 청크 수 계산
+	const int32 TargetChunkCount = FMath::Max(1, TotalCells / FMath::Max(1, TargetCellsPerCollisionChunk));
+
+	// 3차원이므로 세제곱근으로 각 축 분할 수 계산
+	CollisionChunkDivisions = FMath::Max(1, FMath::RoundToInt(FMath::Pow((float)TargetChunkCount, 1.0f / 3.0f)));
+
+	// 최소 1, 최대 10으로 제한
+	CollisionChunkDivisions = FMath::Clamp(CollisionChunkDivisions, 1, 10);
+
+	const int32 TotalChunks = CollisionChunkDivisions * CollisionChunkDivisions * CollisionChunkDivisions;
+
+	CollisionChunks.SetNum(TotalChunks);
+
+	UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Dynamic chunking: %d cells / %d target = %d divisions (%d chunks, ~%d cells/chunk)"),
+		TotalCells, TargetCellsPerCollisionChunk, CollisionChunkDivisions, TotalChunks,
+		TotalChunks > 0 ? TotalCells / TotalChunks : 0);
+
+	// 메시 바운드 기반으로 청크 크기 계산
+	const FBox MeshBounds = CachedMeshBounds;
+	const FVector BoundsSize = MeshBounds.GetSize();
+
+	// Division by Zero 보호: 바운드가 너무 작으면 단일 청크로 처리
+	if (BoundsSize.X < KINDA_SMALL_NUMBER || BoundsSize.Y < KINDA_SMALL_NUMBER || BoundsSize.Z < KINDA_SMALL_NUMBER)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerCellCollision] Degenerate bounds detected: %s, using single chunk"), *BoundsSize.ToString());
+		CollisionChunkDivisions = 1;
+	}
+
+	const FVector ChunkSize = BoundsSize / FMath::Max(1.0f, (float)CollisionChunkDivisions);
+
+	// 각 유효 셀을 청크에 할당
+	CellToCollisionChunkMap.Empty();
+
+	for (int32 SparseIdx = 0; SparseIdx < GridCellCache.GetValidCellCount(); ++SparseIdx)
+	{
+		const int32 CellId = GridCellCache.SparseIndexToCellId[SparseIdx];
+		const FVector LocalCenter = GridCellCache.IdToLocalCenter(CellId);
+
+		// 청크 인덱스 계산 (Division by Zero 보호 포함)
+		int32 ChunkX = (ChunkSize.X > KINDA_SMALL_NUMBER) ? FMath::FloorToInt((LocalCenter.X - MeshBounds.Min.X) / ChunkSize.X) : 0;
+		int32 ChunkY = (ChunkSize.Y > KINDA_SMALL_NUMBER) ? FMath::FloorToInt((LocalCenter.Y - MeshBounds.Min.Y) / ChunkSize.Y) : 0;
+		int32 ChunkZ = (ChunkSize.Z > KINDA_SMALL_NUMBER) ? FMath::FloorToInt((LocalCenter.Z - MeshBounds.Min.Z) / ChunkSize.Z) : 0;
+
+		ChunkX = FMath::Clamp(ChunkX, 0, CollisionChunkDivisions - 1);
+		ChunkY = FMath::Clamp(ChunkY, 0, CollisionChunkDivisions - 1);
+		ChunkZ = FMath::Clamp(ChunkZ, 0, CollisionChunkDivisions - 1);
+
+		const int32 ChunkIndex = ChunkX + ChunkY * CollisionChunkDivisions + ChunkZ * CollisionChunkDivisions * CollisionChunkDivisions;
+
+		CollisionChunks[ChunkIndex].CellIds.Add(CellId);
+		CellToCollisionChunkMap.Add(CellId, ChunkIndex);
+	}
+
+	// 서버에서 원본 메시: Pawn 채널만 Ignore (총알은 충돌, 캐릭터는 Cell Box로 처리)
+	SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+
+	// ChunkMeshComponents도 Pawn Ignore 설정
+	for (UDynamicMeshComponent* ChunkMesh : ChunkMeshComponents)
+	{
+		if (ChunkMesh)
+		{
+			ChunkMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Mesh: Pawn Ignore (Main + %d ChunkMeshes), Cell Box handles Pawn"), ChunkMeshComponents.Num());
+
+	// 각 청크의 콜리전 컴포넌트 및 BodySetup 생성
+	for (int32 i = 0; i < TotalChunks; ++i)
+	{
+		BuildCollisionChunkBodySetup(i);
+	}
+
+	bServerCellCollisionInitialized = true;
+
+	int32 TotalSurfaceCells = 0;
+	int32 NonEmptyChunks = 0;
+	for (int32 i = 0; i < CollisionChunks.Num(); ++i)
+	{
+		const FCollisionChunkData& Chunk = CollisionChunks[i];
+		TotalSurfaceCells += Chunk.SurfaceCellIds.Num();
+		if (Chunk.SurfaceCellIds.Num() > 0)
+		{
+			++NonEmptyChunks;
+			// 처음 10개 비어있지 않은 청크 상세 로그
+			if (NonEmptyChunks <= 10)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Chunk %d: %d cells, %d surface cells"),
+					i, Chunk.CellIds.Num(), Chunk.SurfaceCellIds.Num());
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Initialized: %d chunks (%d non-empty), %d total cells, %d surface cells"),
+		TotalChunks, NonEmptyChunks, GridCellCache.GetValidCellCount(), TotalSurfaceCells);
+}
+
+void URealtimeDestructibleMeshComponent::BuildCollisionChunkBodySetup(int32 ChunkIndex)
+{
+	if (!CollisionChunks.IsValidIndex(ChunkIndex))
+	{
+		return;
+	}
+
+	// GridCellCache 유효성 검사
+	if (!GridCellCache.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerCellCollision] GridCellCache invalid, skipping chunk %d"), ChunkIndex);
+		return;
+	}
+
+	TRACE_CPUPROFILER_EVENT_SCOPE(BuildCollisionChunkBodySetup);
+
+	FCollisionChunkData& Chunk = CollisionChunks[ChunkIndex];
+
+	// 1. 콜리전 컴포넌트 생성/찾기
+	UStaticMeshComponent* ChunkComp = Cast<UStaticMeshComponent>(Chunk.ChunkComponent);
+	if (!ChunkComp)
+	{
+		// Owner 유효성 검사
+		AActor* Owner = GetOwner();
+		if (!Owner)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ServerCellCollision] Chunk %d: Owner is null, cannot create collision component"), ChunkIndex);
+			return;
+		}
+
+		// 새 컴포넌트 생성
+		ChunkComp = NewObject<UStaticMeshComponent>(Owner, NAME_None, RF_Transient);
+		if (!ChunkComp)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ServerCellCollision] Chunk %d: Failed to create UStaticMeshComponent"), ChunkIndex);
+			return;
+		}
+
+		ChunkComp->SetupAttachment(this);
+		ChunkComp->SetRelativeTransform(FTransform::Identity);
+		ChunkComp->SetStaticMesh(nullptr);  // 메시 없이 콜리전만 사용
+		ChunkComp->SetHiddenInGame(true);   // 렌더링 안함
+		ChunkComp->SetCastShadow(false);
+		ChunkComp->bAlwaysCreatePhysicsState = true;  // 메시 없이도 물리 상태 생성
+		ChunkComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ChunkComp->SetCollisionObjectType(ECC_WorldStatic);
+		ChunkComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ChunkComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);  // Pawn만 Block
+		ChunkComp->SetCanEverAffectNavigation(false);  // NavMesh 영향 없음
+
+		// BodyInstance 사전 설정
+		FBodyInstance* BI = ChunkComp->GetBodyInstance();
+		if (BI)
+		{
+			BI->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			BI->SetObjectType(ECC_WorldStatic);
+			BI->SetResponseToAllChannels(ECR_Ignore);
+			BI->SetResponseToChannel(ECC_Pawn, ECR_Block);
+			BI->bSimulatePhysics = false;
+			BI->bEnableGravity = false;
+		}
+
+		ChunkComp->RegisterComponent();
+
+		Chunk.ChunkComponent = ChunkComp;
+	}
+
+	// 2. BodySetup 생성/갱신
+	if (!Chunk.BodySetup)
+	{
+		Chunk.BodySetup = NewObject<UBodySetup>(ChunkComp, NAME_None, RF_Transient);
+		if (!Chunk.BodySetup)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ServerCellCollision] Chunk %d: Failed to create UBodySetup"), ChunkIndex);
+			return;
+		}
+		Chunk.BodySetup->CollisionTraceFlag = CTF_UseSimpleAsComplex;
+		Chunk.BodySetup->bGenerateMirroredCollision = false;
+		Chunk.BodySetup->bDoubleSidedGeometry = false;
+	}
+
+	FKAggregateGeom& ChunkAggGeom = Chunk.BodySetup->AggGeom;
+	const int32 OldBoxCount = ChunkAggGeom.BoxElems.Num();
+	ChunkAggGeom.BoxElems.Reset();
+	Chunk.SurfaceCellIds.Reset();
+
+	int32 SkippedDestroyedCount = 0;
+
+	// 3. 표면 셀의 박스 추가
+	for (int32 CellId : Chunk.CellIds)
+	{
+		// 파괴된 셀 스킵
+		if (CellState.DestroyedCells.Contains(CellId))
+		{
+			++SkippedDestroyedCount;
+			continue;
+		}
+
+		// 표면 셀만 추가 (Surface Voxel)
+		if (!IsCellExposed(CellId))
+		{
+			continue;
+		}
+
+		Chunk.SurfaceCellIds.Add(CellId);
+
+		const FVector LocalCenter = GridCellCache.IdToLocalCenter(CellId);
+
+		FKBoxElem BoxElem;
+		BoxElem.Center = LocalCenter;
+		BoxElem.X = GridCellSize.X;
+		BoxElem.Y = GridCellSize.Y;
+		BoxElem.Z = GridCellSize.Z;
+		BoxElem.Rotation = FRotator::ZeroRotator;
+
+		ChunkAggGeom.BoxElems.Add(BoxElem);
+	}
+
+	// 4. 빈 청크 처리: 모든 셀이 파괴된 경우 콜리전 비활성화
+	if (ChunkAggGeom.BoxElems.Num() == 0)
+	{
+		ChunkComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Chunk.bDirty = false;
+		if (OldBoxCount > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Chunk %d: All cells destroyed, collision disabled"), ChunkIndex);
+		}
+		return;
+	}
+
+	// 콜리전이 비활성화되어 있었다면 다시 활성화
+	if (ChunkComp->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+	{
+		ChunkComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}
+
+	// 5. 물리 메시 쿠킹
+	Chunk.BodySetup->InvalidatePhysicsData();
+	Chunk.BodySetup->CreatePhysicsMeshes();
+
+	// 물리 메시 생성 확인
+	UE_LOG(LogTemp, Log, TEXT("[CellBoxDebug] Chunk %d: CreatePhysicsMeshes called, bCreatedPhysicsMeshes=%d"),
+		ChunkIndex, Chunk.BodySetup->bCreatedPhysicsMeshes ? 1 : 0);
+
+	// 6. 컴포넌트의 BodySetup 갱신 및 물리 바디 직접 생성
+	FBodyInstance* ChunkBodyInstance = ChunkComp->GetBodyInstance();
+	if (ChunkBodyInstance)
+	{
+		// 기존 물리 바디 정리
+		if (ChunkBodyInstance->IsValidBodyInstance())
+		{
+			ChunkBodyInstance->TermBody();
+		}
+
+		// BodyInstance 콜리전 설정 (InitBody 전에 설정해야 함)
+		ChunkBodyInstance->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ChunkBodyInstance->SetObjectType(ECC_WorldStatic);
+		ChunkBodyInstance->SetResponseToAllChannels(ECR_Ignore);
+		ChunkBodyInstance->SetResponseToChannel(ECC_Pawn, ECR_Block);
+
+		// 물리 시뮬레이션 비활성화 (정적 콜리전)
+		ChunkBodyInstance->bSimulatePhysics = false;
+		ChunkBodyInstance->bEnableGravity = false;
+
+		// 물리 바디 직접 초기화
+		UWorld* World = GetWorld();
+		if (World && World->GetPhysicsScene())
+		{
+			// BodySetup 연결 (InitBody 전에 필요)
+			ChunkBodyInstance->BodySetup = Chunk.BodySetup;
+
+			// BodySetup 유효성 확인
+			UE_LOG(LogTemp, Warning, TEXT("[CellBoxDebug] Chunk %d: BodySetup=%p, BoxElems=%d, PhysicsScene=%p"),
+				ChunkIndex, Chunk.BodySetup.Get(), ChunkAggGeom.BoxElems.Num(), World->GetPhysicsScene());
+
+			ChunkBodyInstance->InitBody(Chunk.BodySetup, ChunkComp->GetComponentTransform(), ChunkComp, World->GetPhysicsScene());
+
+			// 콜리전 채널 물리에 적용
+			ChunkBodyInstance->UpdatePhysicsFilterData();
+
+			// 정적 바디로 설정 (시뮬레이션 없음)
+			if (ChunkBodyInstance->IsValidBodyInstance())
+			{
+				ChunkBodyInstance->SetInstanceSimulatePhysics(false);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[CellBoxDebug] Chunk %d: World or PhysicsScene is null"), ChunkIndex);
+		}
+
+		// 디버그: 물리 바디 상태 확인
+		bool bHasPhysicsBody = ChunkBodyInstance->IsValidBodyInstance();
+
+		// InitBody가 실패했으면 RecreatePhysicsState 시도
+		if (!bHasPhysicsBody)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[CellBoxDebug] Chunk %d: InitBody failed, trying RecreatePhysicsState..."), ChunkIndex);
+			ChunkComp->RecreatePhysicsState();
+			bHasPhysicsBody = ChunkBodyInstance->IsValidBodyInstance();
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[CellBoxDebug] Chunk %d: Boxes=%d, HasPhysicsBody=%d, CollisionEnabled=%d, BodySetupBoxes=%d"),
+			ChunkIndex, ChunkAggGeom.BoxElems.Num(), bHasPhysicsBody ? 1 : 0,
+			(int32)ChunkComp->GetCollisionEnabled(),
+			Chunk.BodySetup ? Chunk.BodySetup->AggGeom.BoxElems.Num() : -1);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ServerCellCollision] Chunk %d: GetBodyInstance returned null"), ChunkIndex);
+	}
+
+	Chunk.bDirty = false;
+
+	// 변경이 있을 때만 로그 출력 (초기화 시에는 OldBoxCount가 0)
+	if (OldBoxCount > 0 || SkippedDestroyedCount > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Chunk %d rebuilt: %d -> %d boxes (skipped %d destroyed cells)"),
+			ChunkIndex, OldBoxCount, ChunkAggGeom.BoxElems.Num(), SkippedDestroyedCount);
+	}
+}
+
+bool URealtimeDestructibleMeshComponent::IsCellExposed(int32 CellId) const
+{
+	const FIntArray& Neighbors = GridCellCache.GetCellNeighbors(CellId);
+
+	// 이웃이 6개 미만이면 경계 = 표면
+	if (Neighbors.Values.Num() < 6)
+	{
+		return true;
+	}
+
+	// 이웃 중 하나라도 파괴되었으면 표면
+	for (int32 NeighborId : Neighbors.Values)
+	{
+		if (CellState.DestroyedCells.Contains(NeighborId))
+		{
+			return true;
+		}
+	}
+
+	return false; // 내부 셀
+}
+
+int32 URealtimeDestructibleMeshComponent::GetCollisionChunkIndexForCell(int32 CellId) const
+{
+	if (const int32* ChunkIndex = CellToCollisionChunkMap.Find(CellId))
+	{
+		return *ChunkIndex;
+	}
+	return INDEX_NONE;
+}
+
+void URealtimeDestructibleMeshComponent::MarkCollisionChunkDirty(int32 ChunkIndex)
+{
+	if (CollisionChunks.IsValidIndex(ChunkIndex))
+	{
+		CollisionChunks[ChunkIndex].bDirty = true;
+	}
+}
+
+void URealtimeDestructibleMeshComponent::UpdateDirtyCollisionChunks()
+{
+	if (!bServerCellCollisionInitialized)
+	{
+		return;
+	}
+
+	// 프레임 버짓: 한 프레임에 처리할 최대 청크 수 (성능 스파이크 방지)
+	constexpr int32 MaxChunksPerFrame = 5;
+
+	// dirty 청크만 부분 재빌드 (다중 컴포넌트 방식의 핵심!)
+	int32 UpdatedCount = 0;
+	int32 RemainingDirty = 0;
+
+	for (int32 i = 0; i < CollisionChunks.Num(); ++i)
+	{
+		if (CollisionChunks[i].bDirty)
+		{
+			if (UpdatedCount < MaxChunksPerFrame)
+			{
+				BuildCollisionChunkBodySetup(i);
+				++UpdatedCount;
+			}
+			else
+			{
+				++RemainingDirty;  // 다음 프레임으로 연기
+			}
+		}
+	}
+
+	if (UpdatedCount > 0)
+	{
+		if (RemainingDirty > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Updated %d dirty chunks (%d deferred to next frame)"),
+				UpdatedCount, RemainingDirty);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ServerCellCollision] Updated %d dirty chunks"), UpdatedCount);
+		}
+	}
 }
 
 void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
@@ -2421,6 +2921,142 @@ void URealtimeDestructibleMeshComponent::DrawGridCellDebug()
 	}
 }
 
+void URealtimeDestructibleMeshComponent::DrawServerCollisionDebug()
+{
+	if (!bServerCellCollisionInitialized)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FTransform& ComponentTransform = GetComponentTransform();
+	const FVector HalfExtent = GridCellSize * 0.5f;
+
+	int32 TotalBoxes = 0;
+	TMap<int32, int32> ChunkBoxCounts;  // 청크별 박스 수 기록
+
+	for (int32 ChunkIdx = 0; ChunkIdx < CollisionChunks.Num(); ++ChunkIdx)
+	{
+		const FCollisionChunkData& Chunk = CollisionChunks[ChunkIdx];
+
+		// 청크 인덱스 기반으로 고유 색상 생성 (더 다양한 색상)
+		const uint8 R = static_cast<uint8>((ChunkIdx * 73) % 256);
+		const uint8 G = static_cast<uint8>((ChunkIdx * 137 + 50) % 256);
+		const uint8 B = static_cast<uint8>((ChunkIdx * 199 + 100) % 256);
+		const FColor ChunkColor(R, G, B, 255);
+
+		int32 ChunkBoxCount = 0;
+
+		// Surface Cell만 박스로 그리기
+		for (int32 CellId : Chunk.SurfaceCellIds)
+		{
+			// 파괴된 셀은 스킵
+			if (CellState.DestroyedCells.Contains(CellId))
+			{
+				continue;
+			}
+
+			const FVector LocalCenter = GridCellCache.IdToLocalCenter(CellId);
+			const FVector WorldCenter = ComponentTransform.TransformPosition(LocalCenter);
+
+			DrawDebugBox(World, WorldCenter, HalfExtent, ComponentTransform.GetRotation(), ChunkColor, false, 0.0f, SDPG_World, 1.0f);
+			++TotalBoxes;
+			++ChunkBoxCount;
+		}
+
+		if (ChunkBoxCount > 0)
+		{
+			ChunkBoxCounts.Add(ChunkIdx, ChunkBoxCount);
+		}
+	}
+
+	// 첫 프레임만 로그 출력 (청크별 상세)
+	static bool bFirstDraw = true;
+	if (bFirstDraw)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ServerCollisionDebug] Drawing %d collision boxes from %d chunks"), TotalBoxes, CollisionChunks.Num());
+
+		// 비어있지 않은 청크 개수와 상위 5개 청크 출력
+		int32 LogCount = 0;
+		for (const auto& Pair : ChunkBoxCounts)
+		{
+			if (LogCount < 5)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[ServerCollisionDebug] Chunk %d: %d boxes"), Pair.Key, Pair.Value);
+				++LogCount;
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("[ServerCollisionDebug] Total %d non-empty chunks"), ChunkBoxCounts.Num());
+
+		bFirstDraw = false;
+	}
+}
+
+void URealtimeDestructibleMeshComponent::DrawActivePhysicsBoxesDebug()
+{
+	if (!bServerCellCollisionInitialized)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FTransform& ComponentTransform = GetComponentTransform();
+	int32 TotalActiveBoxes = 0;
+	int32 DisabledChunks = 0;
+
+	for (int32 ChunkIdx = 0; ChunkIdx < CollisionChunks.Num(); ++ChunkIdx)
+	{
+		const FCollisionChunkData& Chunk = CollisionChunks[ChunkIdx];
+
+		// BodySetup이 없으면 스킵
+		if (!Chunk.BodySetup)
+		{
+			continue;
+		}
+
+		// 콜리전 컴포넌트 상태 확인
+		UStaticMeshComponent* ChunkComp = Cast<UStaticMeshComponent>(Chunk.ChunkComponent);
+		if (!ChunkComp || ChunkComp->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+		{
+			++DisabledChunks;
+			continue;
+		}
+
+		// 청크 인덱스 기반으로 고유 색상 생성
+		const uint8 R = static_cast<uint8>((ChunkIdx * 73) % 256);
+		const uint8 G = static_cast<uint8>((ChunkIdx * 137 + 50) % 256);
+		const uint8 B = static_cast<uint8>((ChunkIdx * 199 + 100) % 256);
+		const FColor ChunkColor(R, G, B, 255);
+
+		// 실제 BodySetup의 BoxElems에서 점으로 그리기 (성능 최적화)
+		const FKAggregateGeom& DebugAggGeom = Chunk.BodySetup->AggGeom;
+		for (const FKBoxElem& BoxElem : DebugAggGeom.BoxElems)
+		{
+			const FVector WorldCenter = ComponentTransform.TransformPosition(BoxElem.Center);
+			DrawDebugPoint(World, WorldCenter, 5.0f, ChunkColor, false, 0.0f, SDPG_World);
+			++TotalActiveBoxes;
+		}
+	}
+
+	// 매 프레임 상태 표시 (화면 왼쪽 상단)
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
+			FString::Printf(TEXT("[PhysicsBoxes] Active: %d boxes, Disabled chunks: %d, Destroyed cells: %d"),
+				TotalActiveBoxes, DisabledChunks, CellState.DestroyedCells.Num()));
+	}
+}
+
 void URealtimeDestructibleMeshComponent::SetSourceMeshEnabled(bool bEnabled)
 {
 	SetVisibility(bEnabled, false);
@@ -2572,6 +3208,9 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 			BulletClusterComponent->SetOwnerMesh(this);
 		}
 	}
+
+	// 서버 Cell Box Collision 초기화 (데디케이티드 서버에서만)
+	BuildServerCellCollision();
 }
 
 void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -2600,6 +3239,24 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	if (bShowGridCellDebug)
 	{
 		DrawGridCellDebug();
+	}
+
+	// 서버 콜리전 박스 디버그 표시
+	if (bShowServerCollisionDebug)
+	{
+		DrawServerCollisionDebug();
+	}
+
+	// 실제 활성화된 물리 박스 디버그 표시 (BodySetup 기반)
+	if (bShowActivePhysicsBoxes)
+	{
+		DrawActivePhysicsBoxesDebug();
+	}
+
+	// 서버 Cell Box Collision: Dirty 청크 업데이트 (서버에서만)
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		UpdateDirtyCollisionChunks();
 	}
 
 	// 서버 배칭 처리

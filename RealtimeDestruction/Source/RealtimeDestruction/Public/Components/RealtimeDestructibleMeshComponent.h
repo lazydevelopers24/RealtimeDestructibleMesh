@@ -7,6 +7,8 @@
 #include "GeometryScript/MeshBooleanFunctions.h"
 #include "DestructionTypes.h"
 #include "StructuralIntegrity/GridCellTypes.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "RealtimeDestructibleMeshComponent.generated.h"
 
 class UGeometryCollection;
@@ -240,6 +242,32 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDestructionRejected, int32, Sequ
 //////////////////////////////////////////////////////////////////////////
 // Class Declaration
 //////////////////////////////////////////////////////////////////////////
+
+/**
+ * 서버 Cell Box Collision용 청크 데이터
+ */
+USTRUCT()
+struct FCollisionChunkData
+{
+	GENERATED_BODY()
+
+	/** 이 청크의 BodySetup */
+	UPROPERTY()
+	TObjectPtr<UBodySetup> BodySetup = nullptr;
+
+	/** 이 청크가 사용하는 컴포넌트 (GC 방지 및 접근용) */
+	UPROPERTY()
+	TObjectPtr<UPrimitiveComponent> ChunkComponent = nullptr;
+
+	/** 이 청크에 속한 셀 ID들 */
+	TArray<int32> CellIds;
+
+	/** 이 청크의 표면 셀 ID들 (실제 충돌 박스가 있는 셀) */
+	TArray<int32> SurfaceCellIds;
+
+	/** 재빌드 필요 여부 */
+	bool bDirty = false;
+};
 
 /**
  * 실시간 파괴 가능 메시 컴포넌트
@@ -679,6 +707,50 @@ protected:
 	/** 현재 배치에서 변경된 청크 ID 집합 */
 	TSet<int32> ModifiedChunkIds;
 
+	//=========================================================================
+	// 서버 Cell Box Collision (Chunked BodySetup + Surface Voxel)
+	// Boolean 연산 대신 사용하여 서버 히칭 방지
+	//=========================================================================
+
+	/** 서버 충돌 청크 데이터 배열 */
+	UPROPERTY()
+	TArray<FCollisionChunkData> CollisionChunks;
+
+	/** 서버 Cell Box Collision 사용 여부 (false면 원본 메시 콜리전 사용) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerCollision")
+	bool bEnableServerCellCollision = true;
+
+	/** 청크당 목표 셀 수 (이 값을 기준으로 분할 수 자동 계산) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ServerCollision", meta = (ClampMin = "100", ClampMax = "2000"))
+	int32 TargetCellsPerCollisionChunk = 500;
+
+	/** 실제 적용된 충돌 청크 분할 수 (각 축당, 런타임에 자동 계산) */
+	int32 CollisionChunkDivisions = 4;
+
+	/** 셀 ID → 충돌 청크 인덱스 매핑 */
+	TMap<int32, int32> CellToCollisionChunkMap;
+
+	/** 서버 Cell Collision 초기화 완료 여부 */
+	bool bServerCellCollisionInitialized = false;
+
+	/** 서버 Cell Box Collision 초기화 (BeginPlay에서 호출) */
+	void BuildServerCellCollision();
+
+	/** Dirty 청크들의 충돌 재빌드 (TickComponent에서 호출) */
+	void UpdateDirtyCollisionChunks();
+
+	/** 청크를 Dirty로 마킹 */
+	void MarkCollisionChunkDirty(int32 ChunkIndex);
+
+	/** 셀이 표면인지 판정 (이웃이 파괴되었거나 경계면) */
+	bool IsCellExposed(int32 CellId) const;
+
+	/** 셀 ID로 충돌 청크 인덱스 계산 */
+	int32 GetCollisionChunkIndexForCell(int32 CellId) const;
+
+	/** 단일 청크의 콜리전 컴포넌트 및 BodySetup 빌드 */
+	void BuildCollisionChunkBodySetup(int32 ChunkIndex);
+
 public:
 	/**
 	 * GeometryCollection에서 DynamicMesh 추출
@@ -809,10 +881,18 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bDebugPenetration = false;
-	
+
+	/** 서버 콜리전 박스 디버그 시각화 (리슨 서버용) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowServerCollisionDebug = false;
+
+	/** 실제 활성화된 물리 박스만 표시 (BodySetup 기반) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowActivePhysicsBoxes = false;
+
 	/** 최근 직접 파괴된 셀 ID (디버그 강조 표시용) */
 	TSet<int32> RecentDirectDestroyedCellIds;
-	
+
 	/** 디버그 텍스트 갱신. 메시 업데이트시에만 수행하는 식으로 업데이트 빈도 제어 */
 	void UpdateDebugText();
 
@@ -820,6 +900,12 @@ protected:
 
 	/** 격자 셀 디버그 시각화 */
 	void DrawGridCellDebug();
+
+	/** 서버 콜리전 박스 디버그 시각화 */
+	void DrawServerCollisionDebug();
+
+	/** 실제 BodySetup의 물리 박스 시각화 (활성화된 콜리전만) */
+	void DrawActivePhysicsBoxesDebug();
 
 	bool bShouldDebugUpdate = true;
 
