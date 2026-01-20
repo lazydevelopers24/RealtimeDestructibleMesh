@@ -305,8 +305,9 @@ bool URealtimeDestructibleMeshComponent::RequestDestruction(const FRealtimeDestr
 		UE_LOG(LogTemp, Warning, TEXT("Async flag is false. Please turn true"));
 		return false;
 	}
-	
-	if (bEnableClustering && BulletClusterComponent)
+
+	// 서버에서만 Cluetering 등록
+	if (bEnableClustering && BulletClusterComponent && GetOwner()->HasAuthority())
 	{
 		BulletClusterComponent->RegisterRequest(Request); 
 	}
@@ -3418,7 +3419,7 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 		bChunkMeshesValid, GridCellCache.IsValid(), ChunkMeshComponents.Num());
 
 	/** Culstering 관련 초기화 */
-	if (bEnableClustering)
+	if (bEnableClustering && GetOwner()->HasAuthority())
 	{
 		// Cluster Comp가 없을 경우 생성
 		if (!BulletClusterComponent)

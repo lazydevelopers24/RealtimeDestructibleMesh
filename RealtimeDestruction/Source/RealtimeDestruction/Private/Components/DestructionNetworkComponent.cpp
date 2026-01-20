@@ -221,11 +221,16 @@ void UDestructionNetworkComponent::ServerApplyDestruction_Implementation(
 		);
 	}
 
-	// 리슨서버만: 호스트 화면에 파괴 표시
-	if (World && World->GetNetMode() == NM_ListenServer)
+	//// 리슨서버만: 호스트 화면에 파괴 표시
+	//if (World && World->GetNetMode() == NM_ListenServer)
+	//{
+	//	DestructComp->RequestDestruction(ModifiedRequest);
+	//} 
+	if (World && (World->GetNetMode() == NM_ListenServer || World->GetNetMode() == NM_DedicatedServer))
 	{
 		DestructComp->RequestDestruction(ModifiedRequest);
 	}
+
 
 	// 모든 클라이언트에 파괴 전파
 	FRealtimeDestructionOp Op;
@@ -310,8 +315,14 @@ void UDestructionNetworkComponent::ServerApplyDestructionCompact_Implementation(
 		);
 	}
 
-	// 리슨서버만: 호스트 화면에 파괴 표시
-	if (World && World->GetNetMode() == NM_ListenServer)
+	//// 리슨서버만: 호스트 화면에 파괴 표시
+	//if (World && World->GetNetMode() == NM_ListenServer)
+	//{
+	//	DestructComp->RequestDestruction(Request);
+	//}
+
+	 // 서버에서 파괴 처리 (Listen Server + Dedicated Server 모두)
+	if (World && (World->GetNetMode() == NM_ListenServer || World->GetNetMode() == NM_DedicatedServer))
 	{
 		DestructComp->RequestDestruction(Request);
 	}

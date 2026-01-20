@@ -171,6 +171,18 @@ void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& C
 	URealtimeDestructibleMeshComponent* Mesh = OwnerMesh.Get();
 	if (!Mesh || !IsValid(Mesh)) return;
 
+	// 서버에서만 실행
+	if (!Mesh->GetOwner()->HasAuthority())
+	{
+		return;
+	}
+	UWorld* World = GetWorld();;
+	if (!World)
+	{
+		return;
+	}
+	
+	const ENetMode NetMode = World->GetNetMode();
 	/*
 	 * for문 안에 있어서 매 반복마다 메모리 재할당이 발생함
 	 * 여기도 3 x 3 x 3 고려해서 27개 할당
@@ -201,7 +213,26 @@ void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& C
 			Request.ToolMeshPtr = Mesh->CreateToolMeshPtrFromShapeParams(
 				Request.ToolShape, Request.ShapeParams);
 
-			Mesh->ExecuteDestructionInternal(Request);
+			// 서버에서 직접 실행
+			Mesh->ExecuteDestructionInternal(Request); 
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
+			{
+				//Multicast로 클라에 전파
+				FRealtimeDestructionOp Op;
+				Op.Request = Request;
+				
+				if (Mesh->bUseServerBatching)
+				{
+					Mesh->EnqueueForServerBatch(Op);
+				}
+				else
+				{
+					TArray<FCompactDestructionOp> CompactOps;
+					CompactOps.Add(FCompactDestructionOp::Compress(Op.Request, 0));
+					Mesh->MulticastApplyOpsCompact(CompactOps);
+				}
+			}
+			
 		}
 	}
 }

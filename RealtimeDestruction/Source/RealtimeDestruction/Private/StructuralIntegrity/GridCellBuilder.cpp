@@ -80,23 +80,23 @@ bool FGridCellBuilder::BuildFromStaticMesh(
 	// 3. 비트필드 초기화 (0으로 초기화됨)
 	OutCache.InitializeBitfields();
 
-	// // 4. Collision 기반 복셀화 (우선순위: Convex > Box > Sphere > Capsule > BoundingBox)
-	// UBodySetup* BodySetup = SourceMesh->GetBodySetup();
-	// if (BodySetup)
-	// {
-	// 	VoxelizeWithCollision(BodySetup, OutCache);
-	// }
-	// else
-	// {
-	// 	// BodySetup 없으면 바운딩 박스로 채우기
-	// 	UE_LOG(LogTemp, Warning, TEXT("FGridCellBuilder: No BodySetup, filling bounding box"));
-	// 	for (int32 i = 0; i < TotalCells; i++)
-	// 	{
-	// 		OutCache.SetCellExists(i, true);
-	// 		OutCache.RegisterValidCell(i);
-	// 	}
-	// }
-	 VoxelizeWithTriangles(SourceMesh, OutCache);
+	 // 4. Collision 기반 복셀화 (우선순위: Convex > Box > Sphere > Capsule > BoundingBox)
+	 //UBodySetup* BodySetup = SourceMesh->GetBodySetup();
+	 //if (BodySetup)
+	 //{
+	 //	VoxelizeWithCollision(BodySetup, OutCache);
+	 //}
+	 //else
+	 //{
+	 //	// BodySetup 없으면 바운딩 박스로 채우기
+	 //	UE_LOG(LogTemp, Warning, TEXT("FGridCellBuilder: No BodySetup, filling bounding box"));
+	 //	for (int32 i = 0; i < TotalCells; i++)
+	 //	{
+	 //		OutCache.SetCellExists(i, true);
+	 //		OutCache.RegisterValidCell(i);
+	 //	}
+	 //}
+	VoxelizeWithTriangles(SourceMesh, OutCache);
 
 	// 6. 인접 관계 계산
 	CalculateNeighbors(OutCache);
