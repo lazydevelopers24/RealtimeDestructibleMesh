@@ -841,7 +841,7 @@ public:
 	int32 GetChunkMeshCount() const { return ChunkMeshComponents.Num(); }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ChunkMesh")
-	FIntVector SliceCount;
+	FIntVector SliceCount = FIntVector(2.0f, 2.0f, 2.0f);
 
 	/** 격자 셀 크기 (cm). 값이 작을수록 해상도가 높아지지만 성능 비용 증가 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "1.0"))
