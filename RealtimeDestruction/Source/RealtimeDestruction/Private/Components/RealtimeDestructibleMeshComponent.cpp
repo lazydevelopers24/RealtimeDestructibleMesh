@@ -606,16 +606,13 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		CleanupSmallFragments();
 	}
 
-	if (bEnableStructuralIntegrity && bEnableSubcell)
+	ProcessDecalRemoval(DestructionResult);
+	if (DisconnectedCells.Num() > 0)
 	{
-		ProcessDecalRemoval(DestructionResult);
-		if (DisconnectedCells.Num() > 0)
-		{
-			FDestructionResult DetachResult;
-			DetachResult.NewlyDestroyedCells = DisconnectedCells.Array();
+		FDestructionResult DetachResult;
+		DetachResult.NewlyDestroyedCells = DisconnectedCells.Array();
 
-			ProcessDecalRemoval(DetachResult);
-		}
+		ProcessDecalRemoval(DetachResult);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction Complete: Destroyed=%d, DetachedGroups=%d"),
