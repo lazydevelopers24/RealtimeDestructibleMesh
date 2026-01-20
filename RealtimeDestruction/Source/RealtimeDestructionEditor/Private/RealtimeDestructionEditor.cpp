@@ -13,6 +13,8 @@
 #include "DestructionProjectileComponentDetails.h"
 #include "PropertyEditorModule.h"
 #include "Data/DecalMaterialDataAsset.h" 
+#include"RDMSettingsCustomization.h"
+#include "Settings/RDMSetting.h"
 
 #define LOCTEXT_NAMESPACE "FRealtimeDestructionEditorModule"
 
@@ -46,6 +48,10 @@ void FRealtimeDestructionEditorModule::StartupModule()
 		FOnGetDetailCustomizationInstance::CreateStatic(&FRealtimeDestructibleMeshComponentDetails::MakeInstance)
 	);
 
+	PropertyModule.RegisterCustomClassLayout(
+		URDMSetting::StaticClass()->GetFName(),
+          FOnGetDetailCustomizationInstance::CreateStatic(&FRdmSettingsCustomization::MakeInstance)
+	);
 	UE_LOG(LogTemp, Log, TEXT("RealtimeDestructionEditor module started"));
 }
 
@@ -64,6 +70,7 @@ void FRealtimeDestructionEditorModule::ShutdownModule()
 		PropertyModule.UnregisterCustomClassLayout(UDestructionProjectileComponent::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomClassLayout(UDecalMaterialDataAsset::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomClassLayout(URealtimeDestructibleMeshComponent::StaticClass()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(URDMSetting::StaticClass()->GetFName());
 	} 
 
 	UE_LOG(LogTemp, Log, TEXT("RealtimeDestructionEditor module shutdown"));

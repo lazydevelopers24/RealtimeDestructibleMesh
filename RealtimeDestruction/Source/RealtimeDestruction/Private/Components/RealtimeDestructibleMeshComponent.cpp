@@ -3259,7 +3259,7 @@ void URealtimeDestructibleMeshComponent::OnRegister()
 
 void URealtimeDestructibleMeshComponent::InitializeComponent()
 {
-	Super::InitializeComponent();
+	Super::InitializeComponent(); 
 }
 void URealtimeDestructibleMeshComponent::BeginPlay()
 {
@@ -4943,4 +4943,4 @@ TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::
 	UE_LOG(LogTemp, Warning, TEXT("GetComponentInstanceData"));
 
 	return MakeStructOnScope<FActorComponentInstanceData, FRealtimeDestructibleMeshComponentInstanceData>(this);
-}	
+}

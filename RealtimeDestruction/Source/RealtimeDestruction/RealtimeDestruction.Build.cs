@@ -33,6 +33,7 @@ public class RealtimeDestruction : ModuleRules
 				"Engine",
 				"InputCore",
 				"NetCore",
+				"DeveloperSettings",
 
 				// Geometry & Mesh
 				"GeometryCore",

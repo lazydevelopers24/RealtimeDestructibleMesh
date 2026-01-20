@@ -20,6 +20,7 @@ struct FGeometryScriptPlanarSimplifyOptions;
 enum class EGeometryScriptBooleanOperation : uint8;
 class URealtimeDestructibleMeshComponent;
 class UDecalComponent;
+class URDMThreadManagerSubsystem;
 ////////////////////////////////////////
 
 /**
@@ -278,8 +279,11 @@ private:
 
 	void UpdateHoleNormalAndTangents(UE::Geometry::FDynamicMesh3& MeshToSet, int32 HoleMaterialID);
 
+	// ThreadManager 접근 Helper
+	URDMThreadManagerSubsystem* GetThreadManager() const;
 
 private:
+	
 	TWeakObjectPtr<URealtimeDestructibleMeshComponent> OwnerComponent = nullptr;
 
 	TSharedPtr<FProcessorLifeTime, ESPMode::ThreadSafe> LifeTime;
@@ -298,7 +302,7 @@ private:
 	TArray<std::atomic<int32>> ChunkGenerations;
 
 	/** Chunk별 UnionResults Queue (Chunk마다 독립적인 파이프라인) */
-	TArray<TQueue<FUnionResult, EQueueMode::Mpsc>*> ChunkUnionResultsQueues;
+	TArray<TUniquePtr<TQueue<FUnionResult, EQueueMode::Mpsc>>> ChunkUnionResultsQueues;
 
 	/** Chunk별 BatchID 카운터 */
 	TArray<std::atomic<int32>> ChunkNextBatchIDs;
@@ -346,6 +350,54 @@ private:
 	double SubtractAvgCostMs = 2.0f;
 	double SubtractCostAccum = 0.0f;
 	int32 SubtractCostSampleCount = 0;
+ 
+private:
+	
+	// 슬롯 개수 ( thread 관리하는 슬롯 ) 
+	int32 NumSlots = 1;
+	
+	int32 MaxUnionWorkerPerSlot = 2;
+	int32 MaxSubtractWorkerPerSlot = 1;
+
+	// 단수히 디버그 (통계) 용 
+	TArray<TUniquePtr<std::atomic<int32>>>SlotUnionWorkerCounts; 
+	TArray<TUniquePtr<std::atomic<int32>>> SlotSubtractWorkerCounts;
+	
+	// 슬롯별 Union 큐 
+	TArray<TUniquePtr<TQueue<FBulletHoleBatch, EQueueMode::Mpsc>>> SlotUnionQueues;
+
+	// 슬롯별 Subtract 큐
+	TArray<TUniquePtr<TQueue<FUnionResult, EQueueMode::Mpsc>>> SlotSubtractQueues;
+	
+	// 청크 <=> 슬롯 매핑 (어떤 청크가 어떤 슬롯에서 처리 중인지)
+	TMap<int32, int32> ChunkToSlotMap;
+	FCriticalSection MapLock; 
+	
+	// 슬롯별 Worker 활성 상태
+	TArray<TUniquePtr<std::atomic<bool>>> SlotUnionActiveFlags;
+	TArray<TUniquePtr<std::atomic<bool>>> SlotSubtractActiveFlags;
+	 
+private:
+	void InitializeSlots();
+	void ShutdownSlots();
+	
+	// 작업을 적절한 슬롯에 라우팅	
+	int32 RouteToSlot(int32 ChunkIndex);
+	
+	// 가장 한가한 슬롯 찾기
+	int32 FindLeastBusySlot() const;
+
+	// Worker 시작
+	void KickUnionWorker(int32 SlotIndex);
+	void KickSubtractWorker(int32 SlotIndex);
+
+	// Worker 메인 루프 (Batch를 파라미터로 받음 - Mpsc 큐 안전성)
+	void ProcessSlotUnionWork(int32 SlotIndex, FBulletHoleBatch&& Batch);
+	void ProcessSlotSubtractWork(int32 SlotIndex, FUnionResult&& UnionResult);
+
+	// 슬롯 종료 시 매핑 정리
+	void CleanupSlotMapping(int32 SlotIndex);
+ 
 };
 
 

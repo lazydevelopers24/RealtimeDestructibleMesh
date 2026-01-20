@@ -925,6 +925,7 @@ protected:
 #endif
 
 private:
+	
 	FTimerHandle CollisionUpdateTimerHandle;
 
 	/** 지연 파편 정리 타이머 핸들 */
@@ -972,4 +973,5 @@ private:
 	virtual void BeginDestroy() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 };
