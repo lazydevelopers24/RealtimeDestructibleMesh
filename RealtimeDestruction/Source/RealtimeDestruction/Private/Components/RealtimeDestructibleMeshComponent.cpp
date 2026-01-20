@@ -503,17 +503,22 @@ void URealtimeDestructibleMeshComponent::UpdateCellStateFromDestruction(const FR
 		}
 
 		// SubCell 모드에서는 SubCell 파괴도 SuperCell 상태에 반영
-	if (bEnableSubcell)
+		// 단, Standalone에서만 (네트워크에서는 SubCell 정보 미동기화 + SubCell BFS 미사용)
+		if (bEnableSubcell)
+		{
+			const ENetMode CurrentNetMode = GetWorld()->GetNetMode();
+			if (CurrentNetMode == NM_Standalone)
 			{
-			for (const auto& SubCellPair : DestructionResult.NewlyDeadSubCells)
-			{
-				for (int32 SubCellId : SubCellPair.Value.Values)
+				for (const auto& SubCellPair : DestructionResult.NewlyDeadSubCells)
 				{
-					SupercellCache.OnSubCellDestroyed(SubCellPair.Key, SubCellId);
+					for (int32 SubCellId : SubCellPair.Value.Values)
+					{
+						SupercellCache.OnSubCellDestroyed(SubCellPair.Key, SubCellId);
+					}
 				}
 			}
 		}
-				}
+	}
 
 	//=====================================================================
 	// Phase 2: BFS로 앵커에서 분리된 셀 찾기
@@ -2033,10 +2038,16 @@ void URealtimeDestructibleMeshComponent::MulticastDestroyedCells_Implementation(
 		RecentDirectDestroyedCellIds.Append(DestroyedCellIds);
 	}
 
-	// 클라이언트: CellState에 파괴된 셀 추가
+	// 클라이언트: CellState에 파괴된 셀 추가 + SuperCell 상태 업데이트
 	for (int32 CellId : DestroyedCellIds)
 	{
 		CellState.DestroyedCells.Add(CellId);
+
+		// SuperCell 상태 업데이트 (Cell 파괴 정보만으로 Server와 동기화)
+		if (bEnableSupercell && SupercellCache.IsValid())
+		{
+			SupercellCache.OnCellDestroyed(CellId);
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Client] MulticastDestroyedCells: +%d cells, Total=%d"),
