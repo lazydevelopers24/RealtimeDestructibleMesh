@@ -69,7 +69,7 @@ public:
 	 * 블루프린트에서 AShooterProjectile에 붙일 때는 false로 설정하세요!
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction")
-	bool bAutoBindHit = true;
+	bool bAutoBindHit = false;
 
 	/** 구멍 반지름 (cm) - 호환성용 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction")
@@ -248,6 +248,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Destruction|Decal")
 	void GetCalculateDecalSize(FName SurfaceType,FVector& LocationOffset,  FRotator& RotatorOffset, FVector& SizeOffset) const;
 
+	/** 충돌 이벤트 핸들러 */
+
+	// collision shape의 On Component hit 이벤트와 바로 연결 가능한 블루프린트 노출 함수
+	UFUNCTION(BlueprintCallable, Category = "Destruction")
+	void ProcessProjectileHit(UPrimitiveComponent* HitComp, AActor* OtherActor,
+		UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+	// 라인트레이스용으로 쓸 래퍼함수 만들고 아래 함수는 private으로 숨기기
+	UFUNCTION(BlueprintCallable, Category = "Destruction")
+	void ProcessDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit);
+	
+	UFUNCTION(BlueprintCallable, Category = "Destruction")
+	void ProcessSphereDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FVector& ExplosionCenter );
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -255,13 +269,6 @@ protected:
 	// 내부 함수
 	//=========================================================================
 
-	/** 충돌 이벤트 핸들러 */
-	UFUNCTION()
-	void OnProjectileHit(UPrimitiveComponent* HitComp, AActor* OtherActor,
-		UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
-
-	void ProcessDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit);
-	void ProcessSphereDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FVector& ExplosionCenter );
 
 private:
 	bool EnsureToolMesh();

@@ -98,7 +98,7 @@ struct FIntArray
  * 월드 공간에서 회전된 직육면체를 표현
  * Note: UE의 FOrientedBox와 이름 충돌 방지를 위해 별도 정의
  */
-struct FSubCellOBB
+struct FCellOBB
 {
 	/** 박스 중심 (월드 좌표) */
 	FVector Center;
@@ -111,7 +111,7 @@ struct FSubCellOBB
 	FVector AxisY;
 	FVector AxisZ;
 
-	FSubCellOBB()
+	FCellOBB()
 		: Center(FVector::ZeroVector)
 		, HalfExtents(FVector::ZeroVector)
 		, AxisX(FVector::ForwardVector)
@@ -119,7 +119,7 @@ struct FSubCellOBB
 		, AxisZ(FVector::UpVector)
 	{}
 
-	FSubCellOBB(const FVector& InCenter, const FVector& InHalfExtents, const FQuat& Rotation)
+	FCellOBB(const FVector& InCenter, const FVector& InHalfExtents, const FQuat& Rotation)
 		: Center(InCenter)
 		, HalfExtents(InHalfExtents)
 	{
@@ -257,7 +257,7 @@ struct REALTIMEDESTRUCTION_API FQuantizedDestructionInput
 	 * @param OBB - 월드 공간의 OBB
 	 * @return 교차 여부
 	 */
-	bool IntersectsOBB(const FSubCellOBB& OBB) const;
+	bool IntersectsOBB(const FCellOBB& OBB) const;
 };
 
 /**
@@ -591,7 +591,7 @@ struct REALTIMEDESTRUCTION_API FGridCellCache
 	 * SubCell 월드 OBB (Oriented Bounding Box)
 	 * 메시의 회전과 비균일 스케일을 정확히 반영
 	 */
-	FSubCellOBB GetSubCellWorldOBB(int32 CellId, int32 SubCellId, const FTransform& MeshTransform) const
+	FCellOBB GetSubCellWorldOBB(int32 CellId, int32 SubCellId, const FTransform& MeshTransform) const
 	{
 		const FVector CellMin = IdToLocalMin(CellId);
 		const FIntVector SubCoord = SubCellIdToCoord(SubCellId);
@@ -613,7 +613,18 @@ struct REALTIMEDESTRUCTION_API FGridCellCache
 		const FVector WorldHalfExtents = SubCellSz * 0.5f * TransformScale;
 
 		// OBB 생성 (회전만 적용, 스케일은 HalfExtents에 이미 반영됨)
-		return FSubCellOBB(WorldCenter, WorldHalfExtents, MeshTransform.GetRotation());
+		return FCellOBB(WorldCenter, WorldHalfExtents, MeshTransform.GetRotation());
+	}
+
+	FCellOBB GetCellWorldOBB(int32 CellID, const FTransform& MeshTransform) const
+	{
+		const FVector CellLocalCenter = IdToLocalCenter(CellID);
+		const FVector CellWorldCenter = MeshTransform.TransformPosition(CellLocalCenter);
+		const FVector HalfExtents = CellSize * 0.5f;
+
+		FCellOBB CellWorldOBB(CellWorldCenter, HalfExtents, MeshTransform.GetRotation());
+
+		return CellWorldOBB;
 	}
 
 	/** AABB 내에 있는 Cell ID 목록 반환 */

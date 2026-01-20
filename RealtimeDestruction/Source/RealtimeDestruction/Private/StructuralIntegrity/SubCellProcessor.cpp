@@ -68,7 +68,7 @@ bool FSubCellProcessor::ProcessSubCellDestruction(
 			}
 
 			// SubCell의 월드 공간 OBB (메시의 회전과 비균일 스케일 정확히 반영)
-			const FSubCellOBB SubCellOBB = GridCache.GetSubCellWorldOBB(CellId, SubCellId, MeshTransform);
+			const FCellOBB SubCellOBB = GridCache.GetSubCellWorldOBB(CellId, SubCellId, MeshTransform);
 
 			// 월드 공간에서 Shape-OBB 교차 검사
 			const bool bIntersects = QuantizedShape.IntersectsOBB(SubCellOBB);

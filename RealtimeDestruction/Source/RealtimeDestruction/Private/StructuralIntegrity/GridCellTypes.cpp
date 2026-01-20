@@ -252,7 +252,7 @@ bool FQuantizedDestructionInput::ContainsPoint(const FVector& Point) const
 	return false;
 }
 
-bool FQuantizedDestructionInput::IntersectsOBB(const FSubCellOBB& OBB) const
+bool FQuantizedDestructionInput::IntersectsOBB(const FCellOBB& OBB) const
 {
 	// 양자화된 값을 cm 단위로 변환
 	const FVector Center = FVector(CenterMM.X, CenterMM.Y, CenterMM.Z) * 0.1f;
@@ -449,13 +449,13 @@ bool FQuantizedDestructionInput::IntersectsOBB(const FSubCellOBB& OBB) const
 			}
 
 			// 두께를 고려하여 OBB 확장
-			const FSubCellOBB ExpandedOBB(
+			const FCellOBB ExpandedOBB(
 				OBB.Center,
 				OBB.HalfExtents + FVector(ThicknessCm),
 				FQuat::FindBetweenNormals(FVector::ForwardVector, OBB.AxisX)
 			);
 			// 더 정확하게는 OBB 축을 직접 사용
-			FSubCellOBB TestOBB;
+			FCellOBB TestOBB;
 			TestOBB.Center = OBB.Center;
 			TestOBB.HalfExtents = OBB.HalfExtents + FVector(ThicknessCm);
 			TestOBB.AxisX = OBB.AxisX;

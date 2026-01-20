@@ -62,13 +62,9 @@ void UDestructionProjectileComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// bAutoBindHit이 false면 자동 바인딩 안 함
-	// (AShooterProjectile 등에서 수동으로 RequestDestructionManual 호출)
-	if (!bAutoBindHit)
+	// BP에서 루트의 collision event에 OnProjectileHit을 연결할 때 AutoBind false처리
+	if (bAutoBindHit)
 	{
-		return;
-	}
-
 	// Owner의 Root 컴포넌트가 PrimitiveComponent인 경우 OnHit 바인딩
 	AActor* Owner = GetOwner();
 	if (!Owner)
@@ -81,7 +77,7 @@ void UDestructionProjectileComponent::BeginPlay()
 	if (RootPrimitive)
 	{
 		// Hit 이벤트 바인딩
-		RootPrimitive->OnComponentHit.AddDynamic(this, &UDestructionProjectileComponent::OnProjectileHit);
+			RootPrimitive->OnComponentHit.AddDynamic(this, &UDestructionProjectileComponent::ProcessProjectileHit);
 
 		// Hit 이벤트가 발생하려면 Simulation Generates Hit Events가 true여야 함
 		if (!RootPrimitive->GetBodyInstance()->bNotifyRigidBodyCollision)
@@ -94,6 +90,7 @@ void UDestructionProjectileComponent::BeginPlay()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Root component is not a PrimitiveComponent. Hit events will not work."));
 	}
+	}
 
 	if (!ToolMeshPtr.IsValid())
 	{
@@ -104,7 +101,7 @@ void UDestructionProjectileComponent::BeginPlay()
 	}
 }
 
-void UDestructionProjectileComponent::OnProjectileHit(
+void UDestructionProjectileComponent::ProcessProjectileHit(
 	UPrimitiveComponent* HitComp,
 	AActor* OtherActor,
 	UPrimitiveComponent* OtherComp,
@@ -209,10 +206,10 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 				if (!EnsureToolMesh())
 				{
 					UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
-			}
+				}
 				
+			}
 		}
-	}
 	}
 	
 	float ToolRadius = ToolShape == EDestructionToolShape::Cylinder ? CylinderRadius : SphereRadius;
@@ -265,8 +262,8 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 			DrawDebugAffetedChunks(ToolBounds, FColor::Black);
 			Targets.Add(ChunkIndex);
 		}
-	}	
- 
+	}
+	
 	FVector Direction = GetToolDirection(Hit, Owner);
 	FVector ToolStart = Hit.ImpactPoint;
 	FVector ToolEnd = ToolStart + (Direction * CylinderHeight);
@@ -281,7 +278,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 			Targets.Add(ChunkIndex);			
 		}
 	}
-
+	
 	APawn* InstigatorPawn = Owner->GetInstigator();
 	APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
 	UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
@@ -297,14 +294,23 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 		Request.ToolShape = ToolShape;
 	
 		int32 HitMaterialID = DestructComp->GetMaterialIDFromFaceIndex(Hit.FaceIndex);
-		if (HitMaterialID == 1)
+		if (HitMaterialID != 1)
 		{
+			// 내부가 아니면서 직접 피격된 청크에만 데칼 스폰
+			if (TargetIndex == HitChunkIndex)
+			{
+				Request.bSpawnDecal = true;
+			}
+			else
+			{
 			Request.bSpawnDecal = false;
+		}
 		}
 		else
 		{
-			Request.bSpawnDecal = true;
+			Request.bSpawnDecal = false;
 		}
+		
 		FName SurfaceType = DestructComp->SurfaceType;
 		Request.SurfaceType = SurfaceType;
 		Request.DecalConfigID = DecalConfigID;  // 네트워크 전송용
