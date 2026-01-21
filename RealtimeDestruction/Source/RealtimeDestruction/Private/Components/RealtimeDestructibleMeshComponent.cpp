@@ -614,14 +614,18 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 		}
 
 		//=====================================================================
-		// Phase 4: 서버 → 클라이언트 신호 전송
+		// Phase 4: 서버 → 클라이언트 신호 전송 (서버에서만)
 		//=====================================================================
 		// 클라이언트에게 Detach 발생 신호만 전송 (클라이언트가 자체 BFS 실행)
-		UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachSignal SENDING - %d groups detached"),
-		       NewDetachedGroups.Num());
-		MulticastDetachSignal();
+		const bool bHasAuthority = GetOwner() && GetOwner()->HasAuthority();
+		if (bHasAuthority)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[GridCell] MulticastDetachSignal SENDING - %d groups detached"),
+			       NewDetachedGroups.Num());
+			MulticastDetachSignal();
+		}
 
-		// 서버: 분리된 셀의 삼각형 삭제
+		// 분리된 셀의 삼각형 삭제
 		for (const TArray<int32>& Group : NewDetachedGroups)
 		{
 			RemoveTrianglesForDetachedCells(Group);
@@ -1531,17 +1535,17 @@ void URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 	UE_LOG(LogTemp, Log, TEXT("RemoveTrianglesForDetachedCells: %d cells, %d chunks affected"),
 		DetachedCellIds.Num(), TotalChunksProcessed);
 
-	// 즉시 파편 정리
-	CleanupSmallFragments();
+	//// 즉시 파편 정리
+	//CleanupSmallFragments();
 
-	// 0.5초 후 추가 정리
-	GetWorld()->GetTimerManager().SetTimer(
-		FragmentCleanupTimerHandle,
-		this,
-		&URealtimeDestructibleMeshComponent::CleanupSmallFragments,
-		0.5f,
-		false
-	);
+	//// 0.5초 후 추가 정리
+	//GetWorld()->GetTimerManager().SetTimer(
+	//	FragmentCleanupTimerHandle,
+	//	this,
+	//	&URealtimeDestructibleMeshComponent::CleanupSmallFragments,
+	//	0.5f,
+	//	false
+	//);
 }
 
 void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
@@ -1567,6 +1571,9 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 			CellState,
 			bEnableSupercell && SupercellCache.IsValid(),
 			bEnableSubcell && (NetMode == NM_Standalone)); // subcell 동기화 안 하므로 subcell은 standalone에서만 허용
+
+		UE_LOG(LogTemp, Warning, TEXT("CleanupSmallFragments: DisconnectedCells=%d, DestroyedCells=%d"),
+			DisconnectedCells.Num(), CellState.DestroyedCells.Num());
 	}
 
 	int32 TotalRemoved = 0;
@@ -1581,7 +1588,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 		FMeshConnectedComponents ConnectedComponents(Mesh);
 		ConnectedComponents.FindConnectedTriangles();
 
-		if (ConnectedComponents.Num() <= 1) continue;
+		if (ConnectedComponents.Num() == 0) continue;
 
 		FTransform MeshTransform = ChunkMesh->GetComponentTransform();
 
@@ -1619,6 +1626,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 
 				// CellState 기반 분리 판정: 컴포넌트가 속한 모든 셀이 파괴되었는지 확인
 				bool bShouldRemove = false;
+				bool bConnectedToAnchor = false;
 				int32 TotalCellCount = 0;
 				int32 DestroyedCellCount = 0;
 
@@ -1670,32 +1678,66 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 
 					TotalCellCount = ComponentCellIds.Num();
 
+					//// 디버그: 프래그먼트 좌표 정보
+					//UE_LOG(LogTemp, Warning, TEXT("Fragment: Local=(%.1f,%.1f,%.1f) GridOrigin=(%.1f,%.1f,%.1f) CellSize=(%.1f,%.1f,%.1f) GridSize=(%d,%d,%d)"),
+					//	Centroid.X, Centroid.Y, Centroid.Z,
+					//	GridCellCache.GridOrigin.X, GridCellCache.GridOrigin.Y, GridCellCache.GridOrigin.Z,
+					//	GridCellCache.CellSize.X, GridCellCache.CellSize.Y, GridCellCache.CellSize.Z,
+					//	GridCellCache.GridSize.X, GridCellCache.GridSize.Y, GridCellCache.GridSize.Z);
+
 					// Anchor 연결성 검사: 컴포넌트의 셀 중 하나라도 Anchor에 연결되어 있는지 확인
-					bool bConnectedToAnchor = false;
+					int32 DisconnectedCount = 0;
+					int32 ConnectedCount = 0;
+					int32 InvalidCount = 0;
 					for (int32 CellId : ComponentCellIds)
 					{
+						// 유효하지 않은 셀은 스킵 (sparse grid)
+						if (!GridCellCache.GetCellExists(CellId))
+						{
+							InvalidCount++;
+							continue;
+						}
+
 						if (CellState.DestroyedCells.Contains(CellId))
 						{
 							DestroyedCellCount++;
 						}
-						// 파괴되지 않았고, Anchor에 연결된 셀이면 (DisconnectedCells에 없으면)
-						else if (!DisconnectedCells.Contains(CellId))
+						else if (DisconnectedCells.Contains(CellId))
 						{
+							DisconnectedCount++;
+						}
+						// 파괴되지 않았고, Anchor에 연결된 셀이면 (DisconnectedCells에 없으면)
+						else
+						{
+							ConnectedCount++;
 							bConnectedToAnchor = true;
 						}
 					}
 
-					// 분리 조건: Anchor에 연결된 셀이 하나도 없으면 제거
-					bShouldRemove = !bConnectedToAnchor;
+				//	UE_LOG(LogTemp, Warning, TEXT("Fragment: Total=%d, Invalid=%d, Destroyed=%d, Disconnected=%d, Connected=%d"),
+					//	TotalCellCount, InvalidCount, DestroyedCellCount, DisconnectedCount, ConnectedCount);
+
+					// 분리 조건:
+					// 1. 유효 셀이 하나도 없음 (Invalid=Total) → 무조건 떨어짐
+					// 2. 파괴된 cell이 하나라도 있고 + anchor 연결 cell이 없음 → 떨어짐
+					// 3. Disconnected 셀만 있고 Connected 없음 → 떨어짐
+					int32 ValidCellCount = TotalCellCount - InvalidCount;
+					bShouldRemove = (ValidCellCount == 0) ||
+					                (DestroyedCellCount > 0 && !bConnectedToAnchor) ||
+					                (DisconnectedCount > 0 && ConnectedCount == 0);
 				}
 
 				// 디버그 색상: 빨강 = 삭제 대상 (Anchor 분리), 초록 = 유지 (Anchor 연결)
 				if (bShowCellSpawnPosition)
 				{
 					FColor PointColor = bShouldRemove ? FColor::Red : FColor::Green;
-					DrawDebugPoint(GetWorld(), WorldPos, 15.0f, PointColor, false, 10.0f);
-					DrawDebugString(GetWorld(), WorldPos, FString::Printf(TEXT("%s (%d/%d destroyed)"),
-						bShouldRemove ? TEXT("Detached") : TEXT("Anchored"), DestroyedCellCount, TotalCellCount), nullptr, PointColor, 10.0f);
+
+					// 큰 점으로 ConnectedComponent 위치 표시
+					DrawDebugPoint(GetWorld(), WorldPos, 30.0f, PointColor, false, 10.0f);
+					DrawDebugString(GetWorld(), WorldPos, FString::Printf(TEXT("%s [%s] (%d/%d destroyed)"),
+						bShouldRemove ? TEXT("Detached") : TEXT("Anchored"),
+						bConnectedToAnchor ? TEXT("AnchorOK") : TEXT("AnchorNone"),
+						DestroyedCellCount, TotalCellCount), nullptr, PointColor, 10.0f);
 				}
 
 				// 모든 셀이 파괴된 컴포넌트는 파편으로 스폰 후 삭제
@@ -2142,11 +2184,11 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 		return;
 	}
 
-	// 서버는 이미 로컬에서 처리했으므로 스킵
-	if (GetOwner() && GetOwner()->HasAuthority())
-	{
-		return;
-	}
+	//// 서버는 이미 로컬에서 처리했으므로 스킵
+	//if (GetOwner() && GetOwner()->HasAuthority())
+	//{
+	//	return;
+	//}
 
 	UE_LOG(LogTemp, Warning, TEXT("[Client] MulticastDetachSignal RECEIVED - Running local BFS"));
 
@@ -2188,6 +2230,8 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 
 	// 분리된 셀들을 파괴됨 상태로 이동
 	CellState.MoveAllDetachedToDestroyed();
+
+	CleanupSmallFragments();
 
 	UE_LOG(LogTemp, Warning, TEXT("[Client] Detach processing complete"));
 }
@@ -2845,6 +2889,18 @@ void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMes
 	{
 		ApplyCollisionUpdate(TargetComp);
 	}
+
+	// Standalone: Boolean 완료 후 분리 셀 처리
+	// TODO: 매 Boolean마다 호출하면 렉 발생 - 타이머 기반으로 변경 필요
+	//UWorld* World = GetWorld();
+	//if (World && World->GetNetMode() == NM_Standalone)
+	//{
+	//	DisconnectedCellStateLogic(PendingDestructionResults);
+	//	PendingDestructionResults.Empty();
+	//}
+
+	// Boolean 완료 후 파편 정리 (비동기 연산 후 즉시 실행)
+	//CleanupSmallFragments();
 }
 
 void URealtimeDestructibleMeshComponent::RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp)
@@ -3450,19 +3506,17 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (PendingDestructionResults.Num() > 0)
+	// Standalone: 타이머 기반 분리 셀 처리
+	UWorld* World = GetWorld();
+	if (World && World->GetNetMode() == NM_Standalone && PendingDestructionResults.Num() > 0)
 	{
-		UWorld* World = GetWorld();
-		if (World)
+		StandaloneDetachTimer += DeltaTime;
+		if (StandaloneDetachTimer >= StandaloneDetachInterval)
 		{
-			const ENetMode NetMode = World->GetNetMode();
-			// Dedicated Server가 아닐 때만 여기서 Phase 2 실행
-			if (NetMode != NM_DedicatedServer)
-			{
-				DisconnectedCellStateLogic(PendingDestructionResults);
-			}
+			DisconnectedCellStateLogic(PendingDestructionResults);
+			PendingDestructionResults.Empty();
+			StandaloneDetachTimer = 0.0f;
 		}
-		PendingDestructionResults.Empty();
 	}
 #if !UE_BUILD_SHIPPING
 	if (bShowDebugText)
@@ -3512,7 +3566,6 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 		return;
 	}
 
-	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return;
@@ -3653,7 +3706,7 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 				AllResults.Add(Result);
 			}
 
-			DisconnectedCellStateLogic(AllResults);
+			//DisconnectedCellStateLogic(AllResults);
 
 			// ===== 로그 추가 =====
 			UE_LOG(LogTemp, Warning, TEXT("########## [BATCH END] ##########")); 
@@ -3661,6 +3714,9 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 
 		// 압축된 데이터로 전파
 		MulticastApplyOpsCompact(PendingServerBatchOpsCompact);
+
+		// 클라이언트에게 분리 셀 처리 신호 전송
+		MulticastDetachSignal();
 
 		// 대기열 비우기
 		PendingServerBatchOpsCompact.Empty();
@@ -3713,7 +3769,7 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 				AllResults.Add(Result);	UpdateCellStateFromDestruction(Op.Request);
 			}
 
-			DisconnectedCellStateLogic(AllResults);
+			//DisconnectedCellStateLogic(AllResults);
 
 			UE_LOG(LogTemp, Warning, TEXT("########## [BATCH END] ##########"));
 			UE_LOG(LogTemp, Warning, TEXT("")); 

@@ -1779,8 +1779,15 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 					bSubtractSuccess = ApplyMeshBooleanAsync(&WorkMesh, &CombinedToolMesh, &ResultMesh,
 					                                         EGeometryScriptBooleanOperation::Subtract, Options);
 				}
+				// Processor 유효성 재확인 (비동기 중 파괴될 수 있음)
+				Processor = LifeTimeToken->Processor.load();
+				if (!Processor)
+				{
+					SafeClearBusyBit();
+					return;
+				}
 				++Processor->ChunkGenerations[ChunkIndex];
-				
+
 				CurrentSubDuration = FPlatformTime::Seconds() - CurrentSubDuration;
 
 				if (bSubtractSuccess)

@@ -165,8 +165,12 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCells(
 	bool bEnableSupercell,
 	bool bEnableSubcell)
 {
+	UE_LOG(LogTemp, Warning, TEXT("FindDisconnectedCells: bEnableSupercell=%d, bEnableSubcell=%d"),
+		bEnableSupercell ? 1 : 0, bEnableSubcell ? 1 : 0);
+
 	if (bEnableSupercell)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("  -> Using HierarchicalLevel"));
 		return FindDisconnectedCellsHierarchicalLevel(
 			Cache,
 			SupercellCache,
@@ -175,11 +179,13 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCells(
 	}
 	if (bEnableSubcell)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("  -> Using SubCellLevel"));
 		return FindDisconnectedCellsSubCellLevel(
 			Cache,
 			CellState);
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("  -> Using CellLevel"));
 	return FindDisconnectedCellsCellLevel(Cache, CellState.DestroyedCells);
 }
 
@@ -222,15 +228,25 @@ TSet<int32> FCellDestructionSystem::FindDisconnectedCellsCellLevel(
 
 	// 3. 연결되지 않은 셀 = 분리됨
 	TSet<int32> Disconnected;
+	int32 ValidCellCount = 0;
+	int32 AnchorCount = 0;
 	for (int32 CellId = 0; CellId < Cache.GetTotalCellCount(); CellId++)
 	{
-		if (Cache.GetCellExists(CellId) &&
-		    !DestroyedCells.Contains(CellId) &&
-		    !Connected.Contains(CellId))
+		if (Cache.GetCellExists(CellId))
 		{
-			Disconnected.Add(CellId);
+			ValidCellCount++;
+			if (Cache.GetCellIsAnchor(CellId)) AnchorCount++;
+
+			if (!DestroyedCells.Contains(CellId) &&
+			    !Connected.Contains(CellId))
+			{
+				Disconnected.Add(CellId);
+			}
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("FindDisconnectedCellsCellLevel: Valid=%d, Anchor=%d, Destroyed=%d, Connected=%d, Disconnected=%d"),
+		ValidCellCount, AnchorCount, DestroyedCells.Num(), Connected.Num(), Disconnected.Num());
 
 	return Disconnected;
 }

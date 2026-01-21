@@ -988,6 +988,10 @@ private:
 	float ServerBatchTimer = 0.0f;
 	int32 ServerBatchSequence = 0;  // 압축용 시퀀스
 
+	// Standalone 분리 셀 처리 타이머
+	float StandaloneDetachTimer = 0.0f;
+	static constexpr float StandaloneDetachInterval = 0.1f;
+
 	//////////////////////////////////////////////////////////////////////////
 	// Late Join: Op 히스토리 (서버에서만 유지)
 	//////////////////////////////////////////////////////////////////////////
