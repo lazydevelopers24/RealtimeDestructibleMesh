@@ -946,6 +946,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowActivePhysicsBoxes = false;
 
+	/** Mesh Island 제거 시 ToolMesh/Intersection 와이어프레임 디버그 표시 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bDebugMeshIslandRemoval = false;
+
 	/** 최근 직접 파괴된 셀 ID (디버그 강조 표시용) */
 	TSet<int32> RecentDirectDestroyedCellIds;
 	

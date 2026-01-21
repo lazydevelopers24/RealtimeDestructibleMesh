@@ -1423,6 +1423,32 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 	// Laplacian Smoothing 적용 (계단 현상 완화)
 	ApplyHCLaplacianSmoothing(ToolMesh);
 
+	// 디버그: ToolMesh 와이어프레임 그리기 (월드 좌표)
+	if (bDebugMeshIslandRemoval)
+	{
+		if (UWorld* DebugWorld = GetWorld())
+		{
+			FTransform ComponentTransform = GetComponentTransform();
+
+			for (int32 TriId : ToolMesh.TriangleIndicesItr())
+			{
+				FIndex3i Tri = ToolMesh.GetTriangle(TriId);
+
+				// 로컬 좌표 → 월드 좌표 변환
+				FVector V0 = ComponentTransform.TransformPosition(FVector(ToolMesh.GetVertex(Tri.A)));
+				FVector V1 = ComponentTransform.TransformPosition(FVector(ToolMesh.GetVertex(Tri.B)));
+				FVector V2 = ComponentTransform.TransformPosition(FVector(ToolMesh.GetVertex(Tri.C)));
+
+				// 삼각형 엣지 그리기 (노란색, 4.5초)
+				DrawDebugLine(DebugWorld, V0, V1, FColor::Yellow, false, 4.5f, 0, 1.0f);
+				DrawDebugLine(DebugWorld, V1, V2, FColor::Yellow, false, 4.5f, 0, 1.0f);
+				DrawDebugLine(DebugWorld, V2, V0, FColor::Yellow, false, 4.5f, 0, 1.0f);
+			}
+
+			UE_LOG(LogTemp, Warning, TEXT("[DEBUG] ToolMesh wireframe drawn: %d triangles (Yellow, 4.5sec)"), ToolMesh.TriangleCount());
+		}
+	}
+
 	if (ToolMesh.TriangleCount() == 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("ToolMesh has 0 triangles!"));
@@ -1577,6 +1603,33 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(
 	//	0.5f,
 	//	false
 	//);
+
+	// 디버그: AccumulatedRemovedMesh (OriginalMesh ∩ ToolMesh) 와이어프레임 그리기
+	if (bDebugMeshIslandRemoval)
+	{
+		if (UWorld* DebugWorld = GetWorld())
+		{
+			FTransform ComponentTransform = GetComponentTransform();
+
+			for (int32 TriId : AccumulatedRemovedMesh.TriangleIndicesItr())
+			{
+				FIndex3i Tri = AccumulatedRemovedMesh.GetTriangle(TriId);
+
+				// 로컬 좌표 → 월드 좌표 변환
+				FVector V0 = ComponentTransform.TransformPosition(FVector(AccumulatedRemovedMesh.GetVertex(Tri.A)));
+				FVector V1 = ComponentTransform.TransformPosition(FVector(AccumulatedRemovedMesh.GetVertex(Tri.B)));
+				FVector V2 = ComponentTransform.TransformPosition(FVector(AccumulatedRemovedMesh.GetVertex(Tri.C)));
+
+				// 삼각형 엣지 그리기 (시안색, 4.5초)
+				DrawDebugLine(DebugWorld, V0, V1, FColor::Cyan, false, 4.5f, 0, 1.0f);
+				DrawDebugLine(DebugWorld, V1, V2, FColor::Cyan, false, 4.5f, 0, 1.0f);
+				DrawDebugLine(DebugWorld, V2, V0, FColor::Cyan, false, 4.5f, 0, 1.0f);
+			}
+
+			UE_LOG(LogTemp, Warning, TEXT("[DEBUG] AccumulatedRemovedMesh wireframe drawn: %d triangles (Cyan, 4.5sec)"),
+				AccumulatedRemovedMesh.TriangleCount());
+		}
+	}
 
 	OutRemovedMeshIsland = MoveTemp(AccumulatedRemovedMesh);
 	return true;
