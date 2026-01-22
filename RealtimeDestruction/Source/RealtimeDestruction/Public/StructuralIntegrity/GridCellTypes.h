@@ -46,22 +46,10 @@ inline constexpr int32 DIRECTION_OFFSETS[6][3] = {
 };
 
 /**
- * Cell 손상 수준
- * SubCell 상태에 따라 결정됨
- */
-UENUM(BlueprintType)
-enum class ECellDamageLevel : uint8
-{
-	Intact,     // 모든 SubCell 살아있음
-	Damaged,    // 일부 SubCell 파괴됨
-	Destroyed   // 모든 SubCell 파괴됨
-};
-
-/**
  * 파괴 형태 타입
  */
 UENUM(BlueprintType)
-enum class EDestructionShapeType : uint8
+enum class ECellDestructionShapeType : uint8
 {
 	Sphere,     // 구체 (폭발)
 	Box,        // 박스 (브리칭)
@@ -161,8 +149,8 @@ struct FCellOBB
 
 /**
  * 파괴 형태 정의
- * Note: 현재 원통은 Rotation 값은 있지만 계산에 포함되지 않아 항상 Z축과 평행한 방향만 지원.
- * 회전값 줄 경우 Line shape 사용할 것.
+ * Note: 원통은 Rotation을 반영해 임의 방향을 지원함.
+ * 선형 파괴가 필요하면 Line shape를 사용할 것.
  * 추후 Line과 Cylinder를 통합하거나 Cylinder를 Axis-Aligned용으로 분리 요망.
  */
 USTRUCT(BlueprintType)
@@ -172,9 +160,13 @@ struct REALTIMEDESTRUCTION_API FCellDestructionShape
 
 	/** 형태 타입 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	EDestructionShapeType Type = EDestructionShapeType::Sphere;
+	ECellDestructionShapeType Type = ECellDestructionShapeType::Sphere;
 
-	/** 중심점 (월드 좌표) */
+	/**
+	 * 중심점
+	 * 구, 박스, 원통 -> 중심
+	 * 라인 -> 시작점
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector Center = FVector::ZeroVector;
 
@@ -182,7 +174,10 @@ struct REALTIMEDESTRUCTION_API FCellDestructionShape
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float Radius = 50.0f;
 
-	/** 박스 범위 (박스 타입용) */
+	/**
+	 * 박스 범위 (박스 타입용)
+	 * 원통은 높이 대신 이 필드의 z값을 사용
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector BoxExtent = FVector::ZeroVector;
 
@@ -201,8 +196,11 @@ struct REALTIMEDESTRUCTION_API FCellDestructionShape
 	/** 점이 파괴 영역 안에 있는지 확인 */
 	bool ContainsPoint(const FVector& Point) const;
 
-	// [deprecated]: 사용하는 곳이 없음
-	/** FRealtimeDestructionRequest로부터 FCellDestructionShape 생성 */
+	/**
+	 * FRealtimeDestructionRequest로부터 FCellDestructionShape 생성.
+	 * ToolShape 타입에 따라 Sphere/Line으로 변환하며,
+	 * Cylinder는 ToolForwardVector 방향의 Line으로 매핑한다.
+	 */
 	static FCellDestructionShape CreateFromRequest(const FRealtimeDestructionRequest& Request);
 };
 
@@ -217,7 +215,7 @@ struct REALTIMEDESTRUCTION_API FQuantizedDestructionInput
 
 	/** 파괴 형태 타입 */
 	UPROPERTY()
-	EDestructionShapeType Type = EDestructionShapeType::Sphere;
+	ECellDestructionShapeType Type = ECellDestructionShapeType::Sphere;
 
 	/** 중심점 (mm 단위, 정수) - cm * 10 */
 	UPROPERTY()

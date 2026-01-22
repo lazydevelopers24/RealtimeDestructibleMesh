@@ -11,10 +11,10 @@ bool FCellDestructionShape::ContainsPoint(const FVector& Point) const
 {
 	switch (Type)
 	{
-	case EDestructionShapeType::Sphere:
+	case ECellDestructionShapeType::Sphere:
 		return FVector::DistSquared(Point, Center) <= Radius * Radius;
 
-	case EDestructionShapeType::Box:
+	case ECellDestructionShapeType::Box:
 		{
 			// 회전이 있는 경우
 			if (!Rotation.IsNearlyZero())
@@ -35,17 +35,19 @@ bool FCellDestructionShape::ContainsPoint(const FVector& Point) const
 			}
 		}
 
-	case EDestructionShapeType::Cylinder:
+	case ECellDestructionShapeType::Cylinder:
 		{
-			// XY 평면에서 거리 + Z 범위 체크
-			const float DistXYSq = FMath::Square(Point.X - Center.X) +
-			                       FMath::Square(Point.Y - Center.Y);
+			// XY distance + Z range check in cylinder local space
+			const FVector LocalPoint = Rotation.IsNearlyZero()
+				? (Point - Center)
+				: Rotation.UnrotateVector(Point - Center);
 
+			const float DistXYSq = FMath::Square(LocalPoint.X) + FMath::Square(LocalPoint.Y);
 			return DistXYSq <= Radius * Radius &&
-			       FMath::Abs(Point.Z - Center.Z) <= BoxExtent.Z;
+			       FMath::Abs(LocalPoint.Z) <= BoxExtent.Z;
 		}
 
-	case EDestructionShapeType::Line:
+	case ECellDestructionShapeType::Line:
 		{
 			// 선분까지의 최단 거리
 			const FVector LineDir = EndPoint - Center;
@@ -75,7 +77,6 @@ bool FCellDestructionShape::ContainsPoint(const FVector& Point) const
 }
 
 
-// [deprecated]: 사용하는 곳이 없음
 FCellDestructionShape FCellDestructionShape::CreateFromRequest(const FRealtimeDestructionRequest& Request)
 {
 	FCellDestructionShape Shape;
@@ -85,17 +86,17 @@ FCellDestructionShape FCellDestructionShape::CreateFromRequest(const FRealtimeDe
 	switch (Request.ToolShape)
 	{
 	case EDestructionToolShape::Sphere:
-		Shape.Type = EDestructionShapeType::Sphere;
+		Shape.Type = ECellDestructionShapeType::Sphere;
 		break;
 
 	case EDestructionToolShape::Cylinder:
-		Shape.Type = EDestructionShapeType::Line;
-		Shape.EndPoint = Request.ImpactPoint - Request.ImpactNormal * Request.ShapeParams.Height;
+		Shape.Type = ECellDestructionShapeType::Line;
+		Shape.EndPoint = Request.ImpactPoint + Request.ToolForwardVector * Request.ShapeParams.Height;
 		Shape.LineThickness = Request.ShapeParams.Radius;
 		break;
 
 	default:
-		Shape.Type = EDestructionShapeType::Sphere;
+		Shape.Type = ECellDestructionShapeType::Sphere;
 		break;
 	}
 
@@ -190,10 +191,10 @@ bool FQuantizedDestructionInput::ContainsPoint(const FVector& Point) const
 
 	switch (Type)
 	{
-	case EDestructionShapeType::Sphere:
+	case ECellDestructionShapeType::Sphere:
 		return FVector::DistSquared(Point, Center) <= RadiusCm * RadiusCm;
 
-	case EDestructionShapeType::Box:
+	case ECellDestructionShapeType::Box:
 		{
 			if (RotationCentidegrees != FIntVector::ZeroValue)
 			{
@@ -216,16 +217,24 @@ bool FQuantizedDestructionInput::ContainsPoint(const FVector& Point) const
 			}
 		}
 
-	case EDestructionShapeType::Cylinder:
+	case ECellDestructionShapeType::Cylinder:
 		{
-			const float DistXYSq = FMath::Square(Point.X - Center.X) +
-			                       FMath::Square(Point.Y - Center.Y);
+			const FRotator Rot(
+				RotationCentidegrees.X * 0.01f,
+				RotationCentidegrees.Y * 0.01f,
+				RotationCentidegrees.Z * 0.01f
+			);
+			const FVector LocalPoint = Rot.IsNearlyZero()
+				? (Point - Center)
+				: Rot.UnrotateVector(Point - Center);
+
+			const float DistXYSq = FMath::Square(LocalPoint.X) + FMath::Square(LocalPoint.Y);
 
 			return DistXYSq <= RadiusCm * RadiusCm &&
-			       FMath::Abs(Point.Z - Center.Z) <= BoxExtentCm.Z;
+			       FMath::Abs(LocalPoint.Z) <= BoxExtentCm.Z;
 		}
 
-	case EDestructionShapeType::Line:
+	case ECellDestructionShapeType::Line:
 		{
 			const FVector EndPt = FVector(EndPointMM.X, EndPointMM.Y, EndPointMM.Z) * 0.1f;
 			const float ThicknessCm = LineThicknessMM * 0.1f;
@@ -263,14 +272,14 @@ bool FQuantizedDestructionInput::IntersectsOBB(const FCellOBB& OBB) const
 
 	switch (Type)
 	{
-	case EDestructionShapeType::Sphere:
+	case ECellDestructionShapeType::Sphere:
 		{
 			// Sphere-OBB intersection: OBB 위의 가장 가까운 점이 구 안에 있는지 확인
 			const FVector ClosestPoint = OBB.GetClosestPoint(Center);
 			return FVector::DistSquared(ClosestPoint, Center) <= RadiusCm * RadiusCm;
 		}
 
-	case EDestructionShapeType::Box:
+	case ECellDestructionShapeType::Box:
 		{
 			// OBB vs OBB intersection using SAT (Separating Axis Theorem)
 			// 15개 축 검사: 각 박스의 3축 + 9개 에지 교차 축
@@ -362,14 +371,27 @@ bool FQuantizedDestructionInput::IntersectsOBB(const FCellOBB& OBB) const
 			return true;
 		}
 
-	case EDestructionShapeType::Cylinder:
+	case ECellDestructionShapeType::Cylinder:
 		{
-			// Cylinder-OBB intersection
-			// 원통은 Z축 정렬로 가정 (기존 코드와 동일한 가정)
-			// OBB를 원통의 로컬 공간에서 검사
+			// Cylinder-OBB intersection in cylinder local space
+			FQuat ShapeQuat = FQuat::Identity;
+			if (RotationCentidegrees != FIntVector::ZeroValue)
+			{
+				const FRotator ShapeRot(
+					RotationCentidegrees.X * 0.01f,
+					RotationCentidegrees.Y * 0.01f,
+					RotationCentidegrees.Z * 0.01f
+				);
+				ShapeQuat = ShapeRot.Quaternion();
+			}
 
-			// Z 범위 검사: OBB의 Z축 투영 범위와 원통의 Z 범위
-			// OBB의 8개 꼭지점의 Z 좌표 범위 계산
+			const FQuat InvQuat = ShapeQuat.Inverse();
+			const FVector LocalCenter = InvQuat.RotateVector(OBB.Center - Center);
+			const FVector LocalAxisX = InvQuat.RotateVector(OBB.AxisX);
+			const FVector LocalAxisY = InvQuat.RotateVector(OBB.AxisY);
+			const FVector LocalAxisZ = InvQuat.RotateVector(OBB.AxisZ);
+
+			// Z range check: local OBB Z projection vs cylinder Z range
 			float OBBMinZ = FLT_MAX, OBBMaxZ = -FLT_MAX;
 			for (int32 i = 0; i < 8; ++i)
 			{
@@ -378,22 +400,21 @@ bool FQuantizedDestructionInput::IntersectsOBB(const FCellOBB& OBB) const
 					((i & 2) ? OBB.HalfExtents.Y : -OBB.HalfExtents.Y),
 					((i & 4) ? OBB.HalfExtents.Z : -OBB.HalfExtents.Z)
 				);
-				const FVector WorldCorner = OBB.LocalToWorld(LocalCorner);
+				const FVector WorldCorner = LocalCenter
+					+ LocalAxisX * LocalCorner.X
+					+ LocalAxisY * LocalCorner.Y
+					+ LocalAxisZ * LocalCorner.Z;
 				OBBMinZ = FMath::Min(OBBMinZ, WorldCorner.Z);
 				OBBMaxZ = FMath::Max(OBBMaxZ, WorldCorner.Z);
 			}
 
-			// Z 범위 분리 검사
-			if (OBBMaxZ < Center.Z - BoxExtentCm.Z || OBBMinZ > Center.Z + BoxExtentCm.Z)
+			if (OBBMaxZ < -BoxExtentCm.Z || OBBMinZ > BoxExtentCm.Z)
 			{
 				return false;
 			}
 
-			// XY 평면에서 원과 OBB의 2D 교차 검사
-			// OBB를 XY 평면에 투영한 사각형과 원의 교차
+			// XY plane circle vs OBB projection in local space
 			float MinDistSq = FLT_MAX;
-
-			// OBB의 8개 꼭지점 중 XY 평면에서 원 중심에 가장 가까운 점 찾기
 			for (int32 i = 0; i < 8; ++i)
 			{
 				const FVector LocalCorner(
@@ -401,38 +422,38 @@ bool FQuantizedDestructionInput::IntersectsOBB(const FCellOBB& OBB) const
 					((i & 2) ? OBB.HalfExtents.Y : -OBB.HalfExtents.Y),
 					((i & 4) ? OBB.HalfExtents.Z : -OBB.HalfExtents.Z)
 				);
-				const FVector WorldCorner = OBB.LocalToWorld(LocalCorner);
-				const float DistSq = FMath::Square(WorldCorner.X - Center.X) + FMath::Square(WorldCorner.Y - Center.Y);
+				const FVector WorldCorner = LocalCenter
+					+ LocalAxisX * LocalCorner.X
+					+ LocalAxisY * LocalCorner.Y
+					+ LocalAxisZ * LocalCorner.Z;
+				const float DistSq = FMath::Square(WorldCorner.X) + FMath::Square(WorldCorner.Y);
 				MinDistSq = FMath::Min(MinDistSq, DistSq);
 			}
 
-			// 꼭지점 중 하나라도 원 안에 있으면 교차
 			if (MinDistSq <= RadiusCm * RadiusCm)
 			{
 				return true;
 			}
 
-			// OBB 중심이 원 안에 있는지
-			const float CenterDistSq = FMath::Square(OBB.Center.X - Center.X) + FMath::Square(OBB.Center.Y - Center.Y);
+			const float CenterDistSq = FMath::Square(LocalCenter.X) + FMath::Square(LocalCenter.Y);
 			if (CenterDistSq <= RadiusCm * RadiusCm)
 			{
 				return true;
 			}
 
-			// OBB의 4개 에지(XY 평면 투영)와 원의 교차
-			// 보수적 근사: OBB 바운딩 원과 비교
+			// Conservative approximation: compare against projected OBB radius
 			const float OBBRadiusXY = FMath::Sqrt(
-				FMath::Square(OBB.HalfExtents.X * OBB.AxisX.X + OBB.HalfExtents.Y * OBB.AxisY.X) +
-				FMath::Square(OBB.HalfExtents.X * OBB.AxisX.Y + OBB.HalfExtents.Y * OBB.AxisY.Y)
+				FMath::Square(OBB.HalfExtents.X * LocalAxisX.X + OBB.HalfExtents.Y * LocalAxisY.X) +
+				FMath::Square(OBB.HalfExtents.X * LocalAxisX.Y + OBB.HalfExtents.Y * LocalAxisY.Y)
 			) + FMath::Sqrt(
-				FMath::Square(OBB.HalfExtents.Z * OBB.AxisZ.X) +
-				FMath::Square(OBB.HalfExtents.Z * OBB.AxisZ.Y)
+				FMath::Square(OBB.HalfExtents.Z * LocalAxisZ.X) +
+				FMath::Square(OBB.HalfExtents.Z * LocalAxisZ.Y)
 			);
 
 			return CenterDistSq <= FMath::Square(RadiusCm + OBBRadiusXY);
 		}
 
-	case EDestructionShapeType::Line:
+	case ECellDestructionShapeType::Line:
 		{ 
 
 		// m -> cm로 변환  

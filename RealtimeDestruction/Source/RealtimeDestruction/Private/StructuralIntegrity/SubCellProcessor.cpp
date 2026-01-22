@@ -262,13 +262,13 @@ FBox FSubCellProcessor::ComputeShapeAABB(const FQuantizedDestructionInput& Shape
 
 	switch (Shape.Type)
 	{
-	case EDestructionShapeType::Sphere:
+	case ECellDestructionShapeType::Sphere:
 		return FBox(
 			Center - FVector(Radius),
 			Center + FVector(Radius)
 		);
 
-	case EDestructionShapeType::Box:
+	case ECellDestructionShapeType::Box:
 		{
 			const FRotator Rotation = FRotator(
 				Shape.RotationCentidegrees.Y * 0.01f,
@@ -303,14 +303,38 @@ FBox FSubCellProcessor::ComputeShapeAABB(const FQuantizedDestructionInput& Shape
 			}
 		}
 
-	case EDestructionShapeType::Cylinder:
-		// 실린더: XY 평면에서 반경, Z 방향으로 높이
-		return FBox(
-			FVector(Center.X - Radius, Center.Y - Radius, Center.Z - BoxExtent.Z),
-			FVector(Center.X + Radius, Center.Y + Radius, Center.Z + BoxExtent.Z)
-		);
+	case ECellDestructionShapeType::Cylinder:
+		{
+			const FVector CylinderExtent(Radius, Radius, BoxExtent.Z);
+			const FRotator Rotation(
+				Shape.RotationCentidegrees.X * 0.01f,
+				Shape.RotationCentidegrees.Y * 0.01f,
+				Shape.RotationCentidegrees.Z * 0.01f
+			);
 
-	case EDestructionShapeType::Line:
+			if (Rotation.IsNearlyZero())
+			{
+				return FBox(
+					Center - CylinderExtent,
+					Center + CylinderExtent
+				);
+			}
+
+			FBox Result(ForceInit);
+			const FQuat Rot = Rotation.Quaternion();
+			for (int32 i = 0; i < 8; ++i)
+			{
+				const FVector LocalCorner(
+					((i & 1) ? CylinderExtent.X : -CylinderExtent.X),
+					((i & 2) ? CylinderExtent.Y : -CylinderExtent.Y),
+					((i & 4) ? CylinderExtent.Z : -CylinderExtent.Z)
+				);
+				Result += Center + Rot.RotateVector(LocalCorner);
+			}
+			return Result;
+		}
+
+	case ECellDestructionShapeType::Line:
 		{
 			// 선분의 AABB + 두께
 			FBox Result(ForceInit);

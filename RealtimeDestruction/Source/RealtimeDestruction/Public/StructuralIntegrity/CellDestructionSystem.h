@@ -68,21 +68,6 @@ public:
 		const FQuantizedDestructionInput& Shape,
 		const FTransform& MeshTransform,
 		FCellState& InOutCellState);
-
-	//=========================================================================
-	// Cell 상태 조회
-	//=========================================================================
-
-	/**
-	 * <<<SubCell Level API>>>
-	 * Cell의 손상 수준 반환
-	 * SubCell 상태에 따라 Intact/Damaged/Destroyed 반환
-	 *
-	 * @param CellId - 셀 ID
-	 * @param CellState - 셀 상태
-	 * @return 손상 수준
-	 */
-	static ECellDamageLevel GetCellDamageLevel(int32 CellId, const FCellState& CellState);
 	
 	//=========================================================================
 	// 구조적 무결성 검사 (BFS)

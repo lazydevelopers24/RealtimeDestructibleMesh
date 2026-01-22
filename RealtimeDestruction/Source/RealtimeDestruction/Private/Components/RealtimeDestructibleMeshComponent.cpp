@@ -406,27 +406,7 @@ FDestructionResult URealtimeDestructibleMeshComponent::DestructionLogic(const FR
 	FDestructionResult DestructionResult;
 
 	// Request를 FDestructionShape로 변환
-	FCellDestructionShape Shape;
-	Shape.Center = Request.ImpactPoint;
-	Shape.Radius = Request.ShapeParams.Radius;
-
-	// ToolShape에 따른 타입 변환
-	switch (Request.ToolShape)
-	{
-	case EDestructionToolShape::Sphere:
-		Shape.Type = EDestructionShapeType::Sphere;
-		break;
-	case EDestructionToolShape::Cylinder:
-		Shape.Type = EDestructionShapeType::Line;  // Cylinder는 회전 미지원, Line으로 처리
-		// 방향 계산 (ImpactNormal 반대 방향으로 깊이만큼)
-		//Shape.EndPoint = Request.ImpactPoint - Request.ImpactNormal * Request.ShapeParams.Height;
-		Shape.EndPoint = Request.ImpactPoint + Request.ToolForwardVector * Request.ShapeParams.Height;
-		Shape.LineThickness = Request.ShapeParams.Radius;
-		break;
-	default:
-		Shape.Type = EDestructionShapeType::Sphere;
-		break;
-	}
+	FCellDestructionShape Shape = FCellDestructionShape::CreateFromRequest(Request);
 
 	// 양자화된 입력 생성
 	FQuantizedDestructionInput QuantizedInput = FQuantizedDestructionInput::FromDestructionShape(Shape);
@@ -3850,7 +3830,7 @@ void URealtimeDestructibleMeshComponent::RegisterDecalToCells(UDecalComponent* D
 	FVector SearchCenter = Decal->GetComponentLocation();
 
 	FCellDestructionShape DecalShape;
-	DecalShape.Type = EDestructionShapeType::Box;
+	DecalShape.Type = ECellDestructionShapeType::Box;
 	DecalShape.Center = SearchCenter;
 	DecalShape.BoxExtent = EffectiveExtent;
 	DecalShape.Rotation = Decal->GetComponentRotation();

@@ -102,12 +102,7 @@ private:
 	static void DetermineAnchors(
 		FGridCellCache& OutCache,
 		float HeightThreshold);
-
-	/**
-	 * 셀 중심점 계산
-	 */
-	static void CalculateCellCenters(FGridCellCache& OutCache);
-
+	
 	/**
 	 * 메시 복셀화 (내부 셀 채우기) - DynamicMesh 버전
 	 */

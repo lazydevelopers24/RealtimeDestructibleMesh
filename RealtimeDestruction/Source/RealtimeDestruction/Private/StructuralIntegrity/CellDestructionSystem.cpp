@@ -56,29 +56,6 @@ FDestructionResult FCellDestructionSystem::ProcessCellDestructionWithSubCells(
 	return Result;
 }
 
-ECellDamageLevel FCellDestructionSystem::GetCellDamageLevel(int32 CellId, const FCellState& CellState)
-{
-	// Destroyed 확인
-	if (CellState.DestroyedCells.Contains(CellId))
-	{
-		return ECellDamageLevel::Destroyed;
-	}
-
-	// SubCell 상태 확인
-	const FSubCell* SubCellState = CellState.SubCellStates.Find(CellId);
-	if (!SubCellState)
-	{
-		return ECellDamageLevel::Intact;  // SubCell 상태 없음 = 손상 없음
-	}
-
-	if (SubCellState->IsFullyDestroyed())
-	{
-		return ECellDamageLevel::Destroyed;
-	}
-
-	return ECellDamageLevel::Damaged;
-}
-
 //=============================================================================
 // FCellDestructionSystem - 셀 파괴 판정 (기존 Cell Level API)
 //=============================================================================
