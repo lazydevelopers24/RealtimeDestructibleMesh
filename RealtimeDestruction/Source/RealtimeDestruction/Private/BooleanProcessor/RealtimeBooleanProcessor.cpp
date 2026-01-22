@@ -705,142 +705,143 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 				TrySimplify(ResultMesh, ChunkIndex, UnionResult.UnionCount);
 			}
 		}
-			else
-			{
-				if (UnionResult.SharedToolMesh.IsValid())
-				{
-					FGeometryScriptMeshBooleanOptions Ops;
-					Ops.bFillHoles = true;
-					Ops.bSimplifyOutput = false;
-
-					FDynamicMesh3* ToolMesh = UnionResult.SharedToolMesh.Get();
-					FDynamicMesh3 ToolMeshForIntersection = *ToolMesh;
-					ToolMeshForIntersection.ReverseOrientation();
-
-					// intersection
-					FDynamicMesh3 Debris;
-					bool bSuccessIntersection = ApplyMeshBooleanAsync(
-						&WorkMesh,
-						&ToolMeshForIntersection,
-						&Debris,
-						EGeometryScriptBooleanOperation::Intersection,
-						Ops);
-
-					if (bSuccessIntersection && Debris.TriangleCount() > 0)
-					{
-						if (UnionResult.IslandContext.IsValid())
-						{
-							FScopeLock Lock(&UnionResult.IslandContext->MeshLock);
-							FDynamicMeshEditor Editor(&UnionResult.IslandContext->AccumulatedDebrisMesh);
-							FMeshIndexMappings Mappings;
-							Editor.AppendMesh(&Debris, Mappings);
-							bHasDebris = true;
-						}
-					}
-
-					// subtract
-					bSuccess = ApplyMeshBooleanAsync(
-						&WorkMesh,
-						ToolMesh,
-						&ResultMesh,
-						EGeometryScriptBooleanOperation::Subtract,
-						Ops);
-				}
-			}
-		}
-
-		// ===== 5. Apply results (GameThread) =====
-		if (bSuccess)
-		{
-			AsyncTask(ENamedThreads::GameThread,
-				[WeakOwner = OwnerComponent,
-				 LifeTimeToken = LifeTime,
-				 ChunkIndex,
-				 SlotIndex,
-				 ResultMesh = MoveTemp(ResultMesh),
-				 Context = UnionResult.IslandContext,
-				 Decals = MoveTemp(UnionResult.Decals),
-				 UnionCount = UnionResult.UnionCount,
-				 this]() mutable
-				{
-					if (!WeakOwner.IsValid())
-					{
-						return;
-					}
-
-					if (!LifeTimeToken.IsValid() || !LifeTimeToken->bAlive.load())
-					{
-						return;
-					}
-
-					FRealtimeBooleanProcessor* Proc = LifeTimeToken->Processor.load();
-					if (!Proc)
-					{
-						return;
-					}
-
-					// Apply mesh.
-					WeakOwner->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
-
-					// Spawn debris
-					if (Context.IsValid())
-					{
-						if (Context->RemainingTaskCount.fetch_sub(1) == 1)
-						{
-							if (Context->Owner.IsValid() && Context->AccumulatedDebrisMesh.TriangleCount() > 0)
-							{
-								UE_LOG(LogTemp, Display, TEXT("DebrisDebug/spawn"));
-								TArray<UMaterialInterface*> Materials;
-								if (auto ChunkMesh = WeakOwner->GetChunkMeshComponent(0))
-								{
-									for (int32 i = 0; i < ChunkMesh->GetNumMaterials(); i++)
-									{
-										Materials.Add(ChunkMesh->GetMaterial(i));
-									}
-								}
-
-								Context->Owner->SpawnDebrisActor(MoveTemp(Context->AccumulatedDebrisMesh), Materials);
-							}
-						}
-					}
-
-					// ===== Decrement counters (shutdown check) =====
-			          if (LifeTime.IsValid() && LifeTime->bAlive.load() && SlotSubtractWorkerCounts.IsValidIndex(
-				          SlotIndex))
-					{
-						SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
-					}
-
-					// Update counters.
-					Proc->ChunkGenerations[ChunkIndex]++;
-					Proc->ChunkHoleCount[ChunkIndex] += UnionCount;
-
-					// If queue has work, re-kick.
-					if (!Proc->SlotSubtractQueues[SlotIndex]->IsEmpty())
-					{
-						Proc->KickSubtractWorker(SlotIndex);
-					}
-
-					// Next kick.
-					Proc->KickProcessIfNeededPerChunk();
-				});
-		}
 		else
 		{
-			// Even on failure, re-kick if queue has work (GameThread).
-			AsyncTask(ENamedThreads::GameThread, [this, SlotIndex]()
+			if (UnionResult.SharedToolMesh.IsValid())
 			{
-				if (SlotSubtractWorkerCounts.IsValidIndex(SlotIndex))
+				FGeometryScriptMeshBooleanOptions Ops;
+				Ops.bFillHoles = true;
+				Ops.bSimplifyOutput = false;
+
+				FDynamicMesh3* ToolMesh = UnionResult.SharedToolMesh.Get();
+				FDynamicMesh3 ToolMeshForIntersection = *ToolMesh;
+				// ToolMeshForIntersection.ReverseOrientation();
+				// ToolMesh->ReverseOrientation();
+
+				// intersection
+				FDynamicMesh3 Debris;
+				bool bSuccessIntersection = ApplyMeshBooleanAsync(
+					&WorkMesh,
+					&ToolMeshForIntersection,
+					&Debris,
+					EGeometryScriptBooleanOperation::Intersection,
+					Ops);
+
+				if (bSuccessIntersection && Debris.TriangleCount() > 0)
 				{
-					SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
+					if (UnionResult.IslandContext.IsValid())
+					{
+						FScopeLock Lock(&UnionResult.IslandContext->MeshLock);
+						FDynamicMeshEditor Editor(&UnionResult.IslandContext->AccumulatedDebrisMesh);
+						FMeshIndexMappings Mappings;
+						Editor.AppendMesh(&Debris, Mappings);
+						bHasDebris = true;
+					}
 				}
-			
-				if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
-				{
-					KickSubtractWorker(SlotIndex);
-				}
-			});
+
+				// subtract
+				bSuccess = ApplyMeshBooleanAsync(
+					&WorkMesh,
+					ToolMesh,
+					&ResultMesh,
+					EGeometryScriptBooleanOperation::Subtract,
+					Ops);
+			}
 		}
+	}
+
+	// ===== 5. Apply results (GameThread) =====
+	if (bSuccess)
+	{
+		AsyncTask(ENamedThreads::GameThread,
+		          [WeakOwner = OwnerComponent,
+			          LifeTimeToken = LifeTime,
+			          ChunkIndex,
+			          SlotIndex,
+			          ResultMesh = MoveTemp(ResultMesh),
+			          Context = UnionResult.IslandContext,
+			          Decals = MoveTemp(UnionResult.Decals),
+			          UnionCount = UnionResult.UnionCount,
+			          this]() mutable
+		          {
+			          if (!WeakOwner.IsValid())
+			          {
+				          return;
+			          }
+
+			          if (!LifeTimeToken.IsValid() || !LifeTimeToken->bAlive.load())
+			          {
+				          return;
+			          }
+
+			          FRealtimeBooleanProcessor* Proc = LifeTimeToken->Processor.load();
+			          if (!Proc)
+			          {
+				          return;
+			          }
+
+			          // Apply mesh.
+			          WeakOwner->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
+
+			          // Spawn debris
+			          if (Context.IsValid())
+			          {
+				          if (Context->RemainingTaskCount.fetch_sub(1) == 1)
+				          {
+					          if (Context->Owner.IsValid() && Context->AccumulatedDebrisMesh.TriangleCount() > 0)
+					          {
+						          UE_LOG(LogTemp, Display, TEXT("DebrisDebug/spawn"));
+						          TArray<UMaterialInterface*> Materials;
+						          if (auto ChunkMesh = WeakOwner->GetChunkMeshComponent(0))
+						          {
+							          for (int32 i = 0; i < ChunkMesh->GetNumMaterials(); i++)
+							          {
+								          Materials.Add(ChunkMesh->GetMaterial(i));
+							          }
+						          }
+
+						          Context->Owner->SpawnDebrisActor(MoveTemp(Context->AccumulatedDebrisMesh), Materials);
+					          }
+				          }
+			          }
+
+			          // ===== Decrement counters (shutdown check) =====
+			          if (LifeTime.IsValid() && LifeTime->bAlive.load() && SlotSubtractWorkerCounts.IsValidIndex(
+				          SlotIndex))
+			          {
+				          SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
+			          }
+
+			          // Update counters.
+			          Proc->ChunkGenerations[ChunkIndex]++;
+			          Proc->ChunkHoleCount[ChunkIndex] += UnionCount;
+
+			          // If queue has work, re-kick.
+			          if (!Proc->SlotSubtractQueues[SlotIndex]->IsEmpty())
+			          {
+				          Proc->KickSubtractWorker(SlotIndex);
+			          }
+
+			          // Next kick.
+			          Proc->KickProcessIfNeededPerChunk();
+		          });
+	}
+	else
+	{
+		// Even on failure, re-kick if queue has work (GameThread).
+		AsyncTask(ENamedThreads::GameThread, [this, SlotIndex]()
+		{
+			if (SlotSubtractWorkerCounts.IsValidIndex(SlotIndex))
+			{
+				SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
+			}
+
+			if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
+			{
+				KickSubtractWorker(SlotIndex);
+			}
+		});
+	}
 }
 
 
