@@ -181,10 +181,10 @@ void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UD
 	case EDestructionToolShape::Sphere:
 	{ 
 		  FVector InverseScale = FVector(
-          1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.X),
-          1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.Y),
-          1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.Z)
-      );
+		  1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.X),
+		  1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.Y),
+		  1.0f / FMath::Max(KINDA_SMALL_NUMBER, ComponentScale.Z)
+		);
 
       Op.ToolTransform = FTransform(FQuat::Identity, LocalImpact, InverseScale);
 		break;
@@ -679,30 +679,31 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 
 		if (UnionResult.WorkType == EBooleanWorkType::BulletHole)
 		{
-		if (UnionResult.PendingCombinedToolMesh.TriangleCount() == 0)
-		{
-			SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
-			if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
+			if (UnionResult.PendingCombinedToolMesh.TriangleCount() == 0)
 			{
-				KickSubtractWorker(SlotIndex);
+				SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
+				if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
+				{
+					KickSubtractWorker(SlotIndex);
+				}
+				return;
 			}
-			return;
-		}
 
-		// Run subtract.
-		FGeometryScriptMeshBooleanOptions Options = OwnerComponent->GetBooleanOptions();
+			// Run subtract.
+			FGeometryScriptMeshBooleanOptions Options = OwnerComponent->GetBooleanOptions();
 
-		bSuccess = ApplyMeshBooleanAsync(
-			&WorkMesh,
-			&UnionResult.PendingCombinedToolMesh,
-			&ResultMesh,
-			EGeometryScriptBooleanOperation::Subtract,
-			Options);
+			bSuccess = ApplyMeshBooleanAsync(
+				&WorkMesh,
+				&UnionResult.PendingCombinedToolMesh,
+				&ResultMesh,
+				EGeometryScriptBooleanOperation::Subtract,
+				Options);
 
-		if (bSuccess)
-		{
-			// Simplify.
-			TrySimplify(ResultMesh, ChunkIndex, UnionResult.UnionCount);
+			if (bSuccess)
+			{
+				// Simplify.
+				TrySimplify(ResultMesh, ChunkIndex, UnionResult.UnionCount);
+			}
 		}
 			else
 			{
@@ -735,7 +736,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 							Editor.AppendMesh(&Debris, Mappings);
 							bHasDebris = true;
 						}
-	}
+					}
 
 					// subtract
 					bSuccess = ApplyMeshBooleanAsync(
@@ -748,38 +749,38 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 			}
 		}
 
-	// ===== 5. Apply results (GameThread) =====
-	if (bSuccess)
-	{
-		AsyncTask(ENamedThreads::GameThread,
-			[WeakOwner = OwnerComponent,
-			 LifeTimeToken = LifeTime,
-			 ChunkIndex,
-			 SlotIndex,
-			 ResultMesh = MoveTemp(ResultMesh),
+		// ===== 5. Apply results (GameThread) =====
+		if (bSuccess)
+		{
+			AsyncTask(ENamedThreads::GameThread,
+				[WeakOwner = OwnerComponent,
+				 LifeTimeToken = LifeTime,
+				 ChunkIndex,
+				 SlotIndex,
+				 ResultMesh = MoveTemp(ResultMesh),
 				 Context = UnionResult.IslandContext,
-			 Decals = MoveTemp(UnionResult.Decals),
-			 UnionCount = UnionResult.UnionCount,
-			 this]() mutable
-			{
-				if (!WeakOwner.IsValid())
+				 Decals = MoveTemp(UnionResult.Decals),
+				 UnionCount = UnionResult.UnionCount,
+				 this]() mutable
 				{
-					return;
-				}
+					if (!WeakOwner.IsValid())
+					{
+						return;
+					}
 
-				if (!LifeTimeToken.IsValid() || !LifeTimeToken->bAlive.load())
-				{
-					return;
-				}
+					if (!LifeTimeToken.IsValid() || !LifeTimeToken->bAlive.load())
+					{
+						return;
+					}
 
-				FRealtimeBooleanProcessor* Proc = LifeTimeToken->Processor.load();
-				if (!Proc)
-				{
-					return;
-				}
+					FRealtimeBooleanProcessor* Proc = LifeTimeToken->Processor.load();
+					if (!Proc)
+					{
+						return;
+					}
 
-				// Apply mesh.
-				WeakOwner->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
+					// Apply mesh.
+					WeakOwner->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, false);
 
 					// Spawn debris
 					if (Context.IsValid())
@@ -803,44 +804,45 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 						}
 					}
 
-				// ===== Decrement counters (shutdown check) =====
-				if (LifeTime.IsValid() && LifeTime->bAlive.load() && SlotSubtractWorkerCounts.IsValidIndex(SlotIndex))
-				{
-					SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
-				}
+					// ===== Decrement counters (shutdown check) =====
+			          if (LifeTime.IsValid() && LifeTime->bAlive.load() && SlotSubtractWorkerCounts.IsValidIndex(
+				          SlotIndex))
+					{
+						SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
+					}
 
-				// Update counters.
-				Proc->ChunkGenerations[ChunkIndex]++;
-				Proc->ChunkHoleCount[ChunkIndex] += UnionCount;
+					// Update counters.
+					Proc->ChunkGenerations[ChunkIndex]++;
+					Proc->ChunkHoleCount[ChunkIndex] += UnionCount;
 
-				// If queue has work, re-kick.
-				if (!Proc->SlotSubtractQueues[SlotIndex]->IsEmpty())
-				{
-					Proc->KickSubtractWorker(SlotIndex);
-				}
+					// If queue has work, re-kick.
+					if (!Proc->SlotSubtractQueues[SlotIndex]->IsEmpty())
+					{
+						Proc->KickSubtractWorker(SlotIndex);
+					}
 
-				// Next kick.
-				Proc->KickProcessIfNeededPerChunk();
-			});
-	}
-	else
-	{
-		// Even on failure, re-kick if queue has work (GameThread).
-		AsyncTask(ENamedThreads::GameThread, [this, SlotIndex]()
+					// Next kick.
+					Proc->KickProcessIfNeededPerChunk();
+				});
+		}
+		else
 		{
+			// Even on failure, re-kick if queue has work (GameThread).
+			AsyncTask(ENamedThreads::GameThread, [this, SlotIndex]()
+			{
 				if (SlotSubtractWorkerCounts.IsValidIndex(SlotIndex))
 				{
 					SlotSubtractWorkerCounts[SlotIndex]->fetch_sub(1);
 				}
 			
-			if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
-			{
-				KickSubtractWorker(SlotIndex);
-			}
-		});
-	}
-	}
+				if (!SlotSubtractQueues[SlotIndex]->IsEmpty())
+				{
+					KickSubtractWorker(SlotIndex);
+				}
+			});
+		}
 }
+
 
 void FRealtimeBooleanProcessor::CleanupSlotMapping(int32 SlotIndex)
 {
