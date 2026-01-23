@@ -1,9 +1,11 @@
-// DestructionNetworkComponent.h
-// PlayerController에 추가하여 파괴 요청을 서버로 전달하는 컴포넌트
+// Copyright (c) 2026 Lazy Developers <lazydeveloper24@gmail.com>. All rights reserved.
+// This plugin is distributed under the Fab Standard License.
 //
-// [사용법]
-// 1. PlayerController 블루프린트에서 이 컴포넌트 추가
-// 2. 끝! 자동으로 Server RPC 처리됨
+// This product was independently developed by us while participating in the Epic Project, a developer-support
+// program of the KRAFTON JUNGLE GameTech Lab. All rights, title, and interest in and to the product are exclusively
+// vested in us. Krafton, Inc. was not involved in its development and distribution and disclaims all representations
+// and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
+// the use of this product.
 
 #pragma once
 
