@@ -166,7 +166,7 @@ struct REALTIMEDESTRUCTION_API FCellDestructionShape
 	GENERATED_BODY()
 
 	/** Shape type. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	ECellDestructionShapeType Type = ECellDestructionShapeType::Sphere;
 
 	/**
@@ -174,30 +174,30 @@ struct REALTIMEDESTRUCTION_API FCellDestructionShape
 	 * Sphere/Box/Cylinder -> center
 	 * Line -> start point
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	FVector Center = FVector::ZeroVector;
 
 	/** Sphere/Cylinder radius. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	float Radius = 50.0f;
 
 	/**
 	 * Box extent (box only).
 	 * Cylinder uses the Z value as height.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	FVector BoxExtent = FVector::ZeroVector;
 
 	/** Rotation (box/cylinder). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	FRotator Rotation = FRotator::ZeroRotator;
 
 	/** Line end point. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	FVector EndPoint = FVector::ZeroVector;
 
 	/** Line thickness. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DestructionShape")
 	float LineThickness = 5.0f;
 
 	/** Check whether a point is inside the destruction shape. */
@@ -276,19 +276,19 @@ struct REALTIMEDESTRUCTION_API FGridCellLayout
 	//=========================================================================
 
 	/** Grid size (cell counts in X, Y, Z). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GridLayout")
 	FIntVector GridSize = FIntVector::ZeroValue;
 
 	/** Cell size in world space (cm). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GridLayout")
 	FVector CellSize = FVector(5.0f, 5.0f, 5.0f);
 
 	/** Grid origin (mesh bounds min). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GridLayout")
 	FVector GridOrigin = FVector::ZeroVector;
 
 	/** Mesh scale (component scale at build time). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GridLayout")
 	FVector MeshScale = FVector::OneVector;
 
 	//=========================================================================

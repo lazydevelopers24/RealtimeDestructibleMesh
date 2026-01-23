@@ -10,6 +10,7 @@
 #include "Components/DestructionProjectileComponent.h"
 #include "Components/RealtimeDestructibleMeshComponent.h"
 #include "Components/DestructionNetworkComponent.h"
+#include "Engine/GameInstance.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/DecalComponent.h"
 #include "GameFramework/Actor.h"

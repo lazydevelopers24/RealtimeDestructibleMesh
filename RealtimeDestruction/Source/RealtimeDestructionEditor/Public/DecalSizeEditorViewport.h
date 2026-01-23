@@ -98,12 +98,12 @@ private:
 	TSharedPtr<FDecalSizeViewportClient> ViewportClient;
 	
 	/** 프리뷰용 액터들 */
-	AActor* PreviewActor = nullptr; 
-	class UDecalComponent* DecalPreviewComponent = nullptr;
-	class UStaticMeshComponent* DecalTargetSurface = nullptr;  // 데칼 투영용 표면 
-	class ULineBatchComponent* DecalWireframe = nullptr;
-	class UStaticMeshComponent* ProjectileMesh = nullptr;
-	class ULineBatchComponent* ToolShapeWireframe = nullptr; 
+	TObjectPtr<AActor> PreviewActor = nullptr;
+	TObjectPtr<class UDecalComponent> DecalPreviewComponent = nullptr;
+	TObjectPtr<class UStaticMeshComponent> DecalTargetSurface = nullptr;  // 데칼 투영용 표면
+	TObjectPtr<class ULineBatchComponent> DecalWireframe = nullptr;
+	TObjectPtr<class UStaticMeshComponent> ProjectileMesh = nullptr;
+	TObjectPtr<class ULineBatchComponent> ToolShapeWireframe = nullptr;
 	TObjectPtr<UStaticMesh> PreviewMesh = nullptr;
 
 	/** Decal Preview Tranform */

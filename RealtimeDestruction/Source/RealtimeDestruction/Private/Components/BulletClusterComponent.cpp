@@ -9,6 +9,7 @@
 
 #include "BulletClusterComponent.h"
 #include "Components/RealtimeDestructibleMeshComponent.h"
+#include "Engine/World.h"
 #include "TimerManager.h"
 
 UBulletClusterComponent::UBulletClusterComponent()

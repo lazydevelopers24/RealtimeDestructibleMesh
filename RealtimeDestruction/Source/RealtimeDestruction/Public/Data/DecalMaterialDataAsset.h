@@ -26,29 +26,29 @@ struct REALTIMEDESTRUCTION_API FDecalSizeConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	FVector DecalSize = FVector(1.0f, 10.0f, 10.f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	FVector LocationOffset = FVector::ZeroVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	FRotator RotationOffset = FRotator::ZeroRotator;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	bool bRandomDecalRotation = true;
-	
+
 	// Tool Shape
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	EDestructionToolShape ToolShape = EDestructionToolShape::Cylinder;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	float CylinderRadius = 10.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	float CylinderHeight = 20.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	float SphereRadius = 10.0f;
 
 	// 유효성 검사 함수 (기존에 있다면 유지)

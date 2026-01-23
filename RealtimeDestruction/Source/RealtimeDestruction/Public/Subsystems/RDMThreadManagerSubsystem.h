@@ -10,6 +10,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Queue.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "RDMThreadManagerSubsystem.generated.h"
 

@@ -26,10 +26,10 @@ struct FDecalDataAssetEntry
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "DecalEntry")
 	TSoftObjectPtr<UDecalMaterialDataAsset> DataAsset;
-	
-	UPROPERTY(VisibleAnywhere)
+
+	UPROPERTY(VisibleAnywhere, Category = "DecalEntry")
 	FName ConfigID;
 };
 

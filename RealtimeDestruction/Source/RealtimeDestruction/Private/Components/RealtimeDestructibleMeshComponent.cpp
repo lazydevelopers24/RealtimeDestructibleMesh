@@ -49,6 +49,8 @@
 #include "Selection.h"
 #endif
 #include "Net/UnrealNetwork.h"
+#include "Engine/GameInstance.h"
+#include "Engine/Engine.h"
 #include "Subsystems/DestructionGameInstanceSubsystem.h"
 
 //////////////////////////////////////////////////////////////////////////

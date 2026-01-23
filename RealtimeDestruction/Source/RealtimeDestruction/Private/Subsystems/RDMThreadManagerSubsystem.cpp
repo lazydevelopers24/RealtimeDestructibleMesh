@@ -11,6 +11,7 @@
 
 #include <GL/glcorearb.h>
 
+#include "Engine/GameInstance.h"
 #include "ProfilingDebugging/CountersTrace.h"
 #include "Settings/RDMSetting.h"
 TRACE_DECLARE_INT_COUNTER(RDM_ActiveUnionWorkers, TEXT("RDMThreadManager/ActiveUnionWorkers"));

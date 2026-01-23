@@ -25,6 +25,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "DestructionDebugger.generated.h"
 
@@ -40,43 +41,43 @@ struct FDestructionHistoryEntry
 	GENERATED_BODY()
 
 	/** 파괴 발생 시간 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float Timestamp = 0.0f;
 
 	/** 파괴 위치 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	FVector ImpactPoint = FVector::ZeroVector;
 
 	/** 충돌 노말 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	FVector ImpactNormal = FVector::UpVector;
 
 	/** 파괴 반경 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float Radius = 0.0f;
 
 	/** 요청자 (Instigator) 이름 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	FString InstigatorName;
 
 	/** 파괴된 액터 이름 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	FString TargetActorName;
 
 	/** 네트워크 모드 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	FString NetMode;
 
 	/** 처리 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float ProcessingTimeMs = 0.0f;
 
 	/** 서버에서 처리됨 여부 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	bool bFromServer = false;
 
 	/** 클라이언트 ID (서버에서만 유효) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	int32 ClientId = -1;
 };
 
@@ -89,27 +90,27 @@ struct FDestructionStats
 	GENERATED_BODY()
 
 	/** 총 파괴 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	int32 TotalDestructions = 0;
 
 	/** 초당 파괴 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float DestructionsPerSecond = 0.0f;
 
 	/** 평균 처리 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float AverageProcessingTimeMs = 0.0f;
 
 	/** 최대 처리 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float MaxProcessingTimeMs = 0.0f;
 
 	/** 평균 파괴 반경 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	float AverageRadius = 0.0f;
 
 	/** 마지막 1초간 파괴 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug")
 	int32 DestructionsLastSecond = 0;
 };
 
@@ -122,57 +123,57 @@ struct FDestructionNetworkStats
 	GENERATED_BODY()
 
 	/** Server RPC 호출 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 ServerRPCCount = 0;
 
 	/** Multicast RPC 호출 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 MulticastRPCCount = 0;
 
 	/** 검증 실패 횟수 (서버에서 거부됨) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 ValidationFailures = 0;
 
 	/** 평균 RTT (ms) - 클라이언트에서만 유효 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float AverageRTT = 0.0f;
 
 	/** 최대 RTT (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float MaxRTT = 0.0f;
 
 	/** 최소 RTT (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float MinRTT = 999999.0f;
 
 	/** RTT 샘플 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 RTTSampleCount = 0;
 
 	//--- 데이터 크기 통계 ---
 
 	/** 총 송신 바이트 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int64 TotalBytesSent = 0;
 
 	/** 총 수신 바이트 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int64 TotalBytesReceived = 0;
 
 	/** RPC당 평균 송신 바이트 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float AvgBytesPerRPC = 0.0f;
 
 	/** 압축 RPC 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 CompactRPCCount = 0;
 
 	/** 비압축 RPC 횟수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 UncompressedRPCCount = 0;
 
 	/** 압축으로 절약된 바이트 (추정) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int64 BytesSavedByCompression = 0;
 };
 
@@ -185,27 +186,27 @@ struct FClientDestructionStats
 	GENERATED_BODY()
 
 	/** 클라이언트 ID */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 ClientId = -1;
 
 	/** 플레이어 이름 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	FString PlayerName;
 
 	/** 총 요청 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 TotalRequests = 0;
 
 	/** 검증 실패 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	int32 ValidationFailures = 0;
 
 	/** 초당 요청 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float RequestsPerSecond = 0.0f;
 
 	/** 마지막 요청 시간 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Network")
 	float LastRequestTime = 0.0f;
 };
 
@@ -218,55 +219,55 @@ struct FDestructionPerformanceStats
 	GENERATED_BODY()
 
 	/** 프레임 드롭 발생 횟수 (파괴 처리 중) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	int32 FrameDropCount = 0;
 
 	/** 최대 프레임 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float MaxFrameTimeMs = 0.0f;
 
 	/** 한 프레임 최대 파괴 처리 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	int32 MaxDestructionsPerFrame = 0;
 
 	/** 현재 프레임 파괴 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	int32 CurrentFrameDestructions = 0;
 
 	//--- FPS 영향 통계 ---
 
 	/** 파괴 전 평균 FPS */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float AvgFPSBeforeDestruction = 0.0f;
 
 	/** 파괴 중 최소 FPS */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float MinFPSDuringDestruction = 999999.0f;
 
 	/** 파괴 시 평균 FPS 드롭 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float AvgFPSDrop = 0.0f;
 
 	/** 최대 FPS 드롭 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float MaxFPSDrop = 0.0f;
 
 	/** FPS 측정 샘플 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	int32 FPSSampleCount = 0;
 
 	//--- Boolean 연산 통계 ---
 
 	/** 평균 Boolean 연산 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float AvgBooleanTimeMs = 0.0f;
 
 	/** 최대 Boolean 연산 시간 (ms) */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	float MaxBooleanTimeMs = 0.0f;
 
 	/** Boolean 연산 샘플 수 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "DestructionDebug|Performance")
 	int32 BooleanSampleCount = 0;
 };
 
