@@ -83,7 +83,7 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 	FVector ToolForwardVector = FVector::ForwardVector;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
-	FVector ToolCenterWorld = FVector::ZeroVector;
+	FVector ToolOriginWorld = FVector::ZeroVector;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FVector DecalSize = FVector::ZeroVector;
@@ -146,9 +146,9 @@ struct REALTIMEDESTRUCTION_API FCompactDestructionOp
 	UPROPERTY()
 	FVector_NetQuantize10 ImpactNormal;
 
-	// Tool 의 중심점 
+	// Tool mesh의 원점 (Origin)
 	UPROPERTY()
-	FVector_NetQuantize10 ToolCenterWorld;
+	FVector_NetQuantize10 ToolOriginWorld;
 
 	// 총알 진행 방향 (직렬화 시 ~6 bytes)
 	UPROPERTY()
@@ -416,7 +416,6 @@ public:
 	//////////////////////////////////////////////////////////////////////////
 	// Server Batching Settings (서버 → 클라이언트 배칭)
 	//////////////////////////////////////////////////////////////////////////
-	/// 
 
 	/**
 	 * 서버 배칭 사용 여부
@@ -501,7 +500,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|HoleDecal")
 	FName SurfaceType = FName("Default");
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|StructuralIntegrity")
 	bool bEnableSubcell = true;
 
 	/**
@@ -509,7 +508,7 @@ public:
 	 * true: 2-Level Hierarchical BFS 사용 (대규모 Grid에서 성능 향상)
 	 * false: 기존 Cell 단위 BFS 사용
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|StructuralIntegrity")
 	bool bEnableSupercell = true;
 	
 	/** 데이터 유지를 위한 함수 */
@@ -534,7 +533,8 @@ public:
 	void ApplyCollisionUpdate(UDynamicMeshComponent* TargetComp);
 	void ApplyCollisionUpdateAsync(UDynamicMeshComponent* TargetComp);
 
-	bool CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration);
+	/** 연산시 대상 청크가 관통되었는지 검사합니다. */
+	bool IsChunkPenetrated(const FRealtimeDestructionRequest& Request) const;
 	
 	void SettingAsyncOption(bool& OutMultiWorker);
 
@@ -914,9 +914,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowCellSpawnPosition = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	bool bDebugPenetration = false;
 
 	/** 서버 콜리전 박스 디버그 시각화 (리슨 서버용) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")

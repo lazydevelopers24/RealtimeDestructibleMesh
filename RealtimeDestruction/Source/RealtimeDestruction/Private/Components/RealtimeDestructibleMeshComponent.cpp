@@ -67,7 +67,7 @@ FCompactDestructionOp FCompactDestructionOp::Compress(const FRealtimeDestruction
 	Compact.ImpactNormal = Request.ImpactNormal;
 	Compact.ToolForwardVector = Request.ToolForwardVector;
 
-	Compact.ToolCenterWorld = Request.ToolCenterWorld;
+	Compact.ToolOriginWorld = Request.ToolOriginWorld;
 
 	// 반지름 압축 (1-255 cm) - ShapeParams에서 가져옴
 	Compact.Radius = static_cast<uint8>(FMath::Clamp(Request.ShapeParams.Radius, 1.0f, 255.0f));
@@ -120,23 +120,17 @@ FRealtimeDestructionRequest FCompactDestructionOp::Decompress() const
 	// ChunkIndex 복원
 	Request.ChunkIndex = static_cast<int32>(ChunkIndex);
 
-	// ToolCenterWorld 계산 - DestructionProjectileComponent::SetShapeParameters와 동일한 공식 사용
-	constexpr float SurfaceMargin = 2.0f;
-	constexpr float PenetrationOffset = 0.5f;
-
+	// ToolOriginWorld 계산 - DestructionProjectileComponent::SetShapeParameters와 동일한 공식 사용
 	switch (ToolShape)
 	{
 	case EDestructionToolShape::Cylinder:
-		// Cylinder: ImpactPoint에서 Forward 반대 방향으로 SurfaceMargin 만큼 이동
-		Request.ToolCenterWorld = Request.ImpactPoint - (Request.ToolForwardVector * SurfaceMargin);
+		Request.ToolOriginWorld = Request.ImpactPoint - (Request.ToolForwardVector * Request.ShapeParams.SurfaceMargin);
 		break;
 	case EDestructionToolShape::Sphere:
-		// Sphere: ImpactPoint에서 Forward 방향으로 PenetrationOffset 만큼 이동
-		//Request.ToolCenterWorld = Request.ImpactPoint + (Request.ToolForwardVector * PenetrationOffset);
-		Request.ToolCenterWorld = ToolCenterWorld;
+		Request.ToolOriginWorld = ToolOriginWorld;
 		break;
 	default:
-		Request.ToolCenterWorld = Request.ImpactPoint - (Request.ToolForwardVector * SurfaceMargin);
+		Request.ToolOriginWorld = Request.ImpactPoint - (Request.ToolForwardVector * Request.ShapeParams.SurfaceMargin);
 		break;
 	}
 
@@ -334,46 +328,19 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE("ExecuteDestructionInternal")
 
-	// 관통, 비관통 여부 확인, broadphase와 같은 효과
-	float AdjustPenetration;
-	bool bIsPenetration = CheckPenetration(Request, AdjustPenetration);
+	// 관통 여부 판단 (큐 우선순위 결정용)
+	bool bIsPenetrating = IsChunkPenetrated(Request);
 
-	// Cell 상태 업데이트 (Boolean 처리와 별개로 수행)
-	//UpdateCellStateFromDestruction(Request);
 	FDestructionResult Result = DestructionLogic(Request);
 	PendingDestructionResults.Add(Result);
-	
+
 	UDecalComponent* TempDecal = nullptr;
-	if (!bIsPenetration && Request.bSpawnDecal)
+	if (Request.bSpawnDecal)
 	{
 		TempDecal = SpawnTemporaryDecal(Request);
 	}
 
-	// Offset에 따라 추가 관통처리
-	if (bIsPenetration)
-	{
-		FRealtimeDestructionRequest PenetrationRequest = Request;
-
-		//	// Cylinder 중심을 벽 중간으로 이동 (Normal 반대 방향으로 Height/2만큼)
-		FVector Offset = Request.ImpactNormal * (-AdjustPenetration * 0.5f);
-		PenetrationRequest.ImpactPoint = Request.ImpactPoint + Offset;
-		PenetrationRequest.ToolShape = EDestructionToolShape::Cylinder;
-
-		if (bDebugPenetration)
-		{
-			// 시각화
-			DrawDebugLine(GetWorld(), Request.ImpactPoint, PenetrationRequest.ImpactPoint,
-				FColor::Red, false, 5.0f, 0, 3.0f);
-		}
-
-		// 구멍을 추가로 내주는거니, Decal을 필요없다. 
-		EnqueueRequestLocal(PenetrationRequest, true, TempDecal);
-	}
-	else
-	{
-		// 기본 관통을 Enqeue
-		EnqueueRequestLocal(Request, bIsPenetration, TempDecal);
-	}
+	EnqueueRequestLocal(Request, bIsPenetrating, TempDecal);
 	return true;	
 }
 
@@ -1606,8 +1573,6 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 			}
 		} 
 		ToolMesh.ReverseOrientation();
-		TSharedPtr<FDynamicMesh3> SharedToolMesh = MakeShared<FDynamicMesh3>(MoveTemp(ToolMesh));
-		TSharedPtr<FDynamicMesh3> SharedDebrisToolMesh = MakeShared<FDynamicMesh3>(MoveTemp(DebrisToolMesh));
 
 		// Debug 그리기
 		if (bDebugMeshIslandRemoval)
@@ -1631,6 +1596,9 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 				}
 			}
 		}
+		
+		TSharedPtr<FDynamicMesh3> SharedToolMesh = MakeShared<FDynamicMesh3>(MoveTemp(ToolMesh));
+		TSharedPtr<FDynamicMesh3> SharedDebrisToolMesh = MakeShared<FDynamicMesh3>(MoveTemp(DebrisToolMesh));
 
 		// Detect chunks to be subtracted
 		FAxisAlignedBox3d ToolBounds = SharedToolMesh->GetBounds();
@@ -1833,12 +1801,12 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 	////	// ToolMesh 바운드 중심을 월드 좌표로 변환
 	////	FAxisAlignedBox3d ToolBounds = ToolMesh.GetBounds();
 	////	FVector ToolCenterLocal = FVector(ToolBounds.Center());
-	////	FVector ToolCenterWorld = MeshTransform.TransformPosition(ToolCenterLocal);
+	////	FVector ToolOriginWorld = MeshTransform.TransformPosition(ToolCenterLocal);
 
 	////	// 오른쪽으로 오프셋 (바운드 크기 기준)
 	////	FVector BoundsSize = FVector(ToolBounds.Extents()) * 2.0f * MeshTransform.GetScale3D();
 	////	FVector RightOffset = MeshTransform.GetRotation().GetRightVector() * (BoundsSize.Y + 100.0f);
-	////	FVector DebugLocation = ToolCenterWorld + RightOffset;
+	////	FVector DebugLocation = ToolOriginWorld + RightOffset;
 
 	////	AActor* DebugActor = World->SpawnActor<AActor>(AActor::StaticClass(), DebugLocation, MeshTransform.Rotator(), SpawnParams);
 	////	if (DebugActor)
@@ -1860,7 +1828,7 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 	////		DebugActor->SetLifeSpan(10.0f);
 
 	////		UE_LOG(LogTemp, Warning, TEXT("DEBUG: ToolMesh Center Local=%s, World=%s, BoundsSize=%s"),
-	////			*ToolCenterLocal.ToString(), *ToolCenterWorld.ToString(), *BoundsSize.ToString());
+	////			*ToolCenterLocal.ToString(), *ToolOriginWorld.ToString(), *BoundsSize.ToString());
 	////	}
 	////}
 
@@ -3324,7 +3292,7 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 			);
 		}
 
-		// ToolCenterWorld는 Decompress()에서 이미 계산됨
+		// ToolOriginWorld는 Decompress()에서 이미 계산됨
 
 		// DecalMaterial 조회 (네트워크로 전송된 ConfigID로 로컬에서 조회)
 		// 1. 컴포넌트에 설정된 DecalDataAsset 사용
@@ -3351,9 +3319,9 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 			}
 		}
 
-		// 데칼 생성 (관통이 아닐 때만 - 로컬 경로와 동일)
+		// 데칼 생성
 		UDecalComponent* TempDecal = nullptr;
-		if (!Op.bIsPenetration)
+		if (ModifiableRequest.bSpawnDecal)
 		{
 			TempDecal = SpawnTemporaryDecal(ModifiableRequest);
 		}
@@ -3515,7 +3483,7 @@ TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> URealtimeDestructibleMeshComponen
 			PrimitiveOptions,
 			FTransform::Identity,
 			ShapeParams.Radius,
-			ShapeParams.Height,
+			ShapeParams.Height + ShapeParams.SurfaceMargin,
 			ShapeParams.RadiusSteps,
 			ShapeParams.HeightSubdivisions,
 			ShapeParams.bCapped,
@@ -3529,7 +3497,7 @@ TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> URealtimeDestructibleMeshComponen
 			PrimitiveOptions,
 			FTransform::Identity,
 			ShapeParams.Radius,
-			ShapeParams.Height,
+			ShapeParams.Height + ShapeParams.SurfaceMargin,
 			ShapeParams.RadiusSteps,
 			ShapeParams.HeightSubdivisions,
 			ShapeParams.bCapped,
@@ -3627,77 +3595,33 @@ void URealtimeDestructibleMeshComponent::ApplyCollisionUpdateAsync(UDynamicMeshC
 	TargetComp->UpdateCollision(true);
 }
 
-bool URealtimeDestructibleMeshComponent::CheckPenetration(const FRealtimeDestructionRequest& Request, float& OutPenetration)
+bool URealtimeDestructibleMeshComponent::IsChunkPenetrated(const FRealtimeDestructionRequest& Request) const
 {
-	FVector StartPoint = Request.ImpactPoint;
-	FVector ForwardDir = Request.ImpactNormal * -1.0f; // 총알 진행 방향
+	TRACE_CPUPROFILER_EVENT_SCOPE(IsPenetratingThrough);
 
-	// 관통 체크할 최소 두께 .
-	float MaxPenetrationDepth = 150.0f;
+	if (!ChunkMeshComponents.IsValidIndex(Request.ChunkIndex))
+	{
+		return false;
+	}
 
-	// 위에서 설정한 길이 만큼 벽 뒤로가서 Ray를 쏜다.
-	FVector ProbeStart = StartPoint + (ForwardDir * MaxPenetrationDepth);
-	FVector ProbeEnd = StartPoint;
+	UDynamicMeshComponent* ChunkComp = ChunkMeshComponents[Request.ChunkIndex];
+	if (!ChunkComp)
+	{
+		return false;
+	}
 
-	FHitResult BackHit;
+	const FVector ImpactEndPoint = Request.ImpactPoint + Request.ToolForwardVector * Request.Depth;
+
+	FHitResult HitBackResult;
 	FCollisionQueryParams Params;
+	Params.bTraceComplex = true;
 
-	Params.bTraceComplex = true; // Mesh의 정확한 폴리곤을 찍기 위해 켭니다.
+	// ImpactEndPoint에서 ImpactPoint 방향으로 Ray (대상 chunk만 트레이스)
+	// tool이 벽을 관통하면 ImpactEndPoint는 메시 바깥 => back face 히트
+	// tool이 벽을 관통 못하면 ImpactEndPoint는 메시 내부 => single-sided collision으로 히트 없음
+	bool bHitBack = ChunkComp->LineTraceComponent(HitBackResult, ImpactEndPoint, Request.ImpactPoint, Params);
 
-	// 뒤에서 앞으로 쏘는 Ray 
-	bool bHitBack = GetWorld()->LineTraceSingleByChannel(BackHit, ProbeStart, ProbeEnd, ECC_Visibility, Params);
-
-	if (bDebugPenetration)
-	{
-		// 잘 되는 지 시각화 용  
-		DrawDebugLine(GetWorld(), ProbeStart, bHitBack ? BackHit.ImpactPoint : ProbeEnd, FColor::Purple, false, 5.0f, 0, 1.0f);
-	}
-
-	if (bHitBack)
-	{
-		// Hit된게 본인이여한다. (다른 벽 말고) 		
-		if (BackHit.GetActor() == GetOwner())
-		{
-
-			// 두께 계산: (원래 맞은 앞면) <-> (지금 맞은 뒷면) 거리
-			float Thickness = FVector::Dist(StartPoint, BackHit.ImpactPoint);
-
-			// 디버그 출력
-			if (bDebugPenetration)
-			{
-				DrawDebugPoint(GetWorld(), BackHit.ImpactPoint, 10.0f, FColor::Cyan, false, 5.0f);
-				FString Msg = FString::Printf(TEXT("Wall Thickness: %.2f"), Thickness);
-				DrawDebugString(GetWorld(), BackHit.Location, Msg, nullptr, FColor::White, 5.0f);
-			}
-
-			// ThicknessOffset이  0일 때, 임의의 로직으로 계산해준다
-			if (ThicknessOffset == 0)
-			{
-				switch (Request.ToolShape)
-				{
-				case EDestructionToolShape::Sphere:
-					ThicknessOffset = Request.Depth * 2.0f;
-					break;
-
-				case EDestructionToolShape::Cylinder:
-					ThicknessOffset = Request.Depth * 1.5f;
-					break;
-
-				default:
-					ThicknessOffset = Request.Depth * 1.5f;
-					break;
-				}
-			}
-
-			// 두께가 얇으면 관통 성공  
-			if (Thickness <= ThicknessOffset)
-			{
-				OutPenetration = Thickness * 1.1f;
-				return true;
-			}
-		}
-	}
-	return false;
+	return bHitBack && FVector::DotProduct(HitBackResult.ImpactNormal, Request.ToolForwardVector) > 0.f;
 }
 
 void URealtimeDestructibleMeshComponent::SettingAsyncOption(bool& OutMultiWorker)
@@ -4929,7 +4853,7 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 	// (projectile 도 동일하게 처리해도 무방)
 	if (Request.ToolShape == EDestructionToolShape::Sphere)
 	{
-		const float Distance = FVector::Dist(Request.ToolCenterWorld, Request.ImpactPoint);
+		const float Distance = FVector::Dist(Request.ToolOriginWorld, Request.ImpactPoint);
 		const float MaxRadius = Request.ShapeParams.Radius;
 
 		if (MaxRadius > KINDA_SMALL_NUMBER)

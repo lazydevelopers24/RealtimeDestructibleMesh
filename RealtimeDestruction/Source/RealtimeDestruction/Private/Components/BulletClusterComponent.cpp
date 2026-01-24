@@ -51,7 +51,7 @@ void UBulletClusterComponent::RegisterRequest(const FRealtimeDestructionRequest&
 	NewRequest.Radius = Request.ShapeParams.Radius;
 	NewRequest.ChunkIndex = Request.ChunkIndex;
 	NewRequest.ToolForwardVector = Request.ToolForwardVector;
-	NewRequest.ToolCenterWorld = Request.ImpactPoint - (Request.ToolForwardVector * Request.ShapeParams.SurfaceMargin);
+	NewRequest.ToolOriginWorld = Request.ImpactPoint - (Request.ToolForwardVector * Request.ShapeParams.SurfaceMargin);
 	NewRequest.Depth = (Request.ShapeParams.Height + Request.ShapeParams.SurfaceMargin) * 0.9f;
 	PendingRequests.Add(NewRequest);
 
@@ -147,7 +147,7 @@ TArray<FBulletCluster> UBulletClusterComponent::ProcessClustering()
 		if (!FoundCluster)
 		{
 			FBulletCluster NewCluster;
-			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.ToolForwardVector, Req.ToolCenterWorld, Req.Radius, Req.ChunkIndex, Req.Depth);
+			NewCluster.Init(Req.ImpactPoint, Req.ImpactNormal, Req.ToolForwardVector, Req.ToolOriginWorld, Req.Radius, Req.ChunkIndex, Req.Depth);
 			RootToCluster.Add(Root, NewCluster);
 		}
 		else
@@ -220,7 +220,7 @@ void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& C
 			Request.ShapeParams.Radius = FinalRadius;
 			Request.ChunkIndex = ChunkIndex;
 			Request.ToolForwardVector = Cluster.AverageForwardVector;
-			Request.ToolCenterWorld = Cluster.ToolCenterWorld;
+			Request.ToolOriginWorld = Cluster.ToolOriginWorld;
 			Request.ShapeParams.Height = Cluster.Depth;
 
 			 

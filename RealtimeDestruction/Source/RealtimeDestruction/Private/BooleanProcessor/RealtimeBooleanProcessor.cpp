@@ -154,7 +154,7 @@ void FRealtimeBooleanProcessor::EnqueueOp(FRealtimeDestructionOp&& Operation, UD
 	Op.TargetMesh = ChunkMesh;
 	FTransform ComponentToWorld = Op.TargetMesh->GetComponentTransform();
 
-	const FVector LocalImpact = ComponentToWorld.InverseTransformPosition(Operation.Request.ToolCenterWorld);
+	const FVector LocalImpact = ComponentToWorld.InverseTransformPosition(Operation.Request.ToolOriginWorld);
 
 	// Scale correction: compute axis scales in the rotated frame.
 	const FVector ComponentScale = ComponentToWorld.GetScale3D();

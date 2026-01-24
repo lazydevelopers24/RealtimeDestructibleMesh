@@ -211,7 +211,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 				SphereRadius != OverrideDecalConfig.SphereRadius ||
 				ToolShape != OverrideDecalConfig.ToolShape);
 
-			SurfaceMargin = OverrideDecalConfig.CylinderHeight;
+			SurfaceMargin = OverrideDecalConfig.CylinderRadius;
 			CylinderRadius = OverrideDecalConfig.CylinderRadius;
 			CylinderHeight = OverrideDecalConfig.CylinderHeight;
 			SphereRadius = OverrideDecalConfig.SphereRadius;
@@ -357,7 +357,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	
 		// Debug
 		{
-			DrawDebugToolShape(Request.ToolCenterWorld, Request.ToolForwardVector, FColor::Cyan);
+			DrawDebugToolShape(Request.ToolOriginWorld, Request.ToolForwardVector, FColor::Cyan);
 			if (bShowAffetedChunks)
 			{
 				FBox ChunkBox = DestructComp->GetChunkMeshComponent(TargetIndex)->Bounds.GetBox();
@@ -524,7 +524,7 @@ void UDestructionProjectileComponent::ProcessSphereDestructionRequestForChunk(UR
 
 		// ======= 청크 중 일부 파괴 로직 ======= 
 		FRealtimeDestructionRequest Request;
-		Request.ToolCenterWorld = ExplosionCenter;
+		Request.ToolOriginWorld = ExplosionCenter;
 
 		// 데칼용 데이터는 위에서 미리 구한 것 사용
 		Request.ImpactPoint = DecalImpactPoint;
@@ -595,7 +595,7 @@ bool UDestructionProjectileComponent::EnsureToolMesh()
 		}
 	case EDestructionToolShape::Cylinder:
 		{
-			SurfaceMargin = CylinderHeight;
+			SurfaceMargin = CylinderRadius;
 			UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendCylinder(
 			   TempMesh,
 			   PrimitiveOptions,
@@ -654,22 +654,22 @@ void UDestructionProjectileComponent::SetShapeParameters(FRealtimeDestructionReq
 			 * Cylinder 생성 시 Base로 생성 - 원기둥의 바닥을 원점(0, 0, 0)으로 해서 +z축으로 생성 
 			 */
 			OutRequest.Depth = CylinderHeight;
-			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
+			OutRequest.ToolOriginWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
 			break;
 		}
 	case EDestructionToolShape::Sphere:
 		{
 			OutRequest.Depth = SphereRadius;
-			if (OutRequest.ToolCenterWorld.IsZero())
+			if (OutRequest.ToolOriginWorld.IsZero())
 			{
-				OutRequest.ToolCenterWorld = OutRequest.ImpactPoint + (OutRequest.ToolForwardVector * PenetrationOffset);
+				OutRequest.ToolOriginWorld = OutRequest.ImpactPoint + (OutRequest.ToolForwardVector * PenetrationOffset);
 			}
 		}
 		break;
 	default:
 		{
 			OutRequest.Depth = CylinderHeight;
-			OutRequest.ToolCenterWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
+			OutRequest.ToolOriginWorld = OutRequest.ImpactPoint - (OutRequest.ToolForwardVector * SurfaceMargin);
 		}
 		break;
 	}

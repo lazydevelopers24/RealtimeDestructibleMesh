@@ -168,7 +168,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     FVector ForwardSum = FVector::ZeroVector;
 
     UPROPERTY()
-    FVector ToolCenterWorld = FVector::ZeroVector;
+    FVector ToolOriginWorld = FVector::ZeroVector;
 
     UPROPERTY()
     float Depth = 10.0f;
@@ -178,7 +178,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
     FBulletCluster(const FVector& InCenter, const FVector& InNormal,
                    float InRadius, const FVector& InForward,
                    const FVector& InToolCenter, int32 ChunkIndex, float InDepth)
-        : Center(InCenter), Normal(InNormal), Radius(InRadius), ToolCenterWorld(InToolCenter), Depth(InDepth)
+        : Center(InCenter), Normal(InNormal), Radius(InRadius), ToolOriginWorld(InToolCenter), Depth(InDepth)
     {
         ForwardSum = InForward.GetSafeNormal();
         AverageForwardVector = ForwardSum.IsNearlyZero() ? FVector::ForwardVector : ForwardSum;
@@ -203,7 +203,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         
         AverageForwardVector = Other.AverageForwardVector;
         ForwardSum = Other.ForwardSum;
-        ToolCenterWorld = Other.ToolCenterWorld;
+        ToolOriginWorld = Other.ToolOriginWorld;
 
         MemberPoints = MoveTemp(Other.MemberPoints);
         MemberNormals = MoveTemp(Other.MemberNormals);
@@ -211,7 +211,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
         ChunkIndices = MoveTemp(Other.ChunkIndices);
     }
 
-    void Init(const FVector& Point, const FVector& InNormal, const FVector& Forward, const FVector& InToolCenterWorld,
+    void Init(const FVector& Point, const FVector& InNormal, const FVector& Forward, const FVector& InToolOriginWorld,
         float InRadius, int ChunkIndex, float InDepth)
     {
         Center = Point;
@@ -232,7 +232,7 @@ struct REALTIMEDESTRUCTION_API FBulletCluster
 
         ForwardSum = Forward.GetSafeNormal();
         AverageForwardVector = ForwardSum.IsNearlyZero() ? FVector::ForwardVector : ForwardSum;
-        ToolCenterWorld = InToolCenterWorld;
+        ToolOriginWorld = InToolOriginWorld;
     }
     void AddMember(const FVector& Point, const FVector& InNormal, const FVector& InForward, float InRadius, int ChunkIndex )
     {

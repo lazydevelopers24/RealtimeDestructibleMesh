@@ -37,7 +37,7 @@ struct FPendingClusteringRequest
 	FVector ToolForwardVector = FVector::ForwardVector;
 
 	UPROPERTY()
-	FVector ToolCenterWorld = FVector::ZeroVector;
+	FVector ToolOriginWorld = FVector::ZeroVector;
 
 	UPROPERTY()
 	float Depth = 10.0f;
