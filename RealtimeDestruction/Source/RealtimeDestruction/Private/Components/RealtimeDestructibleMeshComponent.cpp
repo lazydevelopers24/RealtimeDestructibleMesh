@@ -5010,14 +5010,14 @@ UDecalComponent* URealtimeDestructibleMeshComponent::SpawnTemporaryDecal(const F
 }
 
 //////////////////////////////////////////////////////////////////////////
-// Cell Mesh Parallel Processing
+// Chunk Mesh Parallel Processing
 //////////////////////////////////////////////////////////////////////////
 
-int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection()
+int32 URealtimeDestructibleMeshComponent::BuildChunksFromGC(UGeometryCollection* InGC)
 {
-	if (!FracturedGeometryCollection)
+	if (!InGC)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGeometryCollection: FracturedGeometryCollection is not set."));
+		UE_LOG(LogTemp, Warning, TEXT("BuildChunksFromGC: GeometryCollection is not set."));
 		return 0;
 	}
 
@@ -5032,11 +5032,11 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 	ChunkMeshComponents.Empty();
 
 	// GeometryCollection 데이터 가져오기
-	TSharedPtr<FGeometryCollection, ESPMode::ThreadSafe> GeometryCollectionPtr = FracturedGeometryCollection->GetGeometryCollection();
+	TSharedPtr<FGeometryCollection, ESPMode::ThreadSafe> GeometryCollectionPtr = InGC->GetGeometryCollection();
 
 	if (!GeometryCollectionPtr.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGeometryCollection: Invalid GeometryCollection data."));
+		UE_LOG(LogTemp, Warning, TEXT("BuildChunksFromGC: Invalid GeometryCollection data."));
 		return 0;
 	}
 
@@ -5046,7 +5046,7 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 	const int32 NumTransforms = GC.NumElements(FGeometryCollection::TransformGroup);
 	if (NumTransforms == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildCellMeshesFromGeometryCollection: No transforms in GeometryCollection."));
+		UE_LOG(LogTemp, Warning, TEXT("BuildChunksFromGC: No transforms in GeometryCollection."));
 		return 0;
 	}
 
@@ -5342,7 +5342,7 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 		// 메시 변경 알림
 		CellComp->NotifyMeshUpdated();
 		// CellMeshComponent에 머티리얼 설정 (GC에서 복사)
-		const TArray<UMaterialInterface*>& GCMaterials = FracturedGeometryCollection->Materials;
+		const TArray<UMaterialInterface*>& GCMaterials = InGC->Materials;
 		if (GCMaterials.Num() > 0)
 		{
 
@@ -5362,7 +5362,7 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 	}
 
 	// GeometryCollection에서 머티리얼 복사
-	const TArray<UMaterialInterface*>& GCMaterials = FracturedGeometryCollection->Materials;
+	const TArray<UMaterialInterface*>& GCMaterials = InGC->Materials;
 	if (GCMaterials.Num() > 0)
 	{
 		// OverrideMaterials 배열 크기 조정
@@ -5382,12 +5382,12 @@ int32 URealtimeDestructibleMeshComponent::BuildChunkMeshesFromGeometryCollection
 		// 렌더 업데이트
 		MarkRenderStateDirty();
 
-		UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGeometryCollection: Copied %d materials from GeometryCollection"), GCMaterials.Num());
+		UE_LOG(LogTemp, Log, TEXT("BuildChunksFromGC: Copied %d materials from GeometryCollection"), GCMaterials.Num());
 	}
 
 	bChunkMeshesValid = ExtractedCount > 0;
 
-	UE_LOG(LogTemp, Log, TEXT("BuildCellMeshesFromGeometryCollection: Extracted %d meshes from %d transforms"),
+	UE_LOG(LogTemp, Log, TEXT("BuildChunksFromGC: Extracted %d meshes from %d transforms"),
 		ExtractedCount, NumTransforms);
 
 	if (bChunkMeshesValid)
@@ -5568,15 +5568,15 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 	return true;
 }
 
-void URealtimeDestructibleMeshComponent::EditorBuildGridCells()
+void URealtimeDestructibleMeshComponent::BuildGridCellsInEditor()
 {
 	if (BuildGridCells())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("EditorBuildGridCells: SUCCESS - Grid cells built. Save the level to persist!"));
+		UE_LOG(LogTemp, Warning, TEXT("BuildGridCellsInEditor: SUCCESS - Grid cells built. Save the level to persist!"));
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("EditorBuildGridCells: FAILED - Check if SourceStaticMesh is set"));
+		UE_LOG(LogTemp, Error, TEXT("BuildGridCellsInEditor: FAILED - Check if SourceStaticMesh is set"));
 	}
 }
 
@@ -5705,17 +5705,7 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 	FName PropertyName = (PropertyChangedEvent.Property != nullptr)
 		? PropertyChangedEvent.Property->GetFName()
 		: NAME_None;
-
-	// FracturedGeometryCollection 또는 bUseCellMeshes가 변경되면 자동 빌드
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(URealtimeDestructibleMeshComponent, FracturedGeometryCollection))
-	{
-		if (FracturedGeometryCollection)
-		{
-			int32 CellCount = BuildChunkMeshesFromGeometryCollection();
-			UE_LOG(LogTemp, Log, TEXT("PostEditChangeProperty: Auto-built %d cell meshes"), CellCount);
-		}
-	}
-
+	
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(URealtimeDestructibleMeshComponent, SourceStaticMesh))
 	{
 		UE_LOG(LogTemp, Log, TEXT("PostEditChangeProperty Mesh Name: %s"), *SourceStaticMesh.GetName());
@@ -5794,19 +5784,37 @@ int32 URealtimeDestructibleMeshComponent::GetMaterialIDFromFaceIndex(int32 FaceI
 }
 
 #if WITH_EDITOR
-void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
+void URealtimeDestructibleMeshComponent::GenerateDestructibleChunks()
 {
-	// 0. 스태틱 메시 유효성 검사
 	UStaticMesh* InStaticMesh = SourceStaticMesh.Get();
 	if (!InStaticMesh)
 	{
 		return;
 	}
 
-	// 1. UGC 임시객체 생성하고 스태틱 메시를 옮길 FGC 얻어오기
-	// Transient는 디스크에 저장하지않고, 메모리에만 존재하는 데이터를 담는데 유용 
-	
-	// 에셋 이름, 패키징 경로 설정 
+	TObjectPtr<UGeometryCollection> GC = CreateFracturedGC(InStaticMesh);
+	if (!GC)
+	{
+		return;
+	}
+
+	int32 CellCount = BuildChunksFromGC(GC);
+
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->Modify();
+		Owner->RerunConstructionScripts();
+	}
+}
+
+TObjectPtr<UGeometryCollection> URealtimeDestructibleMeshComponent::CreateFracturedGC(TObjectPtr<UStaticMesh> InSourceMesh)
+{
+	if (!InSourceMesh)
+	{
+		return nullptr;
+	}
+
+	// 에셋 이름, 패키징 경로 설정
 	FString ActorLabel = GetOwner() ? GetOwner()->GetActorLabel() : TEXT("Unknown");
 
 	ActorLabel = ActorLabel.Replace(TEXT(" "), TEXT("_"));
@@ -5820,37 +5828,36 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 	UPackage* Package = CreatePackage(*FullPath);
 	if (!Package)
 	{
-		return;
+		return nullptr;
 	}
 	Package->FullyLoad();
-	
+
 	UGeometryCollection* GeometryCollection = NewObject<UGeometryCollection>(
 		Package,
 		*AssetName,
 		RF_Public | RF_Standalone
-	); 
+	);
 	if (!GeometryCollection)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed To Create Geometry Collection!!"));
-		return;
+		UE_LOG(LogTemp, Error, TEXT("CreateFracturedGC: Failed to create GeometryCollection"));
+		return nullptr;
 	}
-	
+
 	TSharedPtr<FGeometryCollection, ESPMode::ThreadSafe> GCPtr = GeometryCollection->GetGeometryCollection();
 	if (!GCPtr.IsValid())
 	{
 		GCPtr = MakeShared<FGeometryCollection>();
 		GeometryCollection->SetGeometryCollection(GCPtr);
 	}
-	 
 
-	// 2. Source Static Mesh를 GC에 추가 (단일 조각으로 시작)
+	// Source Static Mesh를 GC에 추가 (단일 조각으로 시작)
 	TArray<UMaterialInterface*> Materials;
-	for (const FStaticMaterial& StaticMat : InStaticMesh->GetStaticMaterials())
+	for (const FStaticMaterial& StaticMat : InSourceMesh->GetStaticMaterials())
 	{
 		Materials.Add(StaticMat.MaterialInterface);
 	}
 	FGeometryCollectionConversion::AppendStaticMesh(
-		InStaticMesh,
+		InSourceMesh,
 		Materials,
 		FTransform::Identity,
 		GeometryCollection,
@@ -5860,86 +5867,68 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 	GCPtr = GeometryCollection->GetGeometryCollection();
 	if (!GCPtr.IsValid())
 	{
-		return;
+		return nullptr;
 	}
 
-	// 3. SliceCutter로 GC 격자 형태로 자르기
-	// GC에 있는 조각(TransformGroup)을 전부 선택 상태로 만들기
+	// SliceCutter로 GC 격자 형태로 자르기
 	FDataflowTransformSelection TransformSelection;
 	TransformSelection.InitializeFromCollection(*GCPtr, true);
-	// 슬라이싱 영역 지정을 위해 원본 메시의 바운딩 볼륨 얻어오기
-	FBox BoundingBox = InStaticMesh->GetBoundingBox();
-	// Slice Cutter 실행
+	FBox BoundingBox = InSourceMesh->GetBoundingBox();
+
 	// 주의: 깔끔한 육면체 절단을 위해 노이즈 관련 값은 0으로 둡니다.
 	int32 NumCreated = FFractureEngineFracturing::SliceCutter(
 		*GCPtr.Get(),           // 레퍼런스로 전달 (&InOutCollection)
 		TransformSelection,     // 선택 영역
 		BoundingBox,            // 자를 범위
-		SliceCount.X - 1,           // X축 몇번 자를 지
-		SliceCount.Y - 1,           // Y축 몇번 자를 지
-		SliceCount.Z - 1,           // Z축 몇번 자를 지
-		0.0f,					// 0 이면 수직, 수평
+		SliceCount.X - 1,       // X축 몇번 자를 지
+		SliceCount.Y - 1,       // Y축 몇번 자를 지
+		SliceCount.Z - 1,       // Z축 몇번 자를 지
+		0.0f,                   // 0 이면 수직, 수평
 		0.0f,                   // 0 이면 정간격
 		0,                      // Deterministic해야 하므로 Random seed는 상수 0 고정
 		1.0f,                   // 파괴 확률 (ChanceToFracture) - 1.0f = 100%
 		false,                  // 섬 분리 여부 (SplitIslands)
-		0.0f,                   // Grout (틈새 벌리기) 
-		0.0f,                   // Amplitude (노이즈 진폭) 
+		0.0f,                   // Grout (틈새 벌리기)
+		0.0f,                   // Amplitude (노이즈 진폭)
 		0.0f,                   // Frequency (노이즈 빈도)
 		0.0f,                   // Persistence
 		0.0f,                   // Lacunarity
 		0,                      // OctaveNumber
 		0.0f,                   // PointSpacing
-		false,                   // AddSamplesForCollision
+		false,                  // AddSamplesForCollision
 		0.0f
 	);
 	if (NumCreated <= 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("SliceCutter FAILED! Returned %d"), NumCreated);
-		return;
-
+		UE_LOG(LogTemp, Error, TEXT("CreateFracturedGC: SliceCutter failed, returned %d"), NumCreated);
+		return nullptr;
 	}
-	int32 NumTransformsAfterSlice = GCPtr->NumElements(FGeometryCollection::TransformGroup);
 
-	// =========================================================================
 	// 후처리로 데이터 무결성 갱신
-	// 이 코드가 없으면 "Name not mapped" 또는 "Serialize not deterministic" 에러 발생
-	// =========================================================================
-
-	// Collection 무효화 및 재구성 (중요!)
-	// GC 무효화 및 알림. 이전에 기록된 모든 캐시가 이 컬렉션을 사용할 수 없게 만듦.
 	GeometryCollection->Materials = Materials;
 	GeometryCollection->InvalidateCollection();
 
 	GCPtr = GeometryCollection->GetGeometryCollection();
-	//	바운딩 박스 재계산
 	GCPtr->UpdateBoundingBox();
 
-	// 에디터 변경 알림 (직렬화 준비)
 	GeometryCollection->PostEditChange();
-	GCPtr = GeometryCollection->GetGeometryCollection();
 
-	// 에셋을 디스크에도 저장을 따로하자 
+	// 에셋 저장
 	FAssetRegistryModule::AssetCreated(GeometryCollection);
-
-	// 저장
 	GeometryCollection->MarkPackageDirty();
 	Package->MarkPackageDirty();
 
-	// 실제 파일 경로 계산
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(
 		Package->GetName(),
-		FPackageName::GetAssetPackageExtension()  // .uasset
+		FPackageName::GetAssetPackageExtension()
 	);
 
-	// 디렉토리가 없으면 생성
 	FString DirectoryPath = FPaths::GetPath(PackageFileName);
 	if (!IFileManager::Get().DirectoryExists(*DirectoryPath))
 	{
 		IFileManager::Get().MakeDirectory(*DirectoryPath, true);
 	}
 
-	// 패키지 저장
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	SaveArgs.Error = GError;
@@ -5955,25 +5944,13 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 
 	if (!SaveResult)
 	{
-		UE_LOG(LogTemp, Log, TEXT("Failed to save GeometryCollection: %s"), *PackageFileName);
+		UE_LOG(LogTemp, Warning, TEXT("CreateFracturedGC: Failed to save GeometryCollection: %s"), *PackageFileName);
 	}
 
-
-	// 컴포넌트에 자동 할당
-	FracturedGeometryCollection = GeometryCollection;
-
-
-	// Cell 메시 빌드
-	int32 CellCount = BuildChunkMeshesFromGeometryCollection();
-
-	if (AActor* Owner = GetOwner())
-	{
-		Owner->Modify();
-		Owner->RerunConstructionScripts();
-	}
+	return GeometryCollection;
 }
 
-void URealtimeDestructibleMeshComponent::RevertFracture()
+void URealtimeDestructibleMeshComponent::RevertChunksToSourceMesh()
 {
 	// Cell로 나눠진 상태가 아니면  return
 	if (ChunkMeshComponents.Num() == 0)

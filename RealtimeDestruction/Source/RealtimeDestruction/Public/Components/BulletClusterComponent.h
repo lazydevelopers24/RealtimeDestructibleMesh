@@ -43,6 +43,26 @@ struct FPendingClusteringRequest
 	float Depth = 10.0f;
 };
 
+/**
+ * Component that clusters bullet impact requests to optimize destruction operations.
+ *
+ * Collects multiple bullet impacts occurring within a short time window,
+ * groups nearby impact points into clusters, and processes them as
+ * a single large destruction instead of multiple small holes.
+ * This reduces the number of Boolean operations and improves performance.
+ *
+ * [How It Works]
+ * 1. Destruction requests are stored in a pending buffer via RegisterRequest()
+ * 2. Requests are collected for ClusterWindowTime (default 0.3 seconds) from the first request
+ * 3. When the time window expires, nearby impact points are clustered using Union-Find algorithm
+ * 4. Only clusters meeting ClusterCountThreshold (default 5) are processed for destruction
+ * 5. Actual destruction is performed by calling ApplyOp() on the owner mesh
+ *
+ * [Usage]
+ * This component is automatically created and attached when
+ * RealtimeDestructibleMeshComponent enables BulletClustering.
+ * For manual use, call SetOwnerMesh() to specify the owner.
+ */
 UCLASS(ClassGroup = (RealtimeDestruction), meta = (BlueprintSpawnableComponent))
 class UBulletClusterComponent : public UActorComponent
 {
@@ -70,9 +90,7 @@ public:
 
 	UPROPERTY()
 	float ClusterRadiusOffset = 1.0f;
-
-
-
+	
 	// ===============================================
 	// 기본 함수
 	// ===============================================

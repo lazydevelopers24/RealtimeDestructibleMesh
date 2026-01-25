@@ -15,15 +15,15 @@
 #include "DestructionNetworkComponent.generated.h"
 
 /**
- * 파괴 요청을 서버로 전달하는 네트워크 컴포넌트
+ * Network component that forwards destruction requests to the server.
  *
- * PlayerController에 이 컴포넌트를 추가하면
- * DestructionProjectileComponent가 자동으로 찾아서 사용합니다.
+ * Add this component to a PlayerController and
+ * DestructionProjectileComponent will automatically find and use it.
  *
- * 사용 예시:
- * 1. BP_PlayerController 열기
- * 2. Add Component → DestructionNetworkComponent 추가
- * 3. 완료!
+ * Usage Example:
+ * 1. Open BP_PlayerController
+ * 2. Add Component -> DestructionNetworkComponent
+ * 3. Done!
  */
 UCLASS(ClassGroup=(RealtimeDestruction), meta=(BlueprintSpawnableComponent, DisplayName="Destruction Network"))
 class REALTIMEDESTRUCTION_API UDestructionNetworkComponent : public UActorComponent
@@ -34,11 +34,11 @@ public:
 	UDestructionNetworkComponent();
 
 	/**
-	 * 파괴 요청을 서버로 전달
-	 * DestructionProjectileComponent에서 자동으로 호출됨
+	 * Forwards destruction request to server.
+	 * Automatically called by DestructionProjectileComponent.
 	 *
-	 * @param DestructComp - 파괴할 메시 컴포넌트
-	 * @param Request - 파괴 요청 정보 (위치, 노말, 반지름)
+	 * @param DestructComp - The mesh component to destroy
+	 * @param Request - Destruction request info (location, normal, radius)
 	 */
 	UFUNCTION(BlueprintCallable, Category="Destruction")
 	void RequestDestruction(URealtimeDestructibleMeshComponent* DestructComp, const FRealtimeDestructionRequest& Request);
@@ -47,22 +47,22 @@ protected:
 	virtual void BeginPlay() override;
 
 	/**
-	 * 서버에서 파괴 처리 (Server RPC) - 기존 방식
-	 * 클라이언트에서 호출하면 서버에서 실행됨
+	 * Process destruction on server (Server RPC) - Legacy method
+	 * Called from client, executed on server
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerApplyDestruction(URealtimeDestructibleMeshComponent* DestructComp, const FRealtimeDestructionRequest& Request);
 
 	/**
-	 * 서버에서 파괴 처리 (Server RPC) - 압축 방식
-	 * 네트워크 대역폭 ~65% 절감
+	 * Process destruction on server (Server RPC) - Compact method
+	 * Reduces network bandwidth by ~65%
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerApplyDestructionCompact(URealtimeDestructibleMeshComponent* DestructComp, const FCompactDestructionOp& CompactOp);
 
 	/**
-	 * 파괴 요청 검증 (서버에서 호출)
-	 * RealtimeDestructibleMeshComponent의 ValidateDestructionRequest 호출
+	 * Validate destruction request (called on server)
+	 * Calls RealtimeDestructibleMeshComponent's ValidateDestructionRequest
 	 */
 	bool ValidateDestructionRequest(
 		URealtimeDestructibleMeshComponent* DestructComp,
@@ -70,42 +70,42 @@ protected:
 		EDestructionRejectReason& OutReason) const;
 
 	//////////////////////////////////////////////////////////////////////////
-	// Late Join (Op 히스토리 기반 동기화)
+	// Late Join (Op History-based Synchronization)
 	//////////////////////////////////////////////////////////////////////////
 
 	/**
-	 * 서버에 Op 히스토리 요청 (Server RPC)
-	 * Late Join 시 클라이언트에서 호출
+	 * Request Op history from server (Server RPC)
+	 * Called by client on late join
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerRequestOpHistory(URealtimeDestructibleMeshComponent* DestructComp);
 
 	/**
-	 * 클라이언트에 Op 히스토리 전송 (Client RPC)
-	 * 서버에서 호출하면 요청한 클라이언트에서 실행됨
-	 * Op 개수가 많으면 여러 번 나눠서 전송 (64KB 제한)
+	 * Send Op history to client (Client RPC)
+	 * Called from server, executed on the requesting client
+	 * Splits into multiple batches if Op count is large (64KB limit)
 	 */
 	UFUNCTION(Client, Reliable)
 	void ClientReceiveOpHistory(URealtimeDestructibleMeshComponent* DestructComp, const TArray<FCompactDestructionOp>& Ops, bool bIsLastBatch);
 
 protected:
-	/** 최대 허용 파괴 반경 (치트 방지) */
+	/** Maximum allowed destruction radius (anti-cheat) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction|Validation")
 	float MaxAllowedRadius = 100.0f;
 
-	/** 요청 검증 활성화 여부 */
+	/** Enable request validation */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction|Validation")
 	bool bEnableValidation = true;
 
 	/**
-	 * 압축된 네트워크 데이터 사용 여부
-	 * true: FCompactDestructionOp 사용 (11 bytes)
-	 * false: FRealtimeDestructionRequest 사용 (32+ bytes)
+	 * Use compressed network data
+	 * true: Use FCompactDestructionOp (11 bytes)
+	 * false: Use FRealtimeDestructionRequest (32+ bytes)
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction|Network")
 	bool bUseCompactData = true;
 
 private:
-	/** 시퀀스 카운터 (압축 데이터용) */
+	/** Sequence counter (for compact data) */
 	int32 LocalSequence = 0;
 };

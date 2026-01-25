@@ -277,11 +277,16 @@ struct FCollisionChunkData
 };
 
 /**
- * 실시간 파괴를 지원하는 메시 컴포넌트
+ * Mesh component supporting real-time destruction.
  *
- * Realtime Destructible Mesh 플러그인의 핵심 컴포넌트입니다.
- * UDestructionProjectileComponent를 소유한 actor를 통해 파괴를 수행할 수 있습니다.
- * Soure Mesh를 설정하고 
+ * The core component of the Realtime Destructible Mesh plugin.
+ *
+ * To use this component, first assign a Source Mesh,
+ * then use the 'Generate Destructible Chunks' and 'Build Grid Cell' buttons in the Details panel to structure the mesh.
+ *
+ * Destruction can be triggered via an Actor possessing a UDestructionProjectileComponent.
+ * Network synchronization is supported through a PlayerController 
+ * equipped with a UDestructionNetworkComponent.
  */
 UCLASS(ClassGroup = (RealtimeDestruction), meta = (BlueprintSpawnableComponent, DisplayName = "Realtime Destructible Mesh"))
 class REALTIMEDESTRUCTION_API URealtimeDestructibleMeshComponent : public UDynamicMeshComponent
@@ -647,16 +652,8 @@ protected:
 	int32 InitInterval = 50;
 
 	//////////////////////////////////////////////////////////////////////////
-	// Cell Mesh Parallel Processing
+	// Chunk Mesh Parallel Processing
 	//////////////////////////////////////////////////////////////////////////
-
-	/**
-	 * 에디터에서 미리 분할해둔 GeometryCollection
-	 * Fracture Mode로 생성한 GC를 여기에 할당하면
-	 * 런타임에 DynamicMesh로 추출하여 사용
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ChunkMesh")
-	TObjectPtr<UGeometryCollection> FracturedGeometryCollection;
 
 	/** Cell별 분리된 메시 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|ChunkMesh")
@@ -666,7 +663,7 @@ protected:
 	TMap<UPrimitiveComponent*, int32> ChunkIndexMap;
 
 	/** 그리드 인덱스 -> ChunkId(ChunkMeshComponents 배열 인덱스) 매핑 테이블
-	 *  슬라이싱 후 고정되며, BuildChunkMeshesFromGeometryCollection에서 계산됨 */
+	 *  슬라이싱 후 고정되며, BuildChunksFromGC에서 계산됨 */
 	UPROPERTY()
 	TArray<int32> GridToChunkMap;
 
@@ -751,13 +748,6 @@ protected:
 	void BuildCollisionChunkBodySetup(int32 ChunkIndex);
 
 public:
-	/**
-	 * GeometryCollection에서 DynamicMesh 추출
-	 * 에디터에서 Fracture Mode로 미리 분할해둔 GC 사용
-	 * @return 추출된 메시 개수
-	 */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh|ChunkMesh", meta = (DisplayName = "Build Chunk Meshes From GC"))
-	int32 BuildChunkMeshesFromGeometryCollection();
 
 	/** Cell 메시 유효 여부 */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|ChunkMesh")
@@ -778,8 +768,8 @@ public:
 	bool BuildGridCells();
 
 	/** 에디터 버튼: 격자 셀 빌드 */
-	UFUNCTION(CallInEditor, Category = "RealtimeDestructibleMesh")
-	void EditorBuildGridCells();
+	UFUNCTION(CallInEditor, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Build Grid Cells"))
+	void BuildGridCellsInEditor();
 
 	/** 격자 셀 레이아웃 유효 여부 */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|GridCell")
@@ -787,9 +777,16 @@ public:
 
 private:
 	/**
+	 * GeometryCollection에서 DynamicMesh 추출 (실제 구현)
+	 * @param InGC 변환할 GeometryCollection
+	 * @return 추출된 메시 개수
+	 */
+	int32 BuildChunksFromGC(UGeometryCollection* InGC);
+
+	/**
 	 * GridToChunkMap 구축 (그리드 인덱스 -> ChunkId 매핑)
 	 * 각 프래그먼트의 공간 위치를 기반으로 그리드 셀에 매핑
-	 * BuildCellMeshesFromGeometryCollection에서 호출됨
+	 * BuildChunksFromGC에서 호출됨
 	 */
 	void BuildGridToChunkMap();
 
@@ -889,15 +886,23 @@ public:
 
 #if WITH_EDITOR
 	/**
-	 * SourceStatic 메쉬로부터 GC를 생성, FracturedGeometryCollection에 저장합니다.
-	 * 이후 GC가 DynamicMesh로 변환될 수 있도록 BuildChunkMeshesFromGeometryCollection 메소드 호출까지 담당합니다.
+	 * SourceStaticMesh로부터 GC를 생성하고 Chunk 메시를 빌드합니다.
+	 * 내부적으로 CreateFracturedGC()와 BuildChunksFromGC()를 호출합니다.
 	 */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh")
-	void AutoFractureAndAssign();
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Genetrate Destructible Chunks", DisplayPriority = 1))
+	void GenerateDestructibleChunks();
 
 	/** 파괴전 Mesh의 상태로 되돌리기 */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh")
-	void RevertFracture();
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Revert Chunks"))
+	void RevertChunksToSourceMesh();
+
+private:
+	/**
+	 * SourceStaticMesh로부터 GeometryCollection을 생성하고 슬라이싱합니다.
+	 * @param InSourceMesh 원본 StaticMesh
+	 * @return 생성된 GeometryCollection, 실패 시 nullptr
+	 */
+	TObjectPtr<UGeometryCollection> CreateFracturedGC(TObjectPtr<UStaticMesh> InSourceMesh);
 
 #endif
 protected:
