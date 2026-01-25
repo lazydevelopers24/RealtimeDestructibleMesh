@@ -956,11 +956,14 @@ void URealtimeDestructibleMeshComponent::BuildCollisionChunkBodySetup(int32 Chun
 
 		const FVector LocalCenter = GridCellLayout.IdToLocalCenter(CellId);
 
+		// 로컬 스페이스 셀 크기 사용 (GridCellSize는 월드 스페이스이므로 사용하면 안됨)
+		const FVector& LocalCellSize = GridCellLayout.CellSize;
+
 		FKBoxElem BoxElem;
 		BoxElem.Center = LocalCenter;
-		BoxElem.X = GridCellSize.X;
-		BoxElem.Y = GridCellSize.Y;
-		BoxElem.Z = GridCellSize.Z;
+		BoxElem.X = LocalCellSize.X;
+		BoxElem.Y = LocalCellSize.Y;
+		BoxElem.Z = LocalCellSize.Z;
 		BoxElem.Rotation = FRotator::ZeroRotator;
 
 		ChunkAggGeom.BoxElems.Add(BoxElem);
@@ -4212,11 +4215,6 @@ void URealtimeDestructibleMeshComponent::DrawServerCollisionDebug()
 
 void URealtimeDestructibleMeshComponent::DrawActivePhysicsBoxesDebug()
 {
-	if (!bServerCellCollisionInitialized)
-	{
-		return;
-	}
-
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -4227,46 +4225,85 @@ void URealtimeDestructibleMeshComponent::DrawActivePhysicsBoxesDebug()
 	int32 TotalActiveBoxes = 0;
 	int32 DisabledChunks = 0;
 
-	for (int32 ChunkIdx = 0; ChunkIdx < CollisionChunks.Num(); ++ChunkIdx)
+	// 디버그 색상 (Green - 발표용)
+	const FColor DebugColor = FColor::Green;
+
+	// 서버 경로: CollisionChunks 기반 디버그 (Cell Box Collision이 초기화된 경우)
+	if (bServerCellCollisionInitialized && CollisionChunks.Num() > 0)
 	{
-		const FCollisionChunkData& Chunk = CollisionChunks[ChunkIdx];
-
-		// BodySetup이 없으면 스킵
-		if (!Chunk.BodySetup)
+		for (int32 ChunkIdx = 0; ChunkIdx < CollisionChunks.Num(); ++ChunkIdx)
 		{
-			continue;
+			const FCollisionChunkData& Chunk = CollisionChunks[ChunkIdx];
+
+			// BodySetup이 없으면 스킵
+			if (!Chunk.BodySetup)
+			{
+				continue;
+			}
+
+			// 콜리전 컴포넌트 상태 확인
+			UStaticMeshComponent* ChunkComp = Cast<UStaticMeshComponent>(Chunk.ChunkComponent);
+			if (!ChunkComp || ChunkComp->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+			{
+				++DisabledChunks;
+				continue;
+			}
+
+			// 실제 BodySetup의 BoxElems에서 박스 그리기
+			const FKAggregateGeom& DebugAggGeom = Chunk.BodySetup->AggGeom;
+			for (const FKBoxElem& BoxElem : DebugAggGeom.BoxElems)
+			{
+				const FVector WorldCenter = ComponentTransform.TransformPosition(BoxElem.Center);
+				const FVector HalfExtent = FVector(BoxElem.X, BoxElem.Y, BoxElem.Z) * 0.5f * ComponentTransform.GetScale3D();
+				DrawDebugBox(World, WorldCenter, HalfExtent, ComponentTransform.GetRotation(), DebugColor, false, 0.0f, SDPG_Foreground, 1.0f);
+				++TotalActiveBoxes;
+			}
 		}
+	}
+	// 클라이언트 경로: GridCellLayout 기반 디버그 (파괴된 셀 필터링)
+	else if (GridCellLayout.IsValid())
+	{
+		const FVector HalfExtent = GridCellLayout.CellSize * 0.5f * ComponentTransform.GetScale3D();
 
-		// 콜리전 컴포넌트 상태 확인
-		UStaticMeshComponent* ChunkComp = Cast<UStaticMeshComponent>(Chunk.ChunkComponent);
-		if (!ChunkComp || ChunkComp->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+		for (int32 CellId = 0; CellId < GridCellLayout.GetTotalCellCount(); ++CellId)
 		{
-			++DisabledChunks;
-			continue;
-		}
+			// 존재하지 않는 셀 스킵
+			if (!GridCellLayout.GetCellExists(CellId))
+			{
+				continue;
+			}
 
-		// 청크 인덱스 기반으로 고유 색상 생성
-		const uint8 R = static_cast<uint8>((ChunkIdx * 73) % 256);
-		const uint8 G = static_cast<uint8>((ChunkIdx * 137 + 50) % 256);
-		const uint8 B = static_cast<uint8>((ChunkIdx * 199 + 100) % 256);
-		const FColor ChunkColor(R, G, B, 255);
+			// 파괴된 셀 스킵
+			if (CellState.DestroyedCells.Contains(CellId))
+			{
+				++DisabledChunks;
+				continue;
+			}
 
-		// 실제 BodySetup의 BoxElems에서 점으로 그리기 (성능 최적화)
-		const FKAggregateGeom& DebugAggGeom = Chunk.BodySetup->AggGeom;
-		for (const FKBoxElem& BoxElem : DebugAggGeom.BoxElems)
-		{
-			const FVector WorldCenter = ComponentTransform.TransformPosition(BoxElem.Center);
-			DrawDebugPoint(World, WorldCenter, 5.0f, ChunkColor, false, 0.0f, SDPG_World);
+			// 셀 중심 계산 및 박스 그리기
+			const FVector LocalCenter = GridCellLayout.IdToLocalCenter(CellId);
+			const FVector WorldCenter = ComponentTransform.TransformPosition(LocalCenter);
+			DrawDebugBox(World, WorldCenter, HalfExtent, ComponentTransform.GetRotation(), DebugColor, false, 0.0f, SDPG_Foreground, 1.0f);
 			++TotalActiveBoxes;
 		}
+	}
+	else
+	{
+		// GridCellLayout도 없으면 디버그 불가
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Red,
+				TEXT("[PhysicsBoxes] No collision data available (Server: no CollisionChunks, Client: no GridCellLayout)"));
+		}
+		return;
 	}
 
 	// 매 프레임 상태 표시 (화면 왼쪽 상단)
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow,
-			FString::Printf(TEXT("[PhysicsBoxes] Active: %d boxes, Disabled chunks: %d, Destroyed cells: %d"),
-				TotalActiveBoxes, DisabledChunks, CellState.DestroyedCells.Num()));
+			FString::Printf(TEXT("[PhysicsBoxes] Active: %d boxes, Destroyed cells: %d"),
+				TotalActiveBoxes, DisabledChunks));
 	}
 }
 
@@ -4411,7 +4448,36 @@ void URealtimeDestructibleMeshComponent::OnRegister()
 	if (SourceStaticMesh && !bIsInitialized)
 	{
 		InitializeFromStaticMeshInternal(SourceStaticMesh, false);
-	} 
+	}
+
+#if WITH_EDITOR
+	// 에디터 로드 시 GridCellSize와 GridCellLayout.CellSize 불일치 검증
+	// GridCellSize는 월드 스페이스, GridCellLayout.CellSize는 로컬 스페이스 (= GridCellSize / MeshScale)
+	if (SourceStaticMesh && GridCellLayout.IsValid())
+	{
+		// 저장된 MeshScale 사용 (빌드 시점의 스케일)
+		const FVector& SavedMeshScale = GridCellLayout.MeshScale;
+		// 월드 셀 크기를 로컬로 변환
+		const FVector ExpectedLocalCellSize = GridCellSize / SavedMeshScale;
+
+		// 불일치 여부 확인 (오차 허용)
+		const float Tolerance = 0.1f;
+		const bool bCellSizeMismatch =
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.X, GridCellLayout.CellSize.X, Tolerance) ||
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.Y, GridCellLayout.CellSize.Y, Tolerance) ||
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.Z, GridCellLayout.CellSize.Z, Tolerance);
+
+		if (bCellSizeMismatch)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("OnRegister: GridCellSize(%.1f,%.1f,%.1f)/MeshScale(%.2f,%.2f,%.2f) -> Expected(%.2f,%.2f,%.2f) != Saved(%.2f,%.2f,%.2f). Rebuilding..."),
+				GridCellSize.X, GridCellSize.Y, GridCellSize.Z,
+				SavedMeshScale.X, SavedMeshScale.Y, SavedMeshScale.Z,
+				ExpectedLocalCellSize.X, ExpectedLocalCellSize.Y, ExpectedLocalCellSize.Z,
+				GridCellLayout.CellSize.X, GridCellLayout.CellSize.Y, GridCellLayout.CellSize.Z);
+			BuildGridCells();
+		}
+	}
+#endif
 }
 
 void URealtimeDestructibleMeshComponent::InitializeComponent()
@@ -4488,6 +4554,32 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 	if (SourceStaticMesh && !GridCellLayout.IsValid())
 	{
 		BuildGridCells();
+	}
+	// 런타임에서도 GridCellSize와 GridCellLayout.CellSize 불일치 검증 (서버/클라이언트 공통)
+	else if (SourceStaticMesh && GridCellLayout.IsValid())
+	{
+		const FVector& SavedMeshScale = GridCellLayout.MeshScale;
+		// 0으로 나누기 방지
+		const FVector SafeScale(
+			FMath::Max(SavedMeshScale.X, KINDA_SMALL_NUMBER),
+			FMath::Max(SavedMeshScale.Y, KINDA_SMALL_NUMBER),
+			FMath::Max(SavedMeshScale.Z, KINDA_SMALL_NUMBER)
+		);
+		const FVector ExpectedLocalCellSize = GridCellSize / SafeScale;
+
+		const float Tolerance = 0.1f;
+		const bool bCellSizeMismatch =
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.X, GridCellLayout.CellSize.X, Tolerance) ||
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.Y, GridCellLayout.CellSize.Y, Tolerance) ||
+			!FMath::IsNearlyEqual(ExpectedLocalCellSize.Z, GridCellLayout.CellSize.Z, Tolerance);
+
+		if (bCellSizeMismatch)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BeginPlay: GridCellSize/CellSize mismatch detected. Expected(%.2f,%.2f,%.2f) != Saved(%.2f,%.2f,%.2f). Rebuilding GridCellLayout..."),
+				ExpectedLocalCellSize.X, ExpectedLocalCellSize.Y, ExpectedLocalCellSize.Z,
+				GridCellLayout.CellSize.X, GridCellLayout.CellSize.Y, GridCellLayout.CellSize.Z);
+			BuildGridCells();
+		}
 	}
 	if (bIsInitialized && !BooleanProcessor.IsValid())
 	{
@@ -5652,7 +5744,7 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 
 	// bShowGridCellDebug가 변경되면 처리
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(URealtimeDestructibleMeshComponent, bShowGridCellDebug))
-	{  
+	{
 		if (bShowGridCellDebug)
 		{
 			// 디버그 켜기: 그리드 셀 그리기
@@ -5665,6 +5757,17 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 			{
 				FlushPersistentDebugLines(World);
 			}
+		}
+	}
+
+	// GridCellSize가 변경되면 GridCellLayout 자동 재빌드
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(URealtimeDestructibleMeshComponent, GridCellSize))
+	{
+		if (SourceStaticMesh)
+		{
+			BuildGridCells();
+			UE_LOG(LogTemp, Log, TEXT("PostEditChangeProperty: GridCellSize changed to (%.1f, %.1f, %.1f), GridCellLayout rebuilt"),
+				GridCellSize.X, GridCellSize.Y, GridCellSize.Z);
 		}
 	}
 }
