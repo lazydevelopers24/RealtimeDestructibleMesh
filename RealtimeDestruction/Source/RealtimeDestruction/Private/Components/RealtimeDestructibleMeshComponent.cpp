@@ -330,6 +330,15 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE("ExecuteDestructionInternal")
 
+	// 데디케이티드 서버에서는 Boolean 연산 스킵 (시각적 처리 불필요)
+	// Cell 상태만 업데이트하고 콜리전 갱신은 별도 처리
+	if (IsRunningDedicatedServer())
+	{
+		FDestructionResult Result = DestructionLogic(Request);
+		PendingDestructionResults.Add(Result);
+		return true;
+	}
+
 	// 관통 여부 판단 (큐 우선순위 결정용)
 	bool bIsPenetrating = IsChunkPenetrated(Request);
 
@@ -343,7 +352,7 @@ bool URealtimeDestructibleMeshComponent::ExecuteDestructionInternal(const FRealt
 	}
 
 	EnqueueRequestLocal(Request, bIsPenetrating, TempDecal);
-	return true;	
+	return true;
 }
 
 //=============================================================================
@@ -987,13 +996,9 @@ void URealtimeDestructibleMeshComponent::BuildCollisionChunkBodySetup(int32 Chun
 		ChunkComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	}
 
-	// 5. 물리 메시 쿠킹
-	Chunk.BodySetup->InvalidatePhysicsData();
-	Chunk.BodySetup->CreatePhysicsMeshes();
-
-	// 물리 메시 생성 확인
-	UE_LOG(LogTemp, Log, TEXT("[CellBoxDebug] Chunk %d: CreatePhysicsMeshes called, bCreatedPhysicsMeshes=%d"),
-		ChunkIndex, Chunk.BodySetup->bCreatedPhysicsMeshes ? 1 : 0);
+	// 5. BoxElems는 Analytic Shape라 쿠킹 불필요 - CreatePhysicsMeshes() 스킵
+	// BoxElems, SphereElems, CapsuleElems 등 기본 Shape는 Physics에서 직접 처리
+	Chunk.BodySetup->bCreatedPhysicsMeshes = true;  // 쿠킹 완료 플래그 강제 설정
 
 	// 6. 컴포넌트의 BodySetup 갱신 및 물리 바디 직접 생성
 	FBodyInstance* ChunkBodyInstance = ChunkComp->GetBodyInstance();
