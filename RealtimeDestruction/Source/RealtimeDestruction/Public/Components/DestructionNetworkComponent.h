@@ -25,7 +25,7 @@
  * 2. Add Component → DestructionNetworkComponent 추가
  * 3. 완료!
  */
-UCLASS(ClassGroup=(Destruction), meta=(BlueprintSpawnableComponent, DisplayName="Destruction Network"))
+UCLASS(ClassGroup=(RealtimeDestruction), meta=(BlueprintSpawnableComponent, DisplayName="Destruction Network"))
 class REALTIMEDESTRUCTION_API UDestructionNetworkComponent : public UActorComponent
 {
 	GENERATED_BODY()

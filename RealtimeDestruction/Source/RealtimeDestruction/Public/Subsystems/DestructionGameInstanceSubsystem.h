@@ -19,7 +19,7 @@ class UDecalMaterialDataAsset;
  * 파괴 시스템용 GameInstance Subsystem
  * DecalDataAsset 등 전역 설정을 관리
  */
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API UDestructionGameInstanceSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()

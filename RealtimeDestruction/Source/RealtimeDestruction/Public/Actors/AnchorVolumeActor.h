@@ -24,7 +24,7 @@ enum class EAnchorVolumeShape : uint8
 	Sphere
 };
 
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API AAnchorVolumeActor : public AActor
 {
 	GENERATED_BODY()

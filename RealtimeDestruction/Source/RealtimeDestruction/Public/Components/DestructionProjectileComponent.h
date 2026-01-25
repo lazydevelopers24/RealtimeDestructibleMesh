@@ -51,7 +51,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNonDestructibleHit, const FHitRes
  * 2. HoleRadius, 데칼, 파티클 설정
  * 3. 멀티플레이어: 투사체를 서버에서 스폰하도록 구현
  */
-UCLASS(ClassGroup=(Destruction), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (RealtimeDestruction), meta = (BlueprintSpawnableComponent))
 class REALTIMEDESTRUCTION_API UDestructionProjectileComponent : public USceneComponent
 {
 	GENERATED_BODY()
@@ -93,35 +93,35 @@ public:
 	bool bShowAffetedChunks = false;
 
 	//=========================================================================
-	//  Cylinder / Cone  전용 파라매터
+	//  Cylinder 전용 파라매터
 	//=========================================================================  
 	/** Cylinder Radius */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Cylinder",
-		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder || ToolShape == EDestructionToolShape::Cone", EditConditionHides))
+		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder", EditConditionHides))
 	float CylinderRadius = 10.0f;
 
 	/** Cylinder 높이 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Cylinder",
-		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder || ToolShape == EDestructionToolShape::Cone", EditConditionHides))
+		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder", EditConditionHides))
 	float CylinderHeight = 400.0f;
 
 	/** 원형 단면의 분할 수 */	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Cylinder",
 		meta = (ClampMin = 3, ClampMax = 64,
-			EditCondition = "ToolShape == EDestructionToolShape::Cylinder || ToolShape == EDestructionToolShape::Cone",
+			EditCondition = "ToolShape == EDestructionToolShape::Cylinder",
 			EditConditionHides))
 	int32 RadialSteps = 12;
 
 	/** 높이 방향 분할 수 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Cylinder",
 		meta = (ClampMin = 0, ClampMax = 32,
-			EditCondition = "ToolShape == EDestructionToolShape::Cylinder || ToolShape == EDestructionToolShape::Cone",
+			EditCondition = "ToolShape == EDestructionToolShape::Cylinder",
 			EditConditionHides))
 	int32 HeightSubdivisions = 0;
 
 	/** 닫힌 원통인지 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Cylinder",
-		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder || ToolShape == EDestructionToolShape::Cone",
+		meta = (EditCondition = "ToolShape == EDestructionToolShape::Cylinder",
 			EditConditionHides)) 
 	bool bCapped = true;
 
@@ -147,16 +147,6 @@ public:
 			EditCondition = "ToolShape == EDestructionToolShape::Sphere",
 			EditConditionHides))
 	int32 SphereStepsTheta = 16;
-
-	//=========================================================================
-	// Box 전용 파라미터
-	//=========================================================================
-	  /** Box 크기 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Destruction|Shape|Box",
-		meta = (EditCondition = "ToolShape == EDestructionToolShape::Box",
-			EditConditionHides))
-	FVector BoxSize = FVector(20.0f, 20.0f, 20.0f);
-
 
 	/** 충돌 후 투사체 자동 제거 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction")

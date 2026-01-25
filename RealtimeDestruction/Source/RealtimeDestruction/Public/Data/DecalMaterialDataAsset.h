@@ -103,7 +103,7 @@ struct REALTIMEDESTRUCTION_API FProjectileDecalConfig
 	TMap<FName,	FDecalSizeConfigArray> SurfaceConfigs;
 };
 
-UCLASS(BlueprintType)
+UCLASS(ClassGroup = (RealtimeDestruction), BlueprintType)
 class REALTIMEDESTRUCTION_API UDecalMaterialDataAsset : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

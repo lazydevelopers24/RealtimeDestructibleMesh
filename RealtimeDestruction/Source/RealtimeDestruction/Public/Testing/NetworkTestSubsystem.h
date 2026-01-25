@@ -37,7 +37,7 @@
  * - 콘솔: Destruction.NetPreset bad
  * - 블루프린트: GetSubsystem<UNetworkTestSubsystem>()->ApplyPreset(ENetworkTestPreset::Bad)
  */
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API UNetworkTestSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()

@@ -33,7 +33,7 @@ struct FDecalDataAssetEntry
 	FName ConfigID;
 };
 
-UCLASS(config = Game, defaultconfig, meta = (DisplayName = "Realtime Destructible Mesh"))
+UCLASS(ClassGroup = (RealtimeDestruction), config = Game, defaultconfig, meta = (DisplayName = "Realtime Destructible Mesh"))
 class REALTIMEDESTRUCTION_API URDMSetting : public UDeveloperSettings
 {
 	GENERATED_BODY()

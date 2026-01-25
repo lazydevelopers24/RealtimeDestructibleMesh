@@ -5852,7 +5852,7 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 
 	if (!SaveResult)
 	{
-		UE_LOG(LogTemp, Log, TEXT("Failed to save GeometryCollectio: %s"), *PackageFileName);
+		UE_LOG(LogTemp, Log, TEXT("Failed to save GeometryCollection: %s"), *PackageFileName);
 	}
 
 
@@ -5868,9 +5868,8 @@ void URealtimeDestructibleMeshComponent::AutoFractureAndAssign()
 		Owner->Modify();
 		Owner->RerunConstructionScripts();
 	}
-
-	return;
 }
+
 void URealtimeDestructibleMeshComponent::RevertFracture()
 {
 	// Cell로 나눠진 상태가 아니면  return

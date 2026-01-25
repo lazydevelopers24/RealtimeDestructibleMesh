@@ -43,7 +43,7 @@ struct FPendingClusteringRequest
 	float Depth = 10.0f;
 };
 
-UCLASS(ClassGroup = (Destruction), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (RealtimeDestruction), meta = (BlueprintSpawnableComponent))
 class UBulletClusterComponent : public UActorComponent
 {
 	GENERATED_BODY()

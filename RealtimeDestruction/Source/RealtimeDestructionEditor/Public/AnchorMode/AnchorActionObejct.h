@@ -16,7 +16,7 @@
 
 class URealtimeDestructibleMeshComponent;
 
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestructionEditor))
 class REALTIMEDESTRUCTIONEDITOR_API UAnchorActionObejct : public UObject
 {
 	GENERATED_BODY()

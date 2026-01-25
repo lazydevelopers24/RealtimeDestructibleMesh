@@ -13,7 +13,7 @@
 #include "GameFramework/Actor.h"
 #include "AnchorPlaneActor.generated.h"
 
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API AAnchorPlaneActor : public AActor
 {
 	GENERATED_BODY()

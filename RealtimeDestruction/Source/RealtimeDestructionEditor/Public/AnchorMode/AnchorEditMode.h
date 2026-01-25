@@ -24,7 +24,7 @@ enum class EAnchorToolType
 	Paint
 };
 
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestructionEditor))
 class REALTIMEDESTRUCTIONEDITOR_API UAnchorEditMode : public UBaseLegacyWidgetEdMode
 {
 	GENERATED_BODY()

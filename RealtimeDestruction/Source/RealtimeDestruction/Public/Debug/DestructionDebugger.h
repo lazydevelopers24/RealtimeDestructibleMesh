@@ -276,7 +276,7 @@ struct FDestructionPerformanceStats
  *
  * WorldSubsystem으로 구현되어 월드마다 자동 생성됨
  */
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API UDestructionDebugger : public UWorldSubsystem
 {
 	GENERATED_BODY()

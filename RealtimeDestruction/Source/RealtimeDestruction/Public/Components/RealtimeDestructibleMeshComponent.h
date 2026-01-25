@@ -277,14 +277,13 @@ struct FCollisionChunkData
 };
 
 /**
- * 실시간 파괴 가능 메시 컴포넌트
+ * 실시간 파괴를 지원하는 메시 컴포넌트
  *
- * [중요] Grid Cell 시스템은 월드 좌표계를 기준으로 생성됩니다.
- * 런타임 중 이 컴포넌트의 월드 스케일을 변경하면 Grid Cell과 실제 메시 간의
- * 불일치가 발생하여 파괴 판정이 정확하지 않게 됩니다.
- * 스케일 변경이 필요한 경우 BuildGridCells()를 다시 호출해야 합니다.
+ * Realtime Destructible Mesh 플러그인의 핵심 컴포넌트입니다.
+ * UDestructionProjectileComponent를 소유한 actor를 통해 파괴를 수행할 수 있습니다.
+ * Soure Mesh를 설정하고 
  */
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (RealtimeDestruction), meta = (BlueprintSpawnableComponent, DisplayName = "Realtime Destructible Mesh"))
 class REALTIMEDESTRUCTION_API URealtimeDestructibleMeshComponent : public UDynamicMeshComponent
 {
 	GENERATED_BODY()
@@ -767,6 +766,12 @@ public:
 	/**
 	 * 격자 셀 캐시 생성 (에디터에서 호출)
 	 * SourceStaticMesh로부터 격자 셀을 생성합니다.
+	 *
+ 	 * [중요] Grid Cell 시스템은 월드 좌표계를 기준으로 생성됩니다.
+ 	 * 런타임 중 이 컴포넌트의 월드 스케일을 변경하면 Grid Cell과 실제 메시 간의
+ 	 * 불일치가 발생하여 파괴 판정이 정확하지 않게 됩니다.
+	 * 스케일 변경이 필요한 경우 BuildGridCells()를 다시 호출해야 합니다.
+	 *
 	 * @return 성공 여부
 	 */
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
@@ -885,7 +890,7 @@ public:
 #if WITH_EDITOR
 	/**
 	 * SourceStatic 메쉬로부터 GC를 생성, FracturedGeometryCollection에 저장합니다.
-	 * 이후 GC가 DynamicMesh로 변환될 수 있도록 BuildCellMeshesFromGeometryCollection 메소드 호출까지 담당합니다.
+	 * 이후 GC가 DynamicMesh로 변환될 수 있도록 BuildChunkMeshesFromGeometryCollection 메소드 호출까지 담당합니다.
 	 */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh")
 	void AutoFractureAndAssign();

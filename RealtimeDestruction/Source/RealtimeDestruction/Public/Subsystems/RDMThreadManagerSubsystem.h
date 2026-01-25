@@ -21,7 +21,7 @@ struct FRDMWorkerRequest
 	TWeakObjectPtr<UObject> Requester; // 요청한 컴포넌트 추적용
 };
 
-UCLASS()
+UCLASS(ClassGroup = (RealtimeDestruction))
 class REALTIMEDESTRUCTION_API URDMThreadManagerSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
