@@ -72,8 +72,6 @@ bool FRealtimeBooleanProcessor::Initialize(URealtimeDestructibleMeshComponent* O
 
 		// Initialize chunk multi-worker state
 		ChunkUnionResultsQueues.SetNum(ChunkNum);
-
-		CachedChunkMeshes.SetNum(ChunkNum);
 		
 		for (int32 i = 0; i < ChunkNum; ++i)
 		{
@@ -83,8 +81,6 @@ bool FRealtimeBooleanProcessor::Initialize(URealtimeDestructibleMeshComponent* O
 			FDynamicMesh3 ChunkMesh;
 			OwnerComponent->GetChunkMesh(ChunkMesh, i);
 			ChunkStates.States[i].LastSimplifyTriCount = ChunkMesh.TriangleCount();
-
-			CachedChunkMeshes[i] = MakeShared<FDynamicMesh3, ESPMode::ThreadSafe>(ChunkMesh);
 		}
 
 		ChunkNextBatchIDs.SetNumZeroed(ChunkNum); 
@@ -341,7 +337,7 @@ void FRealtimeBooleanProcessor::InitializeSlots()
 		
 		SlotUnionWorkerCounts[i] = MakeUnique<std::atomic<int32>>(0);
 		SlotSubtractWorkerCounts[i] = MakeUnique<std::atomic<int32>>(0);
-	}
+	}	 
 }
 
 void FRealtimeBooleanProcessor::ShutdownSlots()
@@ -724,8 +720,6 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 		return;
 	}
 
-	const int32 ReadGeneration = ChunkGenerations[ChunkIndex].load();
-
 	// ===== 4. Subtract compute =====
 	FDynamicMesh3 ResultMesh;
 	bool bSuccess = false; 
@@ -733,13 +727,11 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 	{	
 		// Fetch chunk mesh.
 		FDynamicMesh3 WorkMesh;
-		TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> CachedMesh = CachedChunkMeshes[ChunkIndex];
-		if (!CachedMesh.IsValid())
+		if (!OwnerComponent->GetChunkMesh(WorkMesh, ChunkIndex))
 		{
 			HandleFailureAndReturn();
 			return;
-		}
-		WorkMesh = *(CachedMesh.Get());
+		}		
 
 		if (WorkMesh.TriangleCount() == 0)
 		{
@@ -791,8 +783,8 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 #if !UE_BUILD_SHIPPING
 					TRACE_CPUPROFILER_EVENT_SCOPE("SlotWorkerUnion_Simplify");
 #endif
-				TrySimplify(ResultMesh, ChunkIndex, UnionResult.UnionCount, bEnableDetailMode);
-			}
+					TrySimplify(ResultMesh, ChunkIndex, UnionResult.UnionCount, bEnableDetailMode);
+				}
 			}
 			else
 			{
@@ -814,15 +806,15 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 				if (UnionResult.DebrisSharedToolMesh.IsValid() && UnionResult.IslandContext.IsValid())
 				{
 					FDynamicMesh3 DebrisTool = *UnionResult.DebrisSharedToolMesh;
-				FDynamicMesh3 Debris;
-				bool bSuccessIntersection = ApplyMeshBooleanAsync(
-					&WorkMesh,
+					FDynamicMesh3 Debris;
+					bool bSuccessIntersection = ApplyMeshBooleanAsync(
+						&WorkMesh,
 						&DebrisTool,
-					&Debris,
-					EGeometryScriptBooleanOperation::Intersection,
-					Ops);
-				if (bSuccessIntersection && Debris.TriangleCount() > 0)
-				{
+						&Debris,
+						EGeometryScriptBooleanOperation::Intersection,
+						Ops);
+					if (bSuccessIntersection && Debris.TriangleCount() > 0)
+					{
 						FScopeLock Lock(&UnionResult.IslandContext->MeshLock);
 						// Initialize attributes
 						if (UnionResult.IslandContext->AccumulatedDebrisMesh.TriangleCount() == 0)
@@ -834,7 +826,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 								UnionResult.IslandContext->AccumulatedDebrisMesh.EnableTriangleGroups();
 							}
 						}
-						
+
 						FDynamicMeshEditor Editor(&UnionResult.IslandContext->AccumulatedDebrisMesh);
 						FMeshIndexMappings Mappings;
 						Editor.AppendMesh(&Debris, Mappings);
@@ -866,7 +858,6 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 		          [LifeTimeToken = LifeTime,
 			          ChunkIndex,
 			          SlotIndex,
-			          ReadGeneration,
 			          ResultMesh = MoveTemp(ResultMesh),
 			          Context = UnionResult.IslandContext,
 			          Decals = MoveTemp(UnionResult.Decals),
@@ -888,32 +879,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 			          if (!WeakOwner)
 			          {
 				          return;
-			          }
-		          	const int32 CurrentGen = Processor->ChunkGenerations[ChunkIndex].load();
-		          	const bool bIsStale = (CurrentGen != ReadGeneration);
-
-			          if (bIsStale)
-			          {
-				          if (Context.IsValid())
-				          {
-					          if (Context->RemainingTaskCount.fetch_sub(1) == 1)
-					          {
-						          if (Context->Owner.IsValid() && Context->AccumulatedDebrisMesh.TriangleCount() > 0)
-						          {
-							          TArray<UMaterialInterface*> Materials;
-							          if (auto ChunkMesh = WeakOwner->GetChunkMeshComponent(ChunkIndex))
-							          {
-								          for (int32 i = 0; i < ChunkMesh->GetNumMaterials(); i++)
-								          {
-									          Materials.Add(ChunkMesh->GetMaterial(i));
-								          }
-							          }
-							          Context->Owner->SpawnDebrisActor(MoveTemp(Context->AccumulatedDebrisMesh), Materials);
-							          ///Context->Owner->CleanupSmallFragments();
-						          }
-					          }
-				          }
-			          }
+			          }			         
 
 			          double StartTime = FPlatformTime::Seconds();
 
@@ -923,8 +889,6 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 #if !UE_BUILD_SHIPPING
 				          TRACE_CPUPROFILER_EVENT_SCOPE("SlotWorkerUnion_ApplyGT");
 #endif
-				          Processor->CachedChunkMeshes[ChunkIndex] = MakeShared<FDynamicMesh3, ESPMode::ThreadSafe>(
-					          ResultMesh);
 				          WeakOwner->ApplyBooleanOperationResult(MoveTemp(ResultMesh), ChunkIndex, true);
 			          }
 
@@ -1457,29 +1421,15 @@ void FRealtimeBooleanProcessor::CancelAllOperations()
 	CurrentHoleCount = 0;
 
 	ChunkStates.Reset();
-
+	
 	ChunkHoleCount.Init(OwnerComponent->GetChunkNum(), 0);
-
-	if (OwnerComponent.IsValid())
-	{
-		int32 ChunkNum = OwnerComponent->GetChunkNum();
-		for (int32 i = 0 ; i < ChunkNum ; i++)
-		{
-			FDynamicMesh3 ChunkMesh;
-			if (OwnerComponent->GetChunkMesh(ChunkMesh, i))
-			{
-				CachedChunkMeshes[i] = MakeShared<FDynamicMesh3, ESPMode::ThreadSafe>(ChunkMesh);
-			}
-			ChunkGenerations[i].fetch_add(1);
-		}
-	}
 }
 
 void FRealtimeBooleanProcessor::AccumulateSubtractDuration(int32 ChunkIndex, double CurrentSubDuration)
 {
 	FChunkState& State = ChunkStates.GetState(ChunkIndex);
 	// Accumulate time if above threshold.
-	if (CurrentSubDuration >= SubDurationHighThreshold)
+	if (CurrentSubDuration >= SubDurationHighThreshold) 
 	{
 		State.SubtractDurationAccum += CurrentSubDuration;
 		State.DurationAccumCount++;
@@ -1912,6 +1862,7 @@ void FRealtimeBooleanProcessor::ApplySimplifyToPlanarAsync(UE::Geometry::FDynami
 		TargetMesh->CompactInPlace();
 	}
 }
+
 void FRealtimeBooleanProcessor::ApplyUniformRemesh(FDynamicMesh3* TargetMesh, double TargetEdgeLength, int32 NumPasses)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(Debris_ApplyUniformRemesh)
