@@ -168,6 +168,7 @@ FRealtimeDestructionRequest FCompactDestructionOp::Decompress() const
 URealtimeDestructibleMeshComponent::URealtimeDestructibleMeshComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;  // 서버 배칭용
+	SetIsReplicatedByDefault(true);
 	SetMobility(EComponentMobility::Movable);
 	SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	SetCollisionProfileName(TEXT("BlockAll"));
@@ -722,6 +723,12 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 
 	UE_LOG(LogTemp, Log, TEXT("UpdateCellStateFromDestruction Complete: Destroyed=%d, DetachedGroups=%d"),
 		CellState.DestroyedCells.Num(), CellState.DetachedGroups.Num());
+
+	// Late Join용: 현재 파괴 셀 상태 스냅샷 갱신 (서버에서만)
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		LateJoinDestroyedCells = CellState.DestroyedCells.Array();
+	}
 
 #if !UE_BUILD_SHIPPING
 	// 디버그 텍스트 업데이트
@@ -4456,6 +4463,14 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 		UpdateDirtyCollisionChunks();
 	}
 
+	// Late Join: 데이터 수신 후 조건 충족 시 적용
+	if (!bLateJoinApplied && bLateJoinCellsReceived
+		&& GetWorld() && GetWorld()->GetNetMode() == NM_Client
+		&& GridCellLayout.IsValid() && BooleanProcessor.IsValid() && bChunkMeshesValid)
+	{
+		ApplyLateJoinData();
+	}
+
 	// 서버 배칭 처리
 	if (!bUseServerBatching)
 	{
@@ -4522,6 +4537,95 @@ void URealtimeDestructibleMeshComponent::EndPlay(const EEndPlayReason::Type EndP
 void URealtimeDestructibleMeshComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(URealtimeDestructibleMeshComponent, AppliedOpHistory, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(URealtimeDestructibleMeshComponent, LateJoinDestroyedCells, COND_InitialOnly);
+}
+
+void URealtimeDestructibleMeshComponent::OnRep_LateJoinOpHistory()
+{
+	bLateJoinOpsReceived = true;
+	UE_LOG(LogTemp, Log, TEXT("[LateJoin] Received %d ops from server"), AppliedOpHistory.Num());
+}
+
+void URealtimeDestructibleMeshComponent::OnRep_LateJoinDestroyedCells()
+{
+	bLateJoinCellsReceived = true;
+	UE_LOG(LogTemp, Log, TEXT("[LateJoin] Received %d destroyed cells from server"), LateJoinDestroyedCells.Num());
+}
+
+void URealtimeDestructibleMeshComponent::ApplyLateJoinData()
+{
+	bLateJoinApplied = true;
+	UE_LOG(LogTemp, Log, TEXT("[LateJoin] Applying: %d destroyed cells, %d ops"),
+		LateJoinDestroyedCells.Num(), AppliedOpHistory.Num());
+
+	// === Phase 1: CellState 즉시 적용 (충돌 정확성) ===
+	for (int32 CellId : LateJoinDestroyedCells)
+	{
+		CellState.DestroyedCells.Add(CellId);
+
+		// SuperCell 상태 업데이트
+		if (bEnableSupercell && SupercellState.IsValid())
+		{
+			SupercellState.OnCellDestroyed(CellId);
+		}
+	}
+
+	// Cell Box Collision 빌드 (DestroyedCells 기반으로 올바른 충돌 즉시 생성)
+	if (bEnableServerCellCollision && !bServerCellCollisionInitialized)
+	{
+		BuildServerCellCollision();
+	}
+	else if (bServerCellCollisionInitialized)
+	{
+		// 이미 초기화됐으면 전체 청크 dirty 마킹
+		for (int32 i = 0; i < CollisionChunks.Num(); ++i)
+		{
+			MarkCollisionChunkDirty(i);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[LateJoin] Phase 1 complete: CellState has %d destroyed cells"), CellState.DestroyedCells.Num());
+
+	// === Phase 1.5: 분리 셀 삼각형 제거 + 파편 정리 (비주얼 즉시 반영) ===
+	if (LateJoinDestroyedCells.Num() > 0)
+	{
+		// 파괴된 모든 셀의 삼각형을 청크 메시에서 제거
+		RemoveTrianglesForDetachedCells(LateJoinDestroyedCells);
+
+		// 잔여 소형 파편 정리
+		TSet<int32> DestroyedCellSet(LateJoinDestroyedCells);
+		CleanupSmallFragments(DestroyedCellSet);
+
+		UE_LOG(LogTemp, Log, TEXT("[LateJoin] Phase 1.5 complete: Removed triangles for %d cells"), LateJoinDestroyedCells.Num());
+	}
+
+	// === Phase 2: Op History 리플레이 (Boolean으로 정밀 메시 복원) ===
+	if (bLateJoinOpsReceived && AppliedOpHistory.Num() > 0)
+	{
+		// CompactOps → Ops 변환
+		TArray<FRealtimeDestructionOp> Ops;
+		Ops.Reserve(AppliedOpHistory.Num());
+		for (const FCompactDestructionOp& CompactOp : AppliedOpHistory)
+		{
+			FRealtimeDestructionOp Op;
+			Op.Request = CompactOp.Decompress();
+			Ops.Add(Op);
+		}
+
+		// 기존 ApplyOpsDeterministic 파이프라인으로 리플레이
+		// → EnqueueRequestLocal → BooleanProcessor (비동기)
+		// → 메시가 점진적으로 업데이트됨
+		ApplyOpsDeterministic(Ops);
+
+		UE_LOG(LogTemp, Log, TEXT("[LateJoin] Phase 2: Enqueued %d ops for Boolean replay"), Ops.Num());
+	}
+
+	// Late Join 전용 데이터 메모리 해제 (클라이언트에서 더 이상 불필요)
+	LateJoinDestroyedCells.Empty();
+	LateJoinDestroyedCells.Shrink();
+
+	UE_LOG(LogTemp, Log, TEXT("[LateJoin] Complete. CellState has %d destroyed cells"), CellState.DestroyedCells.Num());
 }
 
 void URealtimeDestructibleMeshComponent::EnqueueForServerBatch(const FRealtimeDestructionOp& Op)

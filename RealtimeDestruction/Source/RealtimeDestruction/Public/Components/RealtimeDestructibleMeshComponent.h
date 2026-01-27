@@ -455,7 +455,16 @@ public:
 	const TArray<FCompactDestructionOp>& GetAppliedOpHistory() const { return AppliedOpHistory; }
 
 	/** Op 히스토리 초기화 (메시 리셋 시 호출) */
-	void ClearOpHistory() { AppliedOpHistory.Empty(); }
+	void ClearOpHistory() { AppliedOpHistory.Empty(); LateJoinDestroyedCells.Empty(); }
+
+	/** Late Join 데이터 적용 (TickComponent에서 조건 충족 시 호출) */
+	void ApplyLateJoinData();
+
+	UFUNCTION()
+	void OnRep_LateJoinOpHistory();
+
+	UFUNCTION()
+	void OnRep_LateJoinDestroyedCells();
 
 	// Events
 	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
@@ -1023,12 +1032,23 @@ private:
 	// Late Join: Op 히스토리 (서버에서만 유지)
 	//////////////////////////////////////////////////////////////////////////
 
-	/** 적용된 모든 Op 히스토리 (Late Join 동기화용) */
+	/** 적용된 모든 Op 히스토리 (Late Join 동기화용, COND_InitialOnly) */
+	UPROPERTY(ReplicatedUsing=OnRep_LateJoinOpHistory)
 	TArray<FCompactDestructionOp> AppliedOpHistory;
+
+	/** Late Join: 현재까지 파괴된 모든 셀 ID (COND_InitialOnly) */
+	UPROPERTY(ReplicatedUsing=OnRep_LateJoinDestroyedCells)
+	TArray<int32> LateJoinDestroyedCells;
+
 	TArray<FDestructionResult> PendingDestructionResults;
 
 	/** Op 히스토리 최대 크기 (메모리 제한) */
 	static constexpr int32 MaxOpHistorySize = 10000;
+
+	/** Late Join 데이터 수신/적용 플래그 */
+	bool bLateJoinOpsReceived = false;
+	bool bLateJoinCellsReceived = false;
+	bool bLateJoinApplied = false;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Debris 물리 동기화

@@ -69,25 +69,6 @@ protected:
 		const FRealtimeDestructionRequest& Request,
 		EDestructionRejectReason& OutReason) const;
 
-	//////////////////////////////////////////////////////////////////////////
-	// Late Join (Op History-based Synchronization)
-	//////////////////////////////////////////////////////////////////////////
-
-	/**
-	 * Request Op history from server (Server RPC)
-	 * Called by client on late join
-	 */
-	UFUNCTION(Server, Reliable)
-	void ServerRequestOpHistory(URealtimeDestructibleMeshComponent* DestructComp);
-
-	/**
-	 * Send Op history to client (Client RPC)
-	 * Called from server, executed on the requesting client
-	 * Splits into multiple batches if Op count is large (64KB limit)
-	 */
-	UFUNCTION(Client, Reliable)
-	void ClientReceiveOpHistory(URealtimeDestructibleMeshComponent* DestructComp, const TArray<FCompactDestructionOp>& Ops, bool bIsLastBatch);
-
 protected:
 	/** Maximum allowed destruction radius (anti-cheat) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Destruction|Validation")
