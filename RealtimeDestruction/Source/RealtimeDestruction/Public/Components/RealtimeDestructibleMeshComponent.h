@@ -482,7 +482,6 @@ public:
 	/** 파괴 요청이 서버에서 거부되었을 때 (클라이언트에서만 호출됨) */
 	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructionRejected OnDestructionRejected;
-
 	
 	/** Clustering 변수 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
@@ -642,28 +641,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|Status")
 	bool bIsInitialized = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0, ClampMax = 500))
-	float ThicknessOffset = 5.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean")
 	FGeometryScriptMeshBooleanOptions BooleanOptions;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean")
 	bool bAsyncEnabled = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean")
 	bool bEnableMultiWorkers = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options")
-	bool bEnableHighDetailMode = true;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0.001))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean", meta = (ClampMin = 0.001))
 	float AngleThreshold = 0.001f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean", meta = (ClampMin = 0.0))
 	double SubtractDurationLimit = 15.0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Options", meta = (ClampMin = 0, ClampMax = 255))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean", meta = (ClampMin = 0, ClampMax = 255))
 	uint8 InitInterval = 50;	
 
 	//////////////////////////////////////////////////////////////////////////
@@ -675,7 +668,7 @@ protected:
 	TArray<TObjectPtr<UDynamicMeshComponent>> ChunkMeshComponents;
 
 	// PrimComp으로 Key값 설정, FHitResult의 GetComponent는 PrimitiveComp* 반환
-	TMap<UPrimitiveComponent*, int32> ChunkIndexMap;
+	TMap<TObjectPtr<UPrimitiveComponent>, int32> ChunkIndexMap;
 
 	/** 그리드 인덱스 -> ChunkId(ChunkMeshComponents 배열 인덱스) 매핑 테이블
 	 *  슬라이싱 후 고정되며, BuildChunksFromGC에서 계산됨 */

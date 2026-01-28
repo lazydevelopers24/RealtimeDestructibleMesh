@@ -73,31 +73,31 @@ void UDestructionProjectileComponent::BeginPlay()
 	// BP에서 루트의 collision event에 OnProjectileHit을 연결할 때 AutoBind false처리
 	if (bAutoBindHit)
 	{
-	// Owner의 Root 컴포넌트가 PrimitiveComponent인 경우 OnHit 바인딩
-	AActor* Owner = GetOwner();
-	if (!Owner)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Owner is null"));
-		return;
-	}
-
-	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Owner->GetRootComponent());
-	if (RootPrimitive)
-	{
-		// Hit 이벤트 바인딩
-			RootPrimitive->OnComponentHit.AddDynamic(this, &UDestructionProjectileComponent::ProcessProjectileHit);
-
-		// Hit 이벤트가 발생하려면 Simulation Generates Hit Events가 true여야 함
-		if (!RootPrimitive->GetBodyInstance()->bNotifyRigidBodyCollision)
+		// Owner의 Root 컴포넌트가 PrimitiveComponent인 경우 OnHit 바인딩
+		AActor* Owner = GetOwner();
+		if (!Owner)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: 'Simulation Generates Hit Events' is disabled on root component. Enabling it."));
-			RootPrimitive->SetNotifyRigidBodyCollision(true);
+			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Owner is null"));
+			return;
 		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Root component is not a PrimitiveComponent. Hit events will not work."));
-	}
+
+		UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Owner->GetRootComponent());
+		if (RootPrimitive)
+		{
+			// Hit 이벤트 바인딩
+				RootPrimitive->OnComponentHit.AddDynamic(this, &UDestructionProjectileComponent::ProcessProjectileHit);
+
+			// Hit 이벤트가 발생하려면 Simulation Generates Hit Events가 true여야 함
+			if (!RootPrimitive->GetBodyInstance()->bNotifyRigidBodyCollision)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: 'Simulation Generates Hit Events' is disabled on root component. Enabling it."));
+				RootPrimitive->SetNotifyRigidBodyCollision(true);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Root component is not a PrimitiveComponent. Hit events will not work."));
+		}
 	}
 
 	if (!ToolMeshPtr.IsValid())
