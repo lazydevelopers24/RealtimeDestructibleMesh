@@ -14,10 +14,6 @@
 #include "GeometryCollection/GeometryCollectionParticlesData.h"
 #include "GridCellTypes.generated.h"
 
-struct DEBUGStruct
-{
-	static bool BFSTest();
-};
 
 // Forward declaration
 struct FRealtimeDestructionRequest;

@@ -14,21 +14,6 @@
 // FDestructionShape
 //=============================================================================
 
-static TAutoConsoleVariable<int32> CVarBFSTest(
-    TEXT("Destruction.Debug.BFSTest"),
-    0,
-    TEXT("Enable BFS Debugging Flags.\n")
-    TEXT(" 0: Off\n")
-    TEXT(" 1: On"),
-    ECVF_Cheat // 치트 명령어로 분류 (Shipping 빌드에서는 제외됨)
-);
-
-
-bool DEBUGStruct::BFSTest()
-{
-	return CVarBFSTest.GetValueOnAnyThread() > 0;
-}
-
 bool FCellDestructionShape::ContainsPoint(const FVector& Point) const
 {
 	switch (Type)

@@ -20,6 +20,7 @@
 #include "GeometryScript/MeshSimplifyFunctions.h"
 #include "ProfilingDebugging/CountersTrace.h"
 // DEBUG only
+#include "DebugConsoleVariables.h"
 #include "DynamicMesh/Operations/MergeCoincidentMeshEdges.h"
 #include "HAL/CriticalSection.h"
 #include "Subsystems/RDMThreadManagerSubsystem.h"
@@ -371,7 +372,7 @@ void FRealtimeBooleanProcessor::ShutdownSlots()
 	 
 	SlotUnionWorkerCounts.Empty();   
 
-	SlotSubtractWorkerCounts.Empty();	  
+	SlotSubtractWorkerCounts.Empty();
 }
 
 int32 FRealtimeBooleanProcessor::FindLeastBusySlot() const
@@ -694,10 +695,10 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 					  for (int i = 0; i < Processor->SlotSubtractQueues.Num(); ++i)
 					  {
 						  if (!Processor->SlotSubtractQueues[i]->IsEmpty())
-			          {
+						  {
 							  Processor->KickSubtractWorker(i);
 						  }
-			          }
+					  }		
 		          });
 	};
 
@@ -723,7 +724,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 			KickSubtractWorker(SlotIndex);
 		}
 		return;
-	}	
+	}
 
 	// ===== 4. Subtract compute =====
 	FDynamicMesh3 ResultMesh;
@@ -916,7 +917,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 								          Materials.Add(ChunkMesh->GetMaterial(i));
 							          }
 						          }
-			          
+
 						          Context->Owner->SpawnDebrisActor(MoveTemp(Context->AccumulatedDebrisMesh), Materials);
 					          	//Context->Owner->CleanupSmallFragments();
 					          }
@@ -936,14 +937,14 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 		          	WeakOwner->ClearChunkBusy(ChunkIndex);
 					UE_LOG(LogTemp, Warning, TEXT("ClearChunkBusy: ChunkIndex=%d, QueueEmpty=%d"),
 						ChunkIndex, Processor->SlotSubtractQueues[SlotIndex]->IsEmpty());
-				    // If queue has work, re-kick.
+				    // If queue has work, re-kick. 
 					for (int32 i = 0; i < Processor->SlotSubtractQueues.Num(); i++)
 					{
 						if (!Processor->SlotSubtractQueues[i]->IsEmpty())
-				    {
+						{
 							Processor->KickSubtractWorker(i);
 						}
-				    }
+					}
 				    // Next kick.
 					Processor->KickProcessIfNeededPerChunk();
 		          });
@@ -979,10 +980,10 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 			for (int32 i = 0; i < Processor->SlotSubtractQueues.Num(); i++)
 			{
 				if (!Processor->SlotSubtractQueues[i]->IsEmpty())
-			{
+				{
 					Processor->KickSubtractWorker(i);
 				} 
-			}
+			} 
 		});
 	}
 }
@@ -1510,6 +1511,11 @@ void FRealtimeBooleanProcessor::UpdateSimplifyInterval(double CurrentSetMeshAvgC
 
 bool FRealtimeBooleanProcessor::TrySimplify(UE::Geometry::FDynamicMesh3& WorkMesh, int32 ChunkIndex, int32 UnionCount, bool bEnableDetail)
 {
+	if (Simplify_Toggle == 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Simplify Off"));
+		return false;
+	}
 	if (!ChunkStates.States.IsValidIndex(ChunkIndex))
 	{
 		return false;
@@ -1756,20 +1762,20 @@ void FRealtimeBooleanProcessor::ApplySimplifyToPlanarAsync(UE::Geometry::FDynami
 	using namespace UE::Geometry;
 
 	FQEMSimplification Simplifier(TargetMesh);
-	
+
 	Simplifier.CollapseMode = FQEMSimplification::ESimplificationCollapseModes::AverageVertexPosition;
 	Simplifier.SimplifyToMinimalPlanar(FMath::Max(0.00001, Options.AngleThreshold));
-	
+
 	if (Options.bAutoCompact)
-		{
+	{
 		TargetMesh->CompactInPlace();
-			}
-	
+	}
+
 	//if (!TargetMesh)
 	//{
 	//	return;
 	//}
-	
+
 	//if (bEnableDetail)
 	//{
 	//	if (!TargetMesh->HasAttributes())
@@ -1858,7 +1864,7 @@ void FRealtimeBooleanProcessor::ApplySimplifyToPlanarAsync(UE::Geometry::FDynami
 	//	}	
 	//
 	//	FQEMSimplification Simplifier(TargetMesh);
-	
+
 	//	// Protect boundary edges.
 	//	// Boundary edge: edge with only one adjacent triangle.
 	//	Simplifier.MeshBoundaryConstraint = EEdgeRefineFlags::NoCollapse;
@@ -1881,12 +1887,12 @@ void FRealtimeBooleanProcessor::ApplySimplifyToPlanarAsync(UE::Geometry::FDynami
 	//else
 	//{
 	//	FQEMSimplification Simplifier(TargetMesh);
-	
+
 	//	Simplifier.CollapseMode = FQEMSimplification::ESimplificationCollapseModes::AverageVertexPosition;
-	
+
 	//	Simplifier.SimplifyToMinimalPlanar(FMath::Max(0.00001, Options.AngleThreshold));
 	//}
-	
+
 	//if (Options.bAutoCompact)
 	//{
 	//	TargetMesh->CompactInPlace();
