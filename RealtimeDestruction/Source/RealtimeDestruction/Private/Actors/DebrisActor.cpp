@@ -265,11 +265,12 @@ void ADebrisActor::GenerateMeshFromCells()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[DebrisActor] GenerateMeshFromCells: Generated mesh is empty"));
 		return;
-	}
+	} 
 
 	// Winding order 뒤집기 (GenerateGreedyMeshFromVoxels는 내부를 향하는 방향으로 생성)
 	GeneratedMesh.ReverseOrientation();
 
+	
 	// FDynamicMesh3 -> ProceduralMeshComponent로 변환
 	FAxisAlignedBox3d MeshBounds = GeneratedMesh.GetBounds();
 	FVector3d MeshCenter = MeshBounds.Center();

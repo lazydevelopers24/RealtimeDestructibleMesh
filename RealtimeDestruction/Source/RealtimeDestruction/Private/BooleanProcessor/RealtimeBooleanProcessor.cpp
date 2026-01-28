@@ -634,12 +634,27 @@ void FRealtimeBooleanProcessor::ProcessSlotUnionWork(int32 SlotIndex, FBulletHol
 		if (auto Processor = LifeTimeToken->Processor.Pin())
 		{
 			// If queue has work, kick again.
-			if (!Processor->SlotUnionQueues[SlotIndex]->IsEmpty())
+			//if (!Processor->SlotUnionQueues[SlotIndex]->IsEmpty())
+			//{
+			//	Processor->KickUnionWorker(SlotIndex);
+			//}
+
+			for (int32 i = 0; i < Processor->SlotUnionQueues.Num(); i++)
 			{
-				Processor->KickUnionWorker(SlotIndex);
+				if (!Processor->SlotUnionQueues[i]->IsEmpty())
+				{
+					Processor->KickUnionWorker(i);
+				}
 			}
 			// Kick subtract worker too.
-			Processor->KickSubtractWorker(SlotIndex);
+			//Processor->KickSubtractWorker(SlotIndex);
+			 for (int32 i = 0; i < Processor->SlotSubtractQueues.Num(); i++)
+              {
+                  if (!Processor->SlotSubtractQueues[i]->IsEmpty())
+                  {
+                      Processor->KickSubtractWorker(i);
+                  }
+              }
 		}
 	});
 }
