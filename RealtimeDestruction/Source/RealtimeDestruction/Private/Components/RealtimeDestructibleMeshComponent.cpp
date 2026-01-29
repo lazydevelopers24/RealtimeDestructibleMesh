@@ -654,8 +654,10 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 		// 클라이언트에게 Detach 발생 신호만 전송 (클라이언트가 자체 BFS 실행)
 
 		// 분리된 셀의 삼각형 삭제 (데디서버: 렌더링 불필요, Cell Box만 업데이트)
- 		{
-			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone; 
+ 		{  
+			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone;
+			const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority();
+
 			TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_Phase4);
 
 			// dedicated server는 메시 연산없이 메타 데이터만으로 actor 스폰
@@ -665,6 +667,10 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 				{
 					SpawnDebrisActorForDedicatedServer(Group);
 				}
+			} 
+			else if (bIsDedicatedServerClient)
+			{
+				// 데디서버 클라이언트: 복제된 DebrisActor에서 처리하므로 스킵
 			}
 			else
 			{
@@ -774,7 +780,11 @@ void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 	*/
 
 	// 렌더링 처리 (Dedicated Server는 패스) 
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_DedicatedServer)
+	const bool bIsDedicatedServer = GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
+	const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority();
+	
+	//if (!GetWorld() || GetWorld()->GetNetMode() != NM_DedicatedServer)
+	if (!bIsDedicatedServer && !bIsDedicatedServerClient)
 	{
 		RemoveTrianglesForDetachedCells(AllCellsInSupercell);
 	} 
@@ -3339,6 +3349,7 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 
 	UE_LOG(LogTemp, Warning, TEXT("[Client] Grouped into %d debris groups"), DetachedGroups.Num());
 
+	const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority(); 
 	// 각 그룹에 대해 처리
 	for (const TArray<int32>& Group : DetachedGroups)
 	{
@@ -3346,7 +3357,10 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 		CellState.AddDetachedGroup(Group);
 
 		// 분리된 셀의 삼각형 삭제 (시각적 처리)
-		RemoveTrianglesForDetachedCells(Group);		
+		if (!bIsDedicatedServerClient)
+		{
+			RemoveTrianglesForDetachedCells(Group);
+		}
 	}
 
 	// 분리된 셀들을 파괴됨 상태로 이동
