@@ -670,7 +670,17 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 			} 
 			else if (bIsDedicatedServerClient)
 			{
-				// 데디서버 클라이언트: 복제된 DebrisActor에서 처리하므로 스킵
+				// 크기가 작은 debris만 클라이언트가 자체 생성
+				for (const TArray<int32>& Group : NewDetachedGroups)
+				{
+					float DebrisSize = CalculateDebrisBoundsExtent(Group);  // 헬퍼 함수 필요
+					if (DebrisSize < MinDebrisSyncSize)
+					{
+						RemoveTrianglesForDetachedCells(Group);
+					}
+					// else: 큰 것은 서버에서 복제된 DebrisActor가 처리
+
+				}
 			}
 			else
 			{
@@ -760,6 +770,25 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 #endif
 }
 
+float URealtimeDestructibleMeshComponent::CalculateDebrisBoundsExtent(const TArray<int32>& CellIds) const
+{
+	if (CellIds.Num() == 0)
+	{
+		return 0.0f;
+	}
+
+	FBox CellBounds(ForceInit);
+	for (int32 CellId : CellIds)
+	{
+		FVector CellMin = GridCellLayout.IdToLocalMin(CellId);
+		FVector CellMax = CellMin + GridCellLayout.CellSize;
+		CellBounds += CellMin;
+		CellBounds += CellMax;
+	}
+
+	FVector BoxExtent = CellBounds.GetExtent();
+	return BoxExtent.GetMax();
+}
 void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(Debris_ForceRemoveSupercell);
@@ -783,11 +812,25 @@ void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 	const bool bIsDedicatedServer = GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
 	const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority();
 	
-	//if (!GetWorld() || GetWorld()->GetNetMode() != NM_DedicatedServer)
-	if (!bIsDedicatedServer && !bIsDedicatedServerClient)
+	 
+	if (bIsDedicatedServer)
+	{
+		SpawnDebrisActorForDedicatedServer(AllCellsInSupercell);
+	}
+	else if (bIsDedicatedServerClient)
+	{
+		// 크기가 작은 debris만 클라이언트가 자체 생성
+		float DebrisSize = CalculateDebrisBoundsExtent(AllCellsInSupercell);
+		if (DebrisSize < MinDebrisSyncSize)
+		{
+			RemoveTrianglesForDetachedCells(AllCellsInSupercell);
+		}
+		// else: 큰 것은 서버에서 복제된 DebrisActor가 처리
+	}
+	else
 	{
 		RemoveTrianglesForDetachedCells(AllCellsInSupercell);
-	} 
+	}
 
 	// cell state 업데이트 
 	CellState.DestroyCells(AllCellsInSupercell);

@@ -836,6 +836,8 @@ public:
 	FDestructionResult DestructionLogic(const FRealtimeDestructionRequest& Request);
 	void DisconnectedCellStateLogic(const TArray< FDestructionResult>& AllResults, bool bForceRun = false);
 
+	float CalculateDebrisBoundsExtent(const TArray<int32>& CellIds) const;
+
 	/**
 	 * 임의적으로 파괴를 할 때 사용하는 함수 ( Supercell에서 총알 수 카운트 한 것을 기반으로 호출 중 ) 
 	 */

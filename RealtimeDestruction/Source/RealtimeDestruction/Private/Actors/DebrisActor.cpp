@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 LazyDevelopers <lazydeveloper24@gmail.com>. All rights reserved.
+// Copyright (c) 2026 LazyDevelopers <lazydeveloper24@gmail.com>. All rights reserved.
 // This plugin is distributed under the Fab Standard License.
 //
 // This product was independently developed by us while participating in the Epic Project, a developer-support
@@ -513,14 +513,17 @@ void ADebrisActor::EncodeCellsToBitmap(const TArray<int32>& InCellIds, const FGr
 
 	for (int32 CellId : InCellIds)
 	{
-		FVector LocalMin = GridLayout.IdToLocalMin(CellId);
-		FIntVector GridPos(
-			FMath::FloorToInt((LocalMin.X - Origin.X) / CellSize.X),
-			FMath::FloorToInt((LocalMin.Y - Origin.Y) / CellSize.Y),
-			FMath::FloorToInt((LocalMin.Z - Origin.Z) / CellSize.Z)
-		);
-		GridPositions.Add(GridPos);
+		//FVector LocalMin = GridLayout.IdToLocalMin(CellId);
+		//FIntVector GridPos(
+		//	FMath::FloorToInt((LocalMin.X - Origin.X) / CellSize.X),
+		//	FMath::FloorToInt((LocalMin.Y - Origin.Y) / CellSize.Y),
+		//	FMath::FloorToInt((LocalMin.Z - Origin.Z) / CellSize.Z)
+		//);
+		//GridPositions.Add(GridPos);
 
+		FIntVector GridPos = GridLayout.IdToCoord(CellId);
+		GridPositions.Add(GridPos);
+		
 		MinBounds.X = FMath::Min(MinBounds.X, GridPos.X);
 		MinBounds.Y = FMath::Min(MinBounds.Y, GridPos.Y);
 		MinBounds.Z = FMath::Min(MinBounds.Z, GridPos.Z);
