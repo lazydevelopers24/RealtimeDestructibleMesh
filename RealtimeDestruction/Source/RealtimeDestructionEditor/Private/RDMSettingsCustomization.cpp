@@ -14,7 +14,7 @@
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "HAL/PlatformMisc.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 
 #define LOCTEXT_NAMESPACE "RDMSettingsCustomization"
 
@@ -92,9 +92,9 @@ void FRdmSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBui
 	// Decal Setting Category
 	IDetailCategoryBuilder& DecalCategory = DetailBuilder.EditCategory("Decal Settings");
 
-	// DecalDataAssets 프로퍼티 핸들 가져오기
+	// ImpactProfiles 프로퍼티 핸들 가져오기
 	TSharedRef<IPropertyHandle> ArrayHandle =
-		DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(URDMSetting, DecalDataAssets));
+		DetailBuilder.GetProperty(GET_MEMBER_NAME_CHECKED(URDMSetting, ImpactProfiles));
 
 	// 배열 변경 시 ConfigID 자동 갱신
 	ArrayHandle->SetOnChildPropertyValueChanged(
@@ -113,9 +113,9 @@ void FRdmSettingsCustomization::UpdateConfigIDs()
 		return;
 	}
 
-	for (FDecalDataAssetEntry& Entry : SettingsPtr->DecalDataAssets)
+	for (FImpactProfileDataAssetEntry& Entry : SettingsPtr->ImpactProfiles)
 	{
-		if (UDecalMaterialDataAsset* Asset = Entry.DataAsset.LoadSynchronous())
+		if (UImpactProfileDataAsset* Asset = Entry.DataAsset.LoadSynchronous())
 		{
 			Entry.ConfigID = Asset->ConfigID;
 		}

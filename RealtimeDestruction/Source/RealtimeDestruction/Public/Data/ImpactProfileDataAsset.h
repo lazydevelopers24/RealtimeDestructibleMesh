@@ -13,10 +13,10 @@
 #include "Engine/DataAsset.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/DestructionTypes.h"
-#include "DecalMaterialDataAsset.generated.h"
+#include "ImpactProfileDataAsset.generated.h"
  
 USTRUCT(BlueprintType)
-struct REALTIMEDESTRUCTION_API FDecalSizeConfig 
+struct REALTIMEDESTRUCTION_API FImpactProfileConfig
 {
 	GENERATED_BODY()
  
@@ -57,16 +57,16 @@ struct REALTIMEDESTRUCTION_API FDecalSizeConfig
 };
 
 USTRUCT(BlueprintType)
-struct REALTIMEDESTRUCTION_API FDecalSizeConfigArray
+struct REALTIMEDESTRUCTION_API FImpactProfileConfigArray
 {
 	GENERATED_BODY()
-	
-	/** 해당 surface에서 사용 가능한 decal 목록 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
-	TArray<FDecalSizeConfig> Configs;
-	
+
+	/** 해당 surface에서 사용 가능한 impact profile 목록 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ImpactProfile")
+	TArray<FImpactProfileConfig> Configs;
+
 	/** 랜덤 선택 */
-	const FDecalSizeConfig* GetRandom() const
+	const FImpactProfileConfig* GetRandom() const
 	{
 		if (Configs.Num() == 0)
 		{
@@ -92,19 +92,19 @@ struct REALTIMEDESTRUCTION_API FDecalSizeConfigArray
 };
 
 USTRUCT(BlueprintType)
-struct REALTIMEDESTRUCTION_API FProjectileDecalConfig
+struct REALTIMEDESTRUCTION_API FProjectileImpactConfig
 {
 	GENERATED_BODY()
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ImpactProfile")
 	FName ConfigID = NAME_None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
-	TMap<FName,	FDecalSizeConfigArray> SurfaceConfigs;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ImpactProfile")
+	TMap<FName,	FImpactProfileConfigArray> SurfaceConfigs;
 };
 
 UCLASS(ClassGroup = (RealtimeDestruction), BlueprintType)
-class REALTIMEDESTRUCTION_API UDecalMaterialDataAsset : public UPrimaryDataAsset
+class REALTIMEDESTRUCTION_API UImpactProfileDataAsset : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 
@@ -122,18 +122,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	FName ConfigID = NAME_None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal") 
-	TMap<FName,	FDecalSizeConfigArray> SurfaceConfigs;
-	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ImpactProfile")
+	TMap<FName,	FImpactProfileConfigArray> SurfaceConfigs;
+
 public:
-	UFUNCTION(BlueprintCallable, Category = "Decal")
-	bool GetConfig( FName SurfaceType, int32 VariantIndex, FDecalSizeConfig& OutConfig ) const;
- 
-	UFUNCTION(BlueprintCallable, Category = "Decal")
-	bool GetConfigRandom( FName SurfaceType, FDecalSizeConfig& OutConfig ) const;
-  
-	/** 보뮤하고 있는 Key의 수 */
-	UFUNCTION(BlueprintCallable, Category = "Decal")
+	UFUNCTION(BlueprintCallable, Category = "ImpactProfile")
+	bool GetConfig( FName SurfaceType, int32 VariantIndex, FImpactProfileConfig& OutConfig ) const;
+
+	UFUNCTION(BlueprintCallable, Category = "ImpactProfile")
+	bool GetConfigRandom( FName SurfaceType, FImpactProfileConfig& OutConfig ) const;
+
+	/** 보유하고 있는 Key의 수 */
+	UFUNCTION(BlueprintCallable, Category = "ImpactProfile")
 	int32 GetSurfaceConfigCount() { return SurfaceConfigs.Num(); };
 	
 

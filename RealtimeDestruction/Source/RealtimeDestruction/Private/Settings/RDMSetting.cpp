@@ -10,7 +10,7 @@
 #include "Settings/RDMSetting.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/TypeContainer.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 
 URDMSetting::URDMSetting()
 {
@@ -30,12 +30,12 @@ void URDMSetting::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// DecalDataAssets 배열이 변경되면 각 Entry의 ConfigID를 Data Asset에서 동기화
-	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(URDMSetting, DecalDataAssets))
+	// ImpactProfiles 배열이 변경되면 각 Entry의 ConfigID를 Data Asset에서 동기화
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(URDMSetting, ImpactProfiles))
 	{
-		for (FDecalDataAssetEntry& Entry : DecalDataAssets)
+		for (FImpactProfileDataAssetEntry& Entry : ImpactProfiles)
 		{
-			if (UDecalMaterialDataAsset* LoadedAsset = Entry.DataAsset.LoadSynchronous())
+			if (UImpactProfileDataAsset* LoadedAsset = Entry.DataAsset.LoadSynchronous())
 			{
 				Entry.ConfigID = LoadedAsset->ConfigID;
 			}
@@ -53,7 +53,7 @@ void URDMSetting::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 
 void URDMSetting::UpdateEntryConfigID(FName OldConfigID, FName NewConfigID)
 {
-	for (FDecalDataAssetEntry& Entry : DecalDataAssets)
+	for (FImpactProfileDataAssetEntry& Entry : ImpactProfiles)
 	{
 		if (Entry.ConfigID == OldConfigID)
 		{
@@ -85,7 +85,7 @@ int32 URDMSetting::GetSystemThreadCount()
 	return FPlatformMisc::NumberOfCoresIncludingHyperthreads();
 }
 
-UDecalMaterialDataAsset* URDMSetting::GetDecalDataAsset(FName ConfigID) const
+UImpactProfileDataAsset* URDMSetting::GetImpactProfileDataAsset(FName ConfigID) const
 {
 	BuildCacheIfNeeded();
 
@@ -99,16 +99,16 @@ UDecalMaterialDataAsset* URDMSetting::GetDecalDataAsset(FName ConfigID) const
 
 void URDMSetting::BuildCacheIfNeeded() const
 {
-	if (CachedDataAssetMap.Num() == DecalDataAssets.Num() && DecalDataAssets.Num() >  0)
+	if (CachedDataAssetMap.Num() == ImpactProfiles.Num() && ImpactProfiles.Num() >  0)
 	{
 		return;
 	}
 
 	CachedDataAssetMap.Empty();
 
-	for (const FDecalDataAssetEntry& Entry : DecalDataAssets)
+	for (const FImpactProfileDataAssetEntry& Entry : ImpactProfiles)
 	{
-		if (UDecalMaterialDataAsset* LoadedAsset = Entry.DataAsset.LoadSynchronous())
+		if (UImpactProfileDataAsset* LoadedAsset = Entry.DataAsset.LoadSynchronous())
 		{
 			CachedDataAssetMap.Add(LoadedAsset->ConfigID, LoadedAsset);
 		}

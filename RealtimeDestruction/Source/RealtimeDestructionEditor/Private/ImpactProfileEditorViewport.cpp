@@ -7,7 +7,7 @@
 // and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
 // the use of this product.
 
-#include "DecalSizeEditorViewport.h"
+#include "ImpactProfileEditorViewport.h"
 
 #include "Components/DestructionProjectileComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -32,7 +32,7 @@
 static const float UE_RadiusOffset = 50.0f;
 static const float UE_HeightOffset = 50.0f;
 
-void SDecalSizeEditorViewport::Construct(const FArguments& InArgs)
+void SImpactProfileEditorViewport::Construct(const FArguments& InArgs)
 { 
 	// 외부에서 전달 받은 데이터를 저장
 	TargetComponent = InArgs._TargetComponent;
@@ -97,7 +97,7 @@ void SDecalSizeEditorViewport::Construct(const FArguments& InArgs)
 	RefreshPreview(); 
 }
 
-SDecalSizeEditorViewport::~SDecalSizeEditorViewport()
+SImpactProfileEditorViewport::~SImpactProfileEditorViewport()
 {
 	if (ViewportClient.IsValid())
 	{
@@ -121,7 +121,7 @@ SDecalSizeEditorViewport::~SDecalSizeEditorViewport()
 	DecalWireframe = nullptr;
 }
 
-void SDecalSizeEditorViewport::AddReferencedObjects(FReferenceCollector& Collector)
+void SImpactProfileEditorViewport::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	if (PreviewActor)
 	{
@@ -154,7 +154,7 @@ void SDecalSizeEditorViewport::AddReferencedObjects(FReferenceCollector& Collect
 
 }
 
-void SDecalSizeEditorViewport::RefreshPreview()
+void SImpactProfileEditorViewport::RefreshPreview()
 {
 	if (!PreviewScene.IsValid())
 	{
@@ -329,28 +329,28 @@ void SDecalSizeEditorViewport::RefreshPreview()
 	}
 }
 
-void SDecalSizeEditorViewport::SetDecalTransform(const FTransform& InTransform)
+void SImpactProfileEditorViewport::SetDecalTransform(const FTransform& InTransform)
 {
 	DecalTransform = InTransform;
 	UpdateDecalMesh();
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetToolShapeLocation(const FVector& InLocation)
+void SImpactProfileEditorViewport::SetToolShapeLocation(const FVector& InLocation)
 {
 	ToolShapeTransform.SetLocation(InLocation);
 	UpdateToolShapeWireframe(); 
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetToolShapeRotation(const FRotator& InRotation)
+void SImpactProfileEditorViewport::SetToolShapeRotation(const FRotator& InRotation)
 {
 	ToolShapeTransform.SetRotation(InRotation.Quaternion()); 
 	UpdateToolShapeWireframe();  
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetPreviewMesh(UStaticMesh* InPreviewMesh)
+void SImpactProfileEditorViewport::SetPreviewMesh(UStaticMesh* InPreviewMesh)
 {
 	PreviewMesh = InPreviewMesh;
 
@@ -368,35 +368,35 @@ void SDecalSizeEditorViewport::SetPreviewMesh(UStaticMesh* InPreviewMesh)
 	RefreshPreview(); 
 }
 
-void SDecalSizeEditorViewport::SetPreviewToolShape(EDestructionToolShape NewShape)
+void SImpactProfileEditorViewport::SetPreviewToolShape(EDestructionToolShape NewShape)
 {
 	PreviewToolShape = NewShape;
 	RefreshPreview();
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetPreviewSphere(float InRadius)
+void SImpactProfileEditorViewport::SetPreviewSphere(float InRadius)
 {
 	PreviewSphereRadius = InRadius;
 	UpdateToolShapeWireframe(); 
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetPreviewCylinderRadius(float InRadius)
+void SImpactProfileEditorViewport::SetPreviewCylinderRadius(float InRadius)
 {
 	PreviewCylinderRadius = InRadius;
 	UpdateToolShapeWireframe(); 
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetPreviewCylinderHeight(float InHeight)
+void SImpactProfileEditorViewport::SetPreviewCylinderHeight(float InHeight)
 {
 	PreviewCylinderHeight = InHeight;
 	UpdateToolShapeWireframe(); 
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetPreviewMeshLocation(const FVector& InLocation)
+void SImpactProfileEditorViewport::SetPreviewMeshLocation(const FVector& InLocation)
 {
 	PreviewMeshLocation = InLocation;
 	
@@ -410,7 +410,7 @@ void SDecalSizeEditorViewport::SetPreviewMeshLocation(const FVector& InLocation)
 	}
 }
 
-void SDecalSizeEditorViewport::SetPreviewMeshRotation(const FRotator& InRotator)
+void SImpactProfileEditorViewport::SetPreviewMeshRotation(const FRotator& InRotator)
 {
 	PreviewMeshRotation = InRotator;
 
@@ -424,7 +424,7 @@ void SDecalSizeEditorViewport::SetPreviewMeshRotation(const FRotator& InRotator)
 	}
 }
 
-void SDecalSizeEditorViewport::SetDecalVisible(bool bVisible)
+void SImpactProfileEditorViewport::SetDecalVisible(bool bVisible)
 {
 	bShowDecal = bVisible;
 	if (DecalPreviewComponent)
@@ -441,7 +441,7 @@ void SDecalSizeEditorViewport::SetDecalVisible(bool bVisible)
 	}
 }
 
-void SDecalSizeEditorViewport::SetToolShapeVisible(bool bVisible)
+void SImpactProfileEditorViewport::SetToolShapeVisible(bool bVisible)
 {
 	bShowToolShape = bVisible;
 	if (ToolShapeWireframe)
@@ -454,7 +454,7 @@ void SDecalSizeEditorViewport::SetToolShapeVisible(bool bVisible)
 	}
 }
 
-void SDecalSizeEditorViewport::SetPreviewMeshVisible(bool bVisible)
+void SImpactProfileEditorViewport::SetPreviewMeshVisible(bool bVisible)
 {
 	bShowPreviewMesh = bVisible;
 	if (ProjectileMesh)
@@ -467,7 +467,7 @@ void SDecalSizeEditorViewport::SetPreviewMeshVisible(bool bVisible)
 	}
 }
 
-void SDecalSizeEditorViewport::UpdateDecalMesh()
+void SImpactProfileEditorViewport::UpdateDecalMesh()
 {
 	if (!DecalPreviewComponent)
 	{
@@ -500,7 +500,7 @@ void SDecalSizeEditorViewport::UpdateDecalMesh()
 }
  
 
-void SDecalSizeEditorViewport::UpdateDecalWireframe()
+void SImpactProfileEditorViewport::UpdateDecalWireframe()
 {
 	if (!DecalWireframe)
 	{
@@ -564,7 +564,7 @@ void SDecalSizeEditorViewport::UpdateDecalWireframe()
 	DecalWireframe->MarkRenderStateDirty(); 
 }
 
-void SDecalSizeEditorViewport::SetDecalMaterial(UMaterialInterface* InMaterial)
+void SImpactProfileEditorViewport::SetDecalMaterial(UMaterialInterface* InMaterial)
 {
 	DecalMaterial = InMaterial;
 
@@ -582,7 +582,7 @@ void SDecalSizeEditorViewport::SetDecalMaterial(UMaterialInterface* InMaterial)
 	SaveState();
 }
 
-void SDecalSizeEditorViewport::SetDecalSize(const FVector& InSize)
+void SImpactProfileEditorViewport::SetDecalSize(const FVector& InSize)
 {
 	DecalSize = InSize;
 	UpdateDecalMesh();
@@ -590,16 +590,16 @@ void SDecalSizeEditorViewport::SetDecalSize(const FVector& InSize)
 }
 
 
-void SDecalSizeEditorViewport::SetTargetComponent(UDestructionProjectileComponent* InComponent)
+void SImpactProfileEditorViewport::SetTargetComponent(UDestructionProjectileComponent* InComponent)
 {
 	TargetComponent = InComponent;
 	RefreshPreview();
 }
 
 
-TSharedRef<FEditorViewportClient> SDecalSizeEditorViewport::MakeEditorViewportClient()
+TSharedRef<FEditorViewportClient> SImpactProfileEditorViewport::MakeEditorViewportClient()
 {
-	ViewportClient = MakeShareable(new FDecalSizeViewportClient(
+	ViewportClient = MakeShareable(new FImpactProfileViewportClient(
 		  PreviewScene.Get(),
 		  SharedThis(this)
 	  ));
@@ -613,10 +613,10 @@ TSharedRef<FEditorViewportClient> SDecalSizeEditorViewport::MakeEditorViewportCl
 }
 
 //////////////////////////////////////////////////////////////////////////
-// FDecalSizeViewportClient
+// FImpactProfileViewportClient
 //////////////////////////////////////////////////////////////////////////
 
-void SDecalSizeEditorViewport::UpdateToolShapeWireframe()
+void SImpactProfileEditorViewport::UpdateToolShapeWireframe()
 {
 	if (!ToolShapeWireframe)
 	{
@@ -670,7 +670,7 @@ void SDecalSizeEditorViewport::UpdateToolShapeWireframe()
 	}
 }
   
-void SDecalSizeEditorViewport::SaveState()
+void SImpactProfileEditorViewport::SaveState()
 {
 	UDestructionProjectileComponent* Comp = TargetComponent.Get();
 	if (!Comp)
@@ -703,7 +703,7 @@ void SDecalSizeEditorViewport::SaveState()
 	Comp->MarkPackageDirty();
 }
 
-FDecalSizeViewportClient::FDecalSizeViewportClient(
+FImpactProfileViewportClient::FImpactProfileViewportClient(
 	FAdvancedPreviewScene* InPreviewScene,
 	const TWeakPtr<SEditorViewport>& InEditorViewport)
 	: FEditorViewportClient(nullptr, InPreviewScene, InEditorViewport)
@@ -721,7 +721,7 @@ FDecalSizeViewportClient::FDecalSizeViewportClient(
 	EngineShowFlags.SetGrid(true);
 }
 
-void FDecalSizeViewportClient::Tick(float DeltaSeconds)
+void FImpactProfileViewportClient::Tick(float DeltaSeconds)
 {
 	FEditorViewportClient::Tick(DeltaSeconds);
 
@@ -731,12 +731,12 @@ void FDecalSizeViewportClient::Tick(float DeltaSeconds)
 	}
 }
 
-FSceneInterface* FDecalSizeViewportClient::GetScene() const
+FSceneInterface* FImpactProfileViewportClient::GetScene() const
 {
 	return PreviewScene->GetScene();
 }
 
-FLinearColor FDecalSizeViewportClient::GetBackgroundColor() const
+FLinearColor FImpactProfileViewportClient::GetBackgroundColor() const
 {
 	return FLinearColor(0.1f, 0.1f, 0.1f, 1.0f);
 }

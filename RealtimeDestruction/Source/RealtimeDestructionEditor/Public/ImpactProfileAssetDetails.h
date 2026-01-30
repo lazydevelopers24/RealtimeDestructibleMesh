@@ -12,15 +12,15 @@
 #include "CoreMinimal.h"
 #include "IDetailCustomization.h"
 
-class UDecalMaterialDataAsset;
+class UImpactProfileDataAsset;
 
-class FDecalMaterialDataAssetDetails : public IDetailCustomization
+class FImpactProfileAssetDetails : public IDetailCustomization
 {
 public:
 	static TSharedRef<IDetailCustomization> MakeInstance();
 	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override;
 private:
-	TWeakObjectPtr<UDecalMaterialDataAsset> TargetDataAsset;
+	TWeakObjectPtr<UImpactProfileDataAsset> TargetDataAsset;
 	FReply OnOpenEditorClicked();
 	
 };

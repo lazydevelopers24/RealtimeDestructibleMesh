@@ -13,7 +13,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "DestructionGameInstanceSubsystem.generated.h"
 
-class UDecalMaterialDataAsset;
+class UImpactProfileDataAsset;
 
 /**
  * 파괴 시스템용 GameInstance Subsystem
@@ -29,13 +29,13 @@ public:
 	virtual void Deinitialize() override;
 
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
-	void RegisterDecalDataAsset(UDecalMaterialDataAsset* InAsset);
+	void RegisterDecalDataAsset(UImpactProfileDataAsset* InAsset);
 	
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
 	void UnregisterDecalDataAsset(FName ConfigID);
 
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
-	UDecalMaterialDataAsset* FindDataAssetByConfigID(FName ConfigID) const;
+	UImpactProfileDataAsset* FindDataAssetByConfigID(FName ConfigID) const;
 
 	/** ConfigID 변경 시 Map의 Key도 업데이트 */
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
@@ -43,5 +43,5 @@ public:
 	
 private:
 	UPROPERTY()
-      TMap<FName, TObjectPtr<UDecalMaterialDataAsset>> DecalDataAssetMap;
+      TMap<FName, TObjectPtr<UImpactProfileDataAsset>> DecalDataAssetMap;
 };

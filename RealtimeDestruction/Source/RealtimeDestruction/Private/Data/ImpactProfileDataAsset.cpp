@@ -7,28 +7,28 @@
 // and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
 // the use of this product.
 
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 
 #if WITH_EDITOR
 
 #include "Settings/RDMSetting.h"
-void UDecalMaterialDataAsset::PreEditChange(FProperty* PropertyAboutToChange)
+void UImpactProfileDataAsset::PreEditChange(FProperty* PropertyAboutToChange)
 {
 	Super::PreEditChange(PropertyAboutToChange);
 
 	// Config ID 변경 전에 현재 값 저장
 	if (PropertyAboutToChange &&
-		PropertyAboutToChange->GetFName() == GET_MEMBER_NAME_CHECKED(UDecalMaterialDataAsset, ConfigID))
+		PropertyAboutToChange->GetFName() == GET_MEMBER_NAME_CHECKED(UImpactProfileDataAsset, ConfigID))
 	{
 		CachedConfigIDBeforeEdit = ConfigID;
 	}
 }
 
-void UDecalMaterialDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UImpactProfileDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UDecalMaterialDataAsset, ConfigID))
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UImpactProfileDataAsset, ConfigID))
 	{
 		// 값이 실제로 변경되었는지 확인
 		if (!CachedConfigIDBeforeEdit.IsNone() && CachedConfigIDBeforeEdit != ConfigID)
@@ -46,11 +46,11 @@ void UDecalMaterialDataAsset::PostEditChangeProperty(FPropertyChangedEvent& Prop
 
 #endif
 
-bool UDecalMaterialDataAsset::GetConfig( FName SurfaceType, int32 VariantIndex,
-	FDecalSizeConfig& OutConfig) const
+bool UImpactProfileDataAsset::GetConfig( FName SurfaceType, int32 VariantIndex,
+	FImpactProfileConfig& OutConfig) const
 { 
 
-	const FDecalSizeConfigArray* FoundArray = SurfaceConfigs.Find(SurfaceType);
+	const FImpactProfileConfigArray* FoundArray = SurfaceConfigs.Find(SurfaceType);
 	
 	if (!FoundArray && SurfaceType != "Default")
 	{
@@ -68,12 +68,12 @@ bool UDecalMaterialDataAsset::GetConfig( FName SurfaceType, int32 VariantIndex,
 	return true; 
 }
 
-bool UDecalMaterialDataAsset::GetConfigRandom( FName SurfaceType, FDecalSizeConfig& OutConfig) const
+bool UImpactProfileDataAsset::GetConfigRandom( FName SurfaceType, FImpactProfileConfig& OutConfig) const
 { 
 	// SurfaceType으로 DecalConfig 찾기
-	if ( const FDecalSizeConfigArray* FoundArray = SurfaceConfigs.Find(SurfaceType))
+	if ( const FImpactProfileConfigArray* FoundArray = SurfaceConfigs.Find(SurfaceType))
 	{
-		const FDecalSizeConfig* Selected = FoundArray->GetRandom();
+		const FImpactProfileConfig* Selected = FoundArray->GetRandom();
 		if (Selected)
 		{
 			OutConfig = *Selected;
@@ -84,9 +84,9 @@ bool UDecalMaterialDataAsset::GetConfigRandom( FName SurfaceType, FDecalSizeConf
 	// DecalConfig 못 찾았으면 default 값을 할당 시도
 	if (SurfaceType != "Default")
 	{
-		if (const FDecalSizeConfigArray* DefaultConfig = SurfaceConfigs.Find("Default"))
+		if (const FImpactProfileConfigArray* DefaultConfig = SurfaceConfigs.Find("Default"))
 		{
-			const FDecalSizeConfig* Selected = DefaultConfig->GetRandom();
+			const FImpactProfileConfig* Selected = DefaultConfig->GetRandom();
 			if (Selected)
 			{ 
 				OutConfig = *Selected;

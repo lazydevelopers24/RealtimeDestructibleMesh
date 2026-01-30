@@ -12,7 +12,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "RDMSetting.generated.h"
 
-class UDecalMaterialDataAsset;
+class UImpactProfileDataAsset;
 
 UENUM(BlueprintType)
 enum class ERDMThreadMode : uint8
@@ -22,12 +22,12 @@ enum class ERDMThreadMode : uint8
 };
 
 USTRUCT()
-struct FDecalDataAssetEntry
+struct FImpactProfileDataAssetEntry
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, Category = "DecalEntry")
-	TSoftObjectPtr<UDecalMaterialDataAsset> DataAsset;
+	TSoftObjectPtr<UImpactProfileDataAsset> DataAsset;
 
 	UPROPERTY(VisibleAnywhere, Category = "DecalEntry")
 	FName ConfigID;
@@ -79,15 +79,15 @@ public:
 	static int32 GetSystemThreadCount();
 
 public:
-	UPROPERTY(config, EditAnywhere, Category = "Decal Settings")
-	TArray<FDecalDataAssetEntry> DecalDataAssets;
+	UPROPERTY(config, EditAnywhere, Category = "Impact Profile Settings")
+	TArray<FImpactProfileDataAssetEntry> ImpactProfiles;
 
-	UFUNCTION(BlueprintCallable, Category = "Decal")
-	UDecalMaterialDataAsset* GetDecalDataAsset(FName ConfigID) const;
+	UFUNCTION(BlueprintCallable, Category = "Impact Profile")
+	UImpactProfileDataAsset* GetImpactProfileDataAsset(FName ConfigID) const;
 
 private:
 	UPROPERTY(Transient)
-	mutable TMap<FName, TObjectPtr<UDecalMaterialDataAsset>> CachedDataAssetMap;
+	mutable TMap<FName, TObjectPtr<UImpactProfileDataAsset>> CachedDataAssetMap;
 
 	void BuildCacheIfNeeded() const;
 };

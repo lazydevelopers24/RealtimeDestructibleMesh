@@ -15,23 +15,23 @@
 #include "Misc/NotifyHook.h"
 
 class UDestructionProjectileComponent;
-class SDecalSizeEditorViewport;
+class SImpactProfileEditorViewport;
 class IDetailsView;
 
-struct FDecalSizeConfig;
-struct FDecalSizeConfigArray;
+struct FImpactProfileConfig;
+struct FImpactProfileConfigArray;
 /**
  * Decal Size 편집 전용 에디터 윈도우  
  */
 
-class UDecalMaterialDataAsset; 
+class UImpactProfileDataAsset; 
 
-class SDecalSizeEditorWindow : public SCompoundWidget, public FNotifyHook
+class SImpactProfileEditorWindow : public SCompoundWidget, public FNotifyHook
 {
 public: 
-	SLATE_BEGIN_ARGS(SDecalSizeEditorWindow): _TargetComponent(nullptr), _TargetDataAsset(nullptr) {}
+	SLATE_BEGIN_ARGS(SImpactProfileEditorWindow): _TargetComponent(nullptr), _TargetDataAsset(nullptr) {}
         SLATE_ARGUMENT(UDestructionProjectileComponent*, TargetComponent)
-		SLATE_ARGUMENT(UDecalMaterialDataAsset*, TargetDataAsset)
+		SLATE_ARGUMENT(UImpactProfileDataAsset*, TargetDataAsset)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -42,7 +42,7 @@ public:
 	/** 위도우를 탭으로 여는 static 함수 */
 	static void OpenWindow(UDestructionProjectileComponent* Component);
 
-	static void OpenWindowForDataAsset(UDecalMaterialDataAsset* DataAsset);
+	static void OpenWindowForDataAsset(UImpactProfileDataAsset* DataAsset);
 private:
 	
 	TArray<TSharedPtr<FString>> ToolShapeOptions;
@@ -58,8 +58,8 @@ private:
 	void RefreshSurfaceTypeList();  
 	void RefreshVariantIndexList();
 	
-	FDecalSizeConfig* GetCurrentDecalConfig(); 
-	FDecalSizeConfigArray* GetCurrentDecalConfigArray();
+	FImpactProfileConfig* GetCurrentImpactConfig();
+	FImpactProfileConfigArray* GetCurrentImpactConfigArray();
 	
 	void OnConfigIDSelected(FName SelectedConfigID);
 	void OnSurfaceTypeSelected(FName SelectedSurfaceType);
@@ -86,10 +86,10 @@ private:
 	
 	/** Target Component */
 	TWeakObjectPtr<UDestructionProjectileComponent> TargetComponent;
-	TWeakObjectPtr<UDecalMaterialDataAsset> TargetDataAsset;
+	TWeakObjectPtr<UImpactProfileDataAsset> TargetDataAsset;
 
 	/** Viewport Widget */
-	TSharedPtr<SDecalSizeEditorViewport> Viewport;
+	TSharedPtr<SImpactProfileEditorViewport> Viewport;
 
 	/** Detail View */
 	TSharedPtr<IDetailsView> DetailsView;

@@ -53,7 +53,7 @@
 #include "BulletClusterComponent.h"
 #include "Algo/Unique.h"
 #include "StructuralIntegrity/CellDestructionSystem.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 #include "ProceduralMeshComponent.h"
 #if WITH_EDITOR
 #include "Selection.h"
@@ -3401,7 +3401,7 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 		// DecalMaterial 조회 (네트워크로 전송된 ConfigID로 로컬에서 조회)
 		// 1. 컴포넌트에 설정된 DecalDataAsset 사용
 		// 2. 없으면 GameInstanceSubsystem에서 조회
-		UDecalMaterialDataAsset* DataAssetToUse = nullptr;
+		UImpactProfileDataAsset* DataAssetToUse = nullptr;
 			if (UGameInstance* GI = GetWorld()->GetGameInstance())
 			{
 				if (UDestructionGameInstanceSubsystem* Subsystem = GI->GetSubsystem<UDestructionGameInstanceSubsystem>())
@@ -3413,7 +3413,7 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 
 		if (DataAssetToUse && ModifiableRequest.bSpawnDecal)
 		{
-			FDecalSizeConfig FoundConfig;
+			FImpactProfileConfig FoundConfig;
 			if (DataAssetToUse->GetConfigRandom(ModifiableRequest.SurfaceType, FoundConfig))
 			{
 				ModifiableRequest.DecalMaterial = FoundConfig.DecalMaterial;

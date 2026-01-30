@@ -17,7 +17,6 @@ public class RealtimeDestruction : ModuleRules
 				ModuleDirectory + "/Public/Components",
 				ModuleDirectory + "/Public/BooleanProcessor",
 				ModuleDirectory + "/Public/Debug",
-				ModuleDirectory + "/Public/Rendering",
 				ModuleDirectory + "/Public/StructuralIntegrity",
 			}
 		);

@@ -7,8 +7,8 @@
 // and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
 // the use of this product.
 
-#include "DecalSizeEditorWindow.h"
-#include "DecalSizeEditorViewport.h"
+#include "ImpactProfileEditorWindow.h"
+#include "ImpactProfileEditorViewport.h"
 #include "Components/DestructionProjectileComponent.h"
 
 #include "Widgets/Layout/SSplitter.h"
@@ -27,7 +27,7 @@
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Input/SRotatorInputBox.h"
 #include "PropertyCustomizationHelpers.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 #include "Subsystems/DestructionGameInstanceSubsystem.h"
 #include "Settings/RDMSetting.h"
 #include "Editor.h"
@@ -36,7 +36,7 @@
 
 static const FName DecalSizeEditorTabId("DecalSizeEditorTab");
 
-void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
+void SImpactProfileEditorWindow::Construct(const FArguments& InArgs)
 {
 	TargetComponent = InArgs._TargetComponent;
 	TargetDataAsset  = InArgs._TargetDataAsset;
@@ -56,8 +56,8 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 		// SurfaceConfigs가 비어있으면 기본 Surface 추가
 		if (TargetDataAsset->SurfaceConfigs.Num() == 0)
 		{
-			FDecalSizeConfigArray DefaultSurfaceArray;
-			DefaultSurfaceArray.Configs.Add(FDecalSizeConfig());
+			FImpactProfileConfigArray DefaultSurfaceArray;
+			DefaultSurfaceArray.Configs.Add(FImpactProfileConfig());
 			TargetDataAsset->SurfaceConfigs.Add(FName("Default"), DefaultSurfaceArray);
 			TargetDataAsset->MarkPackageDirty();
 		}
@@ -68,7 +68,7 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 			OnConfigIDSelected(*ConfigIDList[0]);
 
 			// Material 가져오기
-			FDecalSizeConfig* Config = GetCurrentDecalConfig();
+			FImpactProfileConfig* Config = GetCurrentImpactConfig();
 			if (Config)
 			{
 				SelectedDecalMaterial = Config->DecalMaterial;
@@ -128,7 +128,7 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 	DetailsView->SetIsCustomRowVisibleDelegate(FIsCustomRowVisible::CreateLambda(
 		[](FName InRowName, FName InParentName)->bool
 		{
-			if (InRowName == FName("Open Decal Size Editor"))
+			if (InRowName == FName("Open Impact Profile Editor"))
 			{
 				return false;
 			}
@@ -160,7 +160,7 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 			.MinDesiredWidth(400)
 			.MinDesiredHeight(300)
 			[
-				SAssignNew(Viewport, SDecalSizeEditorViewport)
+				SAssignNew(Viewport, SImpactProfileEditorViewport)
 				.TargetComponent(TargetComponent.Get())
 			]
 		]
@@ -180,7 +180,7 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
 				.Padding(8.0f)
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("Title", "Decal Size Editor"))
+					.Text(LOCTEXT("Title", "Impact Profile Editor"))
 					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
 				]
 
@@ -255,7 +255,7 @@ void SDecalSizeEditorWindow::Construct(const FArguments& InArgs)
   }
 
 
-void SDecalSizeEditorWindow::SetTargetComponent(UDestructionProjectileComponent* InComponent)
+void SImpactProfileEditorWindow::SetTargetComponent(UDestructionProjectileComponent* InComponent)
 {
 	TargetComponent = InComponent;
 
@@ -270,18 +270,18 @@ void SDecalSizeEditorWindow::SetTargetComponent(UDestructionProjectileComponent*
 	}
 }
 
-void SDecalSizeEditorWindow::OpenWindow(UDestructionProjectileComponent* Component)
+void SImpactProfileEditorWindow::OpenWindow(UDestructionProjectileComponent* Component)
 {
 	// 독립 윈도우로 열기
 	
 	TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(LOCTEXT("DecalSizeEditorTitle", "Decal Size Editor"))
+		.Title(LOCTEXT("ImpactProfileEditorTitle", "Impact Profile Editor"))
 		.ClientSize(FVector2D(1200, 600))
 		.SupportsMinimize(true)
 		.SupportsMaximize(true);
 
 	
-	TSharedRef<SDecalSizeEditorWindow> EditorWidget = SNew(SDecalSizeEditorWindow)
+	TSharedRef<SImpactProfileEditorWindow> EditorWidget = SNew(SImpactProfileEditorWindow)
 		.TargetComponent(Component);
 
 	Window->SetContent(EditorWidget);
@@ -289,7 +289,7 @@ void SDecalSizeEditorWindow::OpenWindow(UDestructionProjectileComponent* Compone
 	FSlateApplication::Get().AddWindow(Window);
 }
 
-void SDecalSizeEditorWindow::OpenWindowForDataAsset(UDecalMaterialDataAsset* DataAsset)
+void SImpactProfileEditorWindow::OpenWindowForDataAsset(UImpactProfileDataAsset* DataAsset)
 {
 	if (!DataAsset)
 	{
@@ -297,12 +297,12 @@ void SDecalSizeEditorWindow::OpenWindowForDataAsset(UDecalMaterialDataAsset* Dat
 	}
  
 	TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(FText::FromString(FString::Printf(TEXT("Decal Size Editor - %s"), *DataAsset->GetName())))
+		.Title(FText::FromString(FString::Printf(TEXT("Impact Profile Editor - %s"), *DataAsset->GetName())))
 		.ClientSize(FVector2D(1200, 600))
 		.SupportsMinimize(true)
 		.SupportsMaximize(true);
 
-	TSharedRef<SDecalSizeEditorWindow> EditorWidget = SNew(SDecalSizeEditorWindow)
+	TSharedRef<SImpactProfileEditorWindow> EditorWidget = SNew(SImpactProfileEditorWindow)
 		.TargetDataAsset(DataAsset);
 
 	Window->SetContent(EditorWidget);
@@ -320,7 +320,7 @@ void SDecalSizeEditorWindow::OpenWindowForDataAsset(UDecalMaterialDataAsset* Dat
 	
 }
 
-TSharedRef<SWidget> SDecalSizeEditorWindow::CreateDecalSection()
+TSharedRef<SWidget> SImpactProfileEditorWindow::CreateDecalSection()
 {
 	return SNew(SExpandableArea)
 		.AreaTitle(LOCTEXT("Decal", "Decal"))
@@ -545,7 +545,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateDecalSection()
 					SNew(SCheckBox)
 					.IsChecked_Lambda([this]()
 					{
-						FDecalSizeConfig* Config = GetCurrentDecalConfig();
+						FImpactProfileConfig* Config = GetCurrentImpactConfig();
 			  			if (Config)
 			  			{
 							  return Config->bRandomDecalRotation ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
@@ -554,7 +554,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateDecalSection()
 					})
 					.OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
 					{
-						FDecalSizeConfig* Config = GetCurrentDecalConfig();
+						FImpactProfileConfig* Config = GetCurrentImpactConfig();
 						 if (Config)
 						 {
 							 Config->bRandomDecalRotation = (NewState == ECheckBoxState::Checked);
@@ -615,7 +615,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateDecalSection()
 		];
 }
 
-void SDecalSizeEditorWindow::NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent,
+void SImpactProfileEditorWindow::NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent,
                                               FProperty* PropertyThatChanged)
 {
 	if (Viewport.IsValid())
@@ -624,7 +624,7 @@ void SDecalSizeEditorWindow::NotifyPostChange(const FPropertyChangedEvent& Prope
 	}
 }
 
-TSharedRef<SWidget> SDecalSizeEditorWindow::CreateToolShapeSection()
+TSharedRef<SWidget> SImpactProfileEditorWindow::CreateToolShapeSection()
 {
     // 초기값
       float InitSphereRadius = 10.0f;
@@ -926,7 +926,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateToolShapeSection()
           ];
 }
 
-TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
+TSharedRef<SWidget> SImpactProfileEditorWindow::CreateConfigSelectionSection()
 {
 	return SNew(SExpandableArea)
 		.AreaTitle(FText::FromString("Config Selection"))
@@ -1092,7 +1092,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
 						SNew(STextBlock)
 						.Text_Lambda([this]() -> FText
 						{
-							FDecalSizeConfig* Config = GetCurrentDecalConfig();
+							FImpactProfileConfig* Config = GetCurrentImpactConfig();
 							if (Config && !Config->VariantName.IsEmpty())
 							{
 								return FText::FromString(FString::Printf(TEXT("%d: %s"), CurVariantIndex, *Config->VariantName));
@@ -1124,7 +1124,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
 					  .ToolTipText(FText::FromString("Delete current Variant"))
 				  	.IsEnabled_Lambda([this]()
 					 { 
-						 FDecalSizeConfigArray* ConfigArray = GetCurrentDecalConfigArray();
+						 FImpactProfileConfigArray* ConfigArray = GetCurrentImpactConfigArray();
 						 return ConfigArray && ConfigArray->Configs.Num() > 1;
 					 })
 					  .OnClicked_Lambda([this]()
@@ -1222,14 +1222,14 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
 					SNew(SEditableTextBox)
 					.Text_Lambda([this]() -> FText
 					{
-						FDecalSizeConfig* Config = GetCurrentDecalConfig();
+						FImpactProfileConfig* Config = GetCurrentImpactConfig();
 						return Config ? FText::FromString(Config->VariantName) : FText::GetEmpty();
 					})
 					.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
 					{
 						if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 						{
-							FDecalSizeConfig* Config = GetCurrentDecalConfig();
+							FImpactProfileConfig* Config = GetCurrentImpactConfig();
 							if (Config)
 							{
 								Config->VariantName = NewText.ToString();
@@ -1246,7 +1246,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreateConfigSelectionSection()
 		];
 }
 
-TSharedRef<SWidget> SDecalSizeEditorWindow::CreatePreviewMeshSection()
+TSharedRef<SWidget> SImpactProfileEditorWindow::CreatePreviewMeshSection()
 {
  return SNew(SExpandableArea)
           .AreaTitle(FText::FromString("Preview Mesh"))
@@ -1392,7 +1392,7 @@ TSharedRef<SWidget> SDecalSizeEditorWindow::CreatePreviewMeshSection()
 	    ];
 }
 
-void SDecalSizeEditorWindow::SaveToComponent()
+void SImpactProfileEditorWindow::SaveToComponent()
 {
 	if (!TargetComponent.IsValid() || !Viewport.IsValid())
 	{
@@ -1411,7 +1411,7 @@ void SDecalSizeEditorWindow::SaveToComponent()
 	TargetComponent->MarkPackageDirty();
 }
 
-void SDecalSizeEditorWindow::SaveToDataAsset()
+void SImpactProfileEditorWindow::SaveToDataAsset()
 {
 	if (!TargetDataAsset.IsValid() || !Viewport.IsValid())
 	{
@@ -1419,7 +1419,7 @@ void SDecalSizeEditorWindow::SaveToDataAsset()
 	}
 
 	// 현재 선택된 Config 가져오기
-	FDecalSizeConfig* Config = GetCurrentDecalConfig();
+	FImpactProfileConfig* Config = GetCurrentImpactConfig();
 	if (!Config)
 	{
 		return;
@@ -1455,14 +1455,14 @@ void SDecalSizeEditorWindow::SaveToDataAsset()
 }
 
 
-void SDecalSizeEditorWindow::LoadConfigFromDataAsset(FName ConfigID, FName SurfaceType)
+void SImpactProfileEditorWindow::LoadConfigFromDataAsset(FName ConfigID, FName SurfaceType)
 {
 	if (!TargetDataAsset.IsValid() || !Viewport.IsValid())
 	{
 		return;
 	}
 
-	FDecalSizeConfig Config;
+	FImpactProfileConfig Config;
 	if (TargetDataAsset->GetConfig(SurfaceType, CurVariantIndex, Config))
 	{
 		SelectedDecalMaterial = Config.DecalMaterial;
@@ -1496,7 +1496,7 @@ void SDecalSizeEditorWindow::LoadConfigFromDataAsset(FName ConfigID, FName Surfa
 } 
  
 
-void SDecalSizeEditorWindow::RefreshConfigIDList()
+void SImpactProfileEditorWindow::RefreshConfigIDList()
 {
 	ConfigIDList.Empty();
 
@@ -1505,14 +1505,14 @@ void SDecalSizeEditorWindow::RefreshConfigIDList()
 		return;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 
 	 
 	ConfigIDList.Add(MakeShared<FName>(DataAsset->ConfigID));
 	 
 }
 
-void SDecalSizeEditorWindow::RefreshSurfaceTypeList()
+void SImpactProfileEditorWindow::RefreshSurfaceTypeList()
 {
 	SurfaceTypeList.Empty();
 
@@ -1521,7 +1521,7 @@ void SDecalSizeEditorWindow::RefreshSurfaceTypeList()
 		return;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 	 
 	 
 	// SurfaceConfigs의 모든 Key(SurfaceType) 추가
@@ -1539,16 +1539,16 @@ void SDecalSizeEditorWindow::RefreshSurfaceTypeList()
 	RefreshVariantIndexList();
 }
 
-void SDecalSizeEditorWindow::RefreshVariantIndexList()
+void SImpactProfileEditorWindow::RefreshVariantIndexList()
 {
 	VariantIndexList.Empty();
 
-	FDecalSizeConfigArray* ConfigArray = GetCurrentDecalConfigArray();
+	FImpactProfileConfigArray* ConfigArray = GetCurrentImpactConfigArray();
 	if (ConfigArray)
 	{
 		for (int32 i = 0; i < ConfigArray->Configs.Num(); i++)
 		{
-			const FDecalSizeConfig& Config = ConfigArray->Configs[i];
+			const FImpactProfileConfig& Config = ConfigArray->Configs[i];
 			FString DisplayName;
 			if (Config.VariantName.IsEmpty())
 			{
@@ -1574,9 +1574,9 @@ void SDecalSizeEditorWindow::RefreshVariantIndexList()
 	
 }
 
-FDecalSizeConfig* SDecalSizeEditorWindow::GetCurrentDecalConfig()
+FImpactProfileConfig* SImpactProfileEditorWindow::GetCurrentImpactConfig()
 {
-	FDecalSizeConfigArray* ConfigArray = GetCurrentDecalConfigArray();
+	FImpactProfileConfigArray* ConfigArray = GetCurrentImpactConfigArray();
 	if (ConfigArray && ConfigArray->Configs.Num() > 0)
 	{
 		// 현재 선택된 인덱스의 Config 반환 (기본: 0)
@@ -1586,7 +1586,7 @@ FDecalSizeConfig* SDecalSizeEditorWindow::GetCurrentDecalConfig()
 	return nullptr;
 }
 
-FDecalSizeConfigArray* SDecalSizeEditorWindow::GetCurrentDecalConfigArray()
+FImpactProfileConfigArray* SImpactProfileEditorWindow::GetCurrentImpactConfigArray()
 {
     
 	if (!TargetDataAsset.IsValid() || CurrentSurfaceType.IsNone())
@@ -1594,11 +1594,11 @@ FDecalSizeConfigArray* SDecalSizeEditorWindow::GetCurrentDecalConfigArray()
 		return nullptr;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 	return DataAsset->SurfaceConfigs.Find(CurrentSurfaceType);
 }
 
-void SDecalSizeEditorWindow::OnConfigIDSelected(FName SelectedConfigID)
+void SImpactProfileEditorWindow::OnConfigIDSelected(FName SelectedConfigID)
 {
 
 	CurrentSurfaceType = NAME_None;
@@ -1615,11 +1615,11 @@ void SDecalSizeEditorWindow::OnConfigIDSelected(FName SelectedConfigID)
 
 }
 
-void SDecalSizeEditorWindow::OnSurfaceTypeSelected(FName SelectedSurfaceType)
+void SImpactProfileEditorWindow::OnSurfaceTypeSelected(FName SelectedSurfaceType)
 {
 	CurrentSurfaceType = SelectedSurfaceType;
 
-	FDecalSizeConfig* Config = GetCurrentDecalConfig();
+	FImpactProfileConfig* Config = GetCurrentImpactConfig();
 	if (Config)
 	{
 		// Material 멤버 변수 업데이트 (UI에서 사용)
@@ -1650,11 +1650,11 @@ void SDecalSizeEditorWindow::OnSurfaceTypeSelected(FName SelectedSurfaceType)
 	RefreshVariantIndexList();
 }
 
-void SDecalSizeEditorWindow::OnVariantIndexSelected(int32 SelectedIndex)
+void SImpactProfileEditorWindow::OnVariantIndexSelected(int32 SelectedIndex)
 {
 	CurVariantIndex = SelectedIndex;
 
-	FDecalSizeConfig* Config = GetCurrentDecalConfig();
+	FImpactProfileConfig* Config = GetCurrentImpactConfig();
 	if (Config && Viewport.IsValid())
 	{
 		SelectedDecalMaterial = Config->DecalMaterial;
@@ -1678,21 +1678,21 @@ void SDecalSizeEditorWindow::OnVariantIndexSelected(int32 SelectedIndex)
 	}
 }
  
-void SDecalSizeEditorWindow::AddNewSurfaceType()
+void SImpactProfileEditorWindow::AddNewSurfaceType()
 {
 	if (!TargetDataAsset.IsValid())
 	{
 		return;
 	}
 	
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 	  
 	// 고유한 SurfaceType 이름 생성
 	FName NewSurfaceType = EnsureUniqueSurfaceType(FName("NewSurface"));
 
 	// 새 DecalConfig 추가
-	FDecalSizeConfigArray NewDecalConfig;
-	NewDecalConfig.Configs.Add(FDecalSizeConfig());
+	FImpactProfileConfigArray NewDecalConfig;
+	NewDecalConfig.Configs.Add(FImpactProfileConfig());
 	DataAsset->SurfaceConfigs.Add(NewSurfaceType, NewDecalConfig);
 
 	DataAsset->MarkPackageDirty();
@@ -1703,16 +1703,16 @@ void SDecalSizeEditorWindow::AddNewSurfaceType()
 	 
 }
 
-void SDecalSizeEditorWindow::AddNewVariant()
+void SImpactProfileEditorWindow::AddNewVariant()
 {
-	FDecalSizeConfigArray* ConfigArray = GetCurrentDecalConfigArray();
+	FImpactProfileConfigArray* ConfigArray = GetCurrentImpactConfigArray();
 
 	if (!ConfigArray)
 	{
 		return;
 	}
 
-	FDecalSizeConfig NewConfig;
+	FImpactProfileConfig NewConfig;
 	if (ConfigArray->Configs.Num() > 0)
 	{
 		// Decal size를 다시 맞춰야하는 불편함을 없애기 위해서 curVariantIndex를 복사 
@@ -1732,13 +1732,13 @@ void SDecalSizeEditorWindow::AddNewVariant()
 	OnVariantIndexSelected(CurVariantIndex);
 }
 
-FName SDecalSizeEditorWindow::EnsureUniqueConfigID(FName NewName)
+FName SImpactProfileEditorWindow::EnsureUniqueConfigID(FName NewName)
 {
 	if (!TargetDataAsset.IsValid())
 	{
 		return FName();
 	} 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 
 	// 중복 체크
 	auto IsConfigIDExists = [&]( FName Name )->bool
@@ -1773,14 +1773,14 @@ FName SDecalSizeEditorWindow::EnsureUniqueConfigID(FName NewName)
 	}
 }
 
-FName SDecalSizeEditorWindow::EnsureUniqueSurfaceType(FName NewName)
+FName SImpactProfileEditorWindow::EnsureUniqueSurfaceType(FName NewName)
 {  
 	if (!TargetDataAsset.IsValid())
 	{
 		return FName();
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 	  
 	if (!DataAsset->SurfaceConfigs.Contains(NewName))
 	{
@@ -1806,14 +1806,14 @@ FName SDecalSizeEditorWindow::EnsureUniqueSurfaceType(FName NewName)
 	return FName();
 }
 
-void SDecalSizeEditorWindow::DeleteCurrentConfigID()
+void SImpactProfileEditorWindow::DeleteCurrentConfigID()
 {
 	if (!TargetDataAsset.IsValid())
 	{
 		return;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 	
 	DataAsset->ConfigID = NAME_None;
 	DataAsset->SurfaceConfigs.Empty();
@@ -1831,14 +1831,14 @@ void SDecalSizeEditorWindow::DeleteCurrentConfigID()
 	}
 }
 
-void SDecalSizeEditorWindow::DeleteCurrentSurfaceType()
+void SImpactProfileEditorWindow::DeleteCurrentSurfaceType()
 {
 	if (!TargetDataAsset.IsValid() || CurrentSurfaceType.IsNone())
 	{
 		return;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 
   
 	DataAsset->SurfaceConfigs.Remove(CurrentSurfaceType);
@@ -1857,9 +1857,9 @@ void SDecalSizeEditorWindow::DeleteCurrentSurfaceType()
 	
 }
 
-void SDecalSizeEditorWindow::DeleteCurrentVariant()
+void SImpactProfileEditorWindow::DeleteCurrentVariant()
 {
-	FDecalSizeConfigArray* ConfigArray = GetCurrentDecalConfigArray();
+	FImpactProfileConfigArray* ConfigArray = GetCurrentImpactConfigArray();
 	if (!ConfigArray || ConfigArray->Configs.Num() <= 1)
 	{
 		// 최소 1개는 유지
@@ -1879,14 +1879,14 @@ void SDecalSizeEditorWindow::DeleteCurrentVariant()
 	OnVariantIndexSelected(CurVariantIndex);
 }
 
-void SDecalSizeEditorWindow::RenameCurrentConfigID(FName NewName)
+void SImpactProfileEditorWindow::RenameCurrentConfigID(FName NewName)
 {
 	if (NewName.IsNone() || !TargetDataAsset.IsValid())
 	{
 		return;
 	}
 
-	UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+	UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 
 	// 변경 전 ConfigID 저장
 	FName OldConfigID = DataAsset->ConfigID;
@@ -1927,17 +1927,17 @@ void SDecalSizeEditorWindow::RenameCurrentConfigID(FName NewName)
 	RefreshConfigIDList();
 }
 
-void SDecalSizeEditorWindow::RenameCurrentSurfaceType(FName NewName)
+void SImpactProfileEditorWindow::RenameCurrentSurfaceType(FName NewName)
 {
     if (NewName.IsNone() || NewName == CurrentSurfaceType || !TargetDataAsset.IsValid()  )
     {
         return;
     }
 
-    UDecalMaterialDataAsset* DataAsset = TargetDataAsset.Get();
+    UImpactProfileDataAsset* DataAsset = TargetDataAsset.Get();
 
  
-            FDecalSizeConfigArray* ExistingConfig = DataAsset->SurfaceConfigs.Find(CurrentSurfaceType);
+            FImpactProfileConfigArray* ExistingConfig = DataAsset->SurfaceConfigs.Find(CurrentSurfaceType);
 
             if (!ExistingConfig)
             {
@@ -1949,7 +1949,7 @@ void SDecalSizeEditorWindow::RenameCurrentSurfaceType(FName NewName)
                 NewName = EnsureUniqueSurfaceType(NewName);
             }
 
-            FDecalSizeConfigArray ConfigCopy = *ExistingConfig;
+            FImpactProfileConfigArray ConfigCopy = *ExistingConfig;
             DataAsset->SurfaceConfigs.Remove(CurrentSurfaceType);
             DataAsset->SurfaceConfigs.Add(NewName, ConfigCopy);
 

@@ -9,17 +9,17 @@
 
 #include "RealtimeDestructionEditor.h"
 
-#include "DecalMaterialDataAssetDetails.h"
+#include "ImpactProfileAssetDetails.h"
 #include "RealtimeDestructibleMeshComponentDetails.h"
 #include "Components/DestructionProjectileComponent.h"
 #include "Components/RealtimeDestructibleMeshComponent.h"
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
 #include "DestructionProjectileComponentVisualizer.h"
-#include "DecalSizeEditorWindow.h"
+#include "ImpactProfileEditorWindow.h"
 #include "DestructionProjectileComponentDetails.h"
 #include "PropertyEditorModule.h"
-#include "Data/DecalMaterialDataAsset.h" 
+#include "Data/ImpactProfileDataAsset.h" 
 #include"RDMSettingsCustomization.h"
 #include "Settings/RDMSetting.h"
 
@@ -46,8 +46,8 @@ void FRealtimeDestructionEditorModule::StartupModule()
 	);
  
 	PropertyModule.RegisterCustomClassLayout(
-		UDecalMaterialDataAsset::StaticClass()->GetFName(),
-		FOnGetDetailCustomizationInstance::CreateStatic(&FDecalMaterialDataAssetDetails::MakeInstance)
+		UImpactProfileDataAsset::StaticClass()->GetFName(),
+		FOnGetDetailCustomizationInstance::CreateStatic(&FImpactProfileAssetDetails::MakeInstance)
 	);
 
 	PropertyModule.RegisterCustomClassLayout(
@@ -75,7 +75,7 @@ void FRealtimeDestructionEditorModule::ShutdownModule()
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomClassLayout(UDestructionProjectileComponent::StaticClass()->GetFName());
-		PropertyModule.UnregisterCustomClassLayout(UDecalMaterialDataAsset::StaticClass()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(UImpactProfileDataAsset::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomClassLayout(URealtimeDestructibleMeshComponent::StaticClass()->GetFName());
 		PropertyModule.UnregisterCustomClassLayout(URDMSetting::StaticClass()->GetFName());
 	} 

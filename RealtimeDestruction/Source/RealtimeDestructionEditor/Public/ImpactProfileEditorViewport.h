@@ -16,25 +16,25 @@
 #include "RealtimeDestruction/Public/Components/DestructionTypes.h"
 
 class UDestructionProjectileComponent;
-class FDecalSizeViewportClient;
+class FImpactProfileViewportClient;
 class FAdvancedPreviewScene;
 
 /**
  * DecalSize 편집용 프리뷰 뷰포트
  */
-class SDecalSizeEditorViewport : public SEditorViewport, public FGCObject
+class SImpactProfileEditorViewport : public SEditorViewport, public FGCObject
 {
 public:
-	SLATE_BEGIN_ARGS(SDecalSizeEditorViewport) {}
+	SLATE_BEGIN_ARGS(SImpactProfileEditorViewport) {}
           SLATE_ARGUMENT(UDestructionProjectileComponent*, TargetComponent)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
-	virtual ~SDecalSizeEditorViewport();
+	virtual ~SImpactProfileEditorViewport();
 
 	// FGCObject Interface
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
-	virtual FString GetReferencerName() const override { return TEXT("SDecalSizeEditorViewport"); };
+	virtual FString GetReferencerName() const override { return TEXT("SImpactProfileEditorViewport"); };
 
 	/** 타겟 컴포넌트 설정 */
 	void SetTargetComponent(UDestructionProjectileComponent* InComponent);
@@ -104,7 +104,7 @@ private:
 	TSharedPtr<FAdvancedPreviewScene> PreviewScene;
 
 	/** 뷰포트 클라이언트 */
-	TSharedPtr<FDecalSizeViewportClient> ViewportClient;
+	TSharedPtr<FImpactProfileViewportClient> ViewportClient;
 	
 	/** 프리뷰용 액터들 */
 	TObjectPtr<AActor> PreviewActor = nullptr;
@@ -147,10 +147,10 @@ private:
 
 
 /** viewport client */
-class FDecalSizeViewportClient: public FEditorViewportClient
+class FImpactProfileViewportClient: public FEditorViewportClient
 {
 public:
-	FDecalSizeViewportClient(FAdvancedPreviewScene* InAdvancedPreviewScene,
+	FImpactProfileViewportClient(FAdvancedPreviewScene* InAdvancedPreviewScene,
 		const TWeakPtr<SEditorViewport>& InEditorViewport);
 
 	// FEditorViewportClient Interface

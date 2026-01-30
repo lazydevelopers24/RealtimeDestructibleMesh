@@ -8,7 +8,7 @@
 // the use of this product.
 
 #include "Subsystems/DestructionGameInstanceSubsystem.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 #include "Settings/RDMSetting.h"
 
 void UDestructionGameInstanceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -19,9 +19,9 @@ void UDestructionGameInstanceSubsystem::Initialize(FSubsystemCollectionBase& Col
     URDMSetting* Settings = URDMSetting::Get();
     if (Settings)
     {
-        for (const FDecalDataAssetEntry& Entry : Settings->DecalDataAssets)
+        for (const FImpactProfileDataAssetEntry& Entry : Settings->ImpactProfiles)
         {
-            if (UDecalMaterialDataAsset* Asset = Entry.DataAsset.LoadSynchronous())
+            if (UImpactProfileDataAsset* Asset = Entry.DataAsset.LoadSynchronous())
             {
                 RegisterDecalDataAsset(Asset);
             }
@@ -36,7 +36,7 @@ void UDestructionGameInstanceSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void UDestructionGameInstanceSubsystem::RegisterDecalDataAsset(UDecalMaterialDataAsset* InAsset)
+void UDestructionGameInstanceSubsystem::RegisterDecalDataAsset(UImpactProfileDataAsset* InAsset)
 {
 	if (InAsset && !InAsset->ConfigID.IsNone())
 	{
@@ -49,9 +49,9 @@ void UDestructionGameInstanceSubsystem::UnregisterDecalDataAsset(FName ConfigID)
       DecalDataAssetMap.Remove(ConfigID);
 }
 
-UDecalMaterialDataAsset* UDestructionGameInstanceSubsystem::FindDataAssetByConfigID(FName ConfigID) const
+UImpactProfileDataAsset* UDestructionGameInstanceSubsystem::FindDataAssetByConfigID(FName ConfigID) const
 {
-	const TObjectPtr<UDecalMaterialDataAsset> * Found = DecalDataAssetMap.Find(ConfigID);
+	const TObjectPtr<UImpactProfileDataAsset> * Found = DecalDataAssetMap.Find(ConfigID);
 	return Found ? Found->Get() : nullptr;
 }
 
@@ -63,10 +63,10 @@ void UDestructionGameInstanceSubsystem::RenameConfigID(FName OldConfigID, FName 
 	}
 
 	// 기존 Key로 Data Asset 찾기
-	TObjectPtr<UDecalMaterialDataAsset>* FoundAsset = DecalDataAssetMap.Find(OldConfigID);
+	TObjectPtr<UImpactProfileDataAsset>* FoundAsset = DecalDataAssetMap.Find(OldConfigID);
 	if (FoundAsset && *FoundAsset)
 	{
-		UDecalMaterialDataAsset* Asset = *FoundAsset;
+		UImpactProfileDataAsset* Asset = *FoundAsset;
 
 		// 기존 Key 제거 후 새 Key로 등록
 		DecalDataAssetMap.Remove(OldConfigID);

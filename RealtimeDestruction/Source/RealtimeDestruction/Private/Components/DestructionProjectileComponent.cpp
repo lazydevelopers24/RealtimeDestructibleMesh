@@ -21,7 +21,7 @@
 #include "NiagaraSystem.h"
 #include "Materials/MaterialInterface.h"
 #include "NetworkLogMacros.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 #include "Debug/DestructionDebugger.h"
 #include "Subsystems/DestructionGameInstanceSubsystem.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
@@ -199,7 +199,7 @@ void UDestructionProjectileComponent::ProcessDestructionRequestForChunk(URealtim
 	// ===== 절~~~~때 아래로 빼지마 
 	FName SurfaceTypeForShape = DestructComp->SurfaceType;
 	bool bHasDecalConfig = false;
-	FDecalSizeConfig OverrideDecalConfig;
+	FImpactProfileConfig OverrideDecalConfig;
  
 	if (CachedDecalDataAsset)
 	{ 
@@ -391,7 +391,7 @@ void UDestructionProjectileComponent::ProcessSphereDestructionRequestForChunk(UR
 	// DataAsset에서 Tool Shape 로드 
 	FName SurfaceTypeForShape = DestructComp->SurfaceType;
 	bool bHasDecalConfig = false;
-	FDecalSizeConfig OverrideDecalConfig;
+	FImpactProfileConfig OverrideDecalConfig;
 
 	 
 	if (CachedDecalDataAsset)
@@ -846,7 +846,7 @@ void UDestructionProjectileComponent::RequestDestructionAtLocation(const FVector
 	 
 	if (CachedDecalDataAsset)
 	{
-		FDecalSizeConfig OverrideConfig;
+		FImpactProfileConfig OverrideConfig;
 		// SurfaceType 없으므로 Default 사용
 		if (CachedDecalDataAsset->GetConfigRandom(FName("Default"), OverrideConfig))
 		{
@@ -920,7 +920,7 @@ void UDestructionProjectileComponent::GetCalculateDecalSize(FName SurfaceType, F
 		// SurfaceType이 없으면 Default 사용
 		FName ActualSurfaceType = SurfaceType.IsNone() ? FName("Default") : SurfaceType;
 
-		FDecalSizeConfig Config;
+		FImpactProfileConfig Config;
 		if (CachedDecalDataAsset->GetConfig(ActualSurfaceType, 0,Config))
 		{
 			LocationOffset = Config.LocationOffset;

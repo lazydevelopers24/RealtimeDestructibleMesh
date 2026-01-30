@@ -7,20 +7,20 @@
 // and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
 // the use of this product.
 
-#include "DecalMaterialDataAssetDetails.h"
+#include "ImpactProfileAssetDetails.h"
 
-#include "DecalSizeEditorWindow.h"
+#include "ImpactProfileEditorWindow.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
-#include "Data/DecalMaterialDataAsset.h"
+#include "Data/ImpactProfileDataAsset.h"
 
-TSharedRef<IDetailCustomization> FDecalMaterialDataAssetDetails::MakeInstance()
+TSharedRef<IDetailCustomization> FImpactProfileAssetDetails::MakeInstance()
 {
-	return MakeShareable(new FDecalMaterialDataAssetDetails);
+	return MakeShareable(new FImpactProfileAssetDetails);
 }
 
-void FDecalMaterialDataAssetDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
+void FImpactProfileAssetDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
 	TArray<TWeakObjectPtr<UObject>> Objects;
 	DetailBuilder.GetObjectsBeingCustomized(Objects);
@@ -30,10 +30,10 @@ void FDecalMaterialDataAssetDetails::CustomizeDetails(IDetailLayoutBuilder& Deta
 		return;
 	}
 
-	TargetDataAsset = Cast<UDecalMaterialDataAsset>(Objects[0].Get());
+	TargetDataAsset = Cast<UImpactProfileDataAsset>(Objects[0].Get());
 	IDetailCategoryBuilder& DecalCategory = DetailBuilder.EditCategory("Decal");
 
-	DecalCategory.AddCustomRow(FText::FromString("Open Decal Size Editor"))
+	DecalCategory.AddCustomRow(FText::FromString("Open Impact Profile Editor"))
 		 .NameContent()
 		 [
 			 SNew(STextBlock)
@@ -44,17 +44,17 @@ void FDecalMaterialDataAssetDetails::CustomizeDetails(IDetailLayoutBuilder& Deta
 		 .MaxDesiredWidth(200.f)
 		 [
 			 SNew(SButton)
-			 .Text(FText::FromString("Open Decal Size Editor"))
+			 .Text(FText::FromString("Open Impact Profile Editor"))
 			 .HAlign(HAlign_Center)
-			 .OnClicked(this, &FDecalMaterialDataAssetDetails::OnOpenEditorClicked)
+			 .OnClicked(this, &FImpactProfileAssetDetails::OnOpenEditorClicked)
 		 ];
 }
 
-FReply FDecalMaterialDataAssetDetails::OnOpenEditorClicked()
+FReply FImpactProfileAssetDetails::OnOpenEditorClicked()
 {
 	if (TargetDataAsset.IsValid())
 	{
-		SDecalSizeEditorWindow::OpenWindowForDataAsset(TargetDataAsset.Get()); 
+		SImpactProfileEditorWindow::OpenWindowForDataAsset(TargetDataAsset.Get()); 
 	}
 
 	return FReply::Handled();

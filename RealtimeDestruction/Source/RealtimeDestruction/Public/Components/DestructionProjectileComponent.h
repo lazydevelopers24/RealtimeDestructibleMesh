@@ -197,7 +197,7 @@ public:
 	TObjectPtr<UMaterialInterface> DecalMaterialInEditor = nullptr;
 
 	UPROPERTY()
-	TObjectPtr<UDecalMaterialDataAsset> CachedDecalDataAsset;
+	TObjectPtr<UImpactProfileDataAsset> CachedDecalDataAsset;
 
 	UPROPERTY()
 	FName DecalConfig = FName("Default");

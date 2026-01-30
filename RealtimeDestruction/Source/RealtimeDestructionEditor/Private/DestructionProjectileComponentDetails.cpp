@@ -15,7 +15,7 @@
 #include "DetailWidgetRow.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
-#include "DecalSizeEditorWindow.h"
+#include "ImpactProfileEditorWindow.h"
 
 TSharedRef<IDetailCustomization> FDestructionProjectileComponentDetails::MakeInstance()
 {
@@ -36,18 +36,18 @@ void FDestructionProjectileComponentDetails::CustomizeDetails(IDetailLayoutBuild
 
       IDetailCategoryBuilder& DecalCategory = DetailBuilder.EditCategory("Destruction|Decal");
 
-      DecalCategory.AddCustomRow(FText::FromString("Open Decal Size Editor"))
+      DecalCategory.AddCustomRow(FText::FromString("Open Impact Profile Editor"))
       .NameContent()
       [
             SNew(STextBlock)
-            .Text(FText::FromString("Decal Editor"))  
+            .Text(FText::FromString("Impact Profile Editor"))  
             .Font(IDetailLayoutBuilder::GetDetailFont())
       ]
       .ValueContent()
       .MaxDesiredWidth(200.f)
       [
           SNew(SButton)
-          .Text(FText::FromString("Open Decal Size Editor"))
+          .Text(FText::FromString("Open Impact Profile Editor"))
           .HAlign(HAlign_Center)
           .OnClicked(this, &FDestructionProjectileComponentDetails::OnOpenEditorClicked)
       ];
@@ -58,7 +58,7 @@ FReply FDestructionProjectileComponentDetails::OnOpenEditorClicked()
 {
       if (TargetComponent.IsValid())
       {
-            SDecalSizeEditorWindow::OpenWindow(TargetComponent.Get());
+            SImpactProfileEditorWindow::OpenWindow(TargetComponent.Get());
       }
       return FReply::Handled();
 }

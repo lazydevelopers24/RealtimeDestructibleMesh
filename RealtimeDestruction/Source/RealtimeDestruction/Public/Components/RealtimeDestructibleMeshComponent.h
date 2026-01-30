@@ -27,7 +27,7 @@ class UMaterialInterface;
 class FLifetimeProperty;
 class FRealtimeBooleanProcessor;
 class UBulletClusterComponent;
-class UDecalMaterialDataAsset;
+class UImpactProfileDataAsset;
 class ADebrisActor;
 
 //////////////////////////////////////////////////////////////////////////
