@@ -314,6 +314,11 @@ public:
 
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
 
+	/**
+	 * 인자로 전달받은 UStaticMesh를 이용해 SourceStaticMesh 필드와 DynamicMesh 필드를 채웁니다.
+	 * SourceStaticMesh는 ChunkMeshComponents를 생성하는 재료로 사용됩니다.
+	 * DynamicMesh 필드는 Chunk 생성 전 메시 프리뷰를 제공하는 역할만을 수행합니다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh",meta = (DeprecatedFunction))
 	bool InitializeFromStaticMesh(UStaticMesh* InMesh);
 
@@ -370,8 +375,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	void ApplyOpsDeterministic(const TArray<FRealtimeDestructionOp>& Ops);
-
-
+	
 	/**
 	 * 서버 배칭: 요청을 대기열에 추가
 	 * 서버에서만 호출됨
@@ -606,15 +610,16 @@ protected:
 	//////////////////////////////////////////////////////////////////////////
 
 	/**
-	 * Dynamic Mesh로 변환할 원본 Static Mesh
+	 * Source Static Mesh to convert into Dynamic Mesh.
 	 *
-	 * 에디터에서 이 속성을 설정하면 OnConstruction에서
-	 * 자동으로 Dynamic Mesh로 변환됩니다.
+	 * When this property is set in the editor, the mesh is automatically
+	 * converted to Dynamic Mesh via PostEditChangeProperty.
+	 * At runtime, conversion occurs during OnRegister.
 	 *
-	 * 지원 기능:
-	 * - Material 자동 복사
-	 * - UV, Normal, Tangent 보존
-	 * - Collision 설정 복사
+	 * Features:
+	 * - Automatic material copying
+	 * - UV, Normal, Tangent preservation
+	 * - Complex-as-simple collision enabled (uses mesh triangles for collision)
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Source")
 	TObjectPtr<UStaticMesh> SourceStaticMesh;
@@ -779,7 +784,6 @@ public:
 	bool IsChunkMeshesValid() const { return bChunkMeshesValid; }
 
 	/**
-	 * 격자 셀 캐시 생성 (에디터에서 호출)
 	 * SourceStaticMesh로부터 격자 셀을 생성합니다.
 	 *
  	 * [중요] Grid Cell 시스템은 월드 좌표계를 기준으로 생성됩니다.
@@ -792,7 +796,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
 	bool BuildGridCells();
 
-	/** 에디터 버튼: 격자 셀 빌드 */
+	/**
+	 * Generates grid cells from SourceStaticMesh.
+	 *
+	 * @warning The Grid Cell system is generated based on world coordinates.
+	 * If you change the world scale of this component at runtime, there will be
+	 * a mismatch between grid cells and the actual mesh, causing inaccurate destruction detection.
+	 * If you need to change the scale, you must call BuildGridCells() again.
+	 */
 	UFUNCTION(CallInEditor, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Build Grid Cells"))
 	void BuildGridCellsInEditor();
 
@@ -986,17 +997,16 @@ private:
 
 #if WITH_EDITOR
 public:
-	/**
-	 * SourceStaticMesh로부터 GC를 생성하고 Chunk 메시를 빌드합니다.
-	 * 내부적으로 CreateFracturedGC()와 BuildChunksFromGC()를 호출합니다.
-	 */
+	/** Creates a GeometryCollection from SourceStaticMesh and builds chunk meshes. */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Genetrate Destructible Chunks", DisplayPriority = 1))
 	void GenerateDestructibleChunks();
 
-	/** 파괴전 Mesh의 상태로 되돌리기 */
+	/**
+	 * Destroys all ChunkMeshComponents and reverts to the state before
+	 * GenerateDestructibleChunks was called.
+	 */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Revert Chunks"))
 	void RevertChunksToSourceMesh();
-
 
 private:
 	/**

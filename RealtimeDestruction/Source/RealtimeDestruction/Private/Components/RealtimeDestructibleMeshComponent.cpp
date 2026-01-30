@@ -36,6 +36,8 @@
 #include "FractureSettings.h"
 #include "FractureEngineFracturing.h"
 #include "Editor.h"
+#include "Editor/UnrealEdEngine.h"
+#include "UnrealEdGlobals.h"
 #endif
 
 // Packaging
@@ -3477,9 +3479,6 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 	}
 }
 
-
-
-
 bool URealtimeDestructibleMeshComponent::InitializeFromStaticMeshInternal(UStaticMesh* InMesh, bool bForce)
 {
 	// 1. 유효성 검사
@@ -6114,6 +6113,12 @@ void URealtimeDestructibleMeshComponent::GenerateDestructibleChunks()
 	{
 		Owner->Modify();
 		Owner->RerunConstructionScripts();
+
+		// Refresh detail panel to show newly created ChunkMeshComponents
+		if (GUnrealEd)
+		{
+			GUnrealEd->UpdateFloatingPropertyWindows();
+		}
 	}
 }
 
@@ -6296,8 +6301,13 @@ void URealtimeDestructibleMeshComponent::RevertChunksToSourceMesh()
 	if (AActor* Owner = GetOwner())
 	{
 		Owner->RerunConstructionScripts();
-	}
 
+		// Refresh detail panel to remove destroyed ChunkMeshComponents
+		if (GUnrealEd)
+		{
+			GUnrealEd->UpdateFloatingPropertyWindows();
+		}
+	}
 }
 #endif
 
