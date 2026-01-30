@@ -3,6 +3,11 @@
 ## Overview
 The RealtimeDestruction plugin provides a high-performance, real-time mesh destruction system for Unreal Engine, specializing in projectile and explosive damage. It enables dynamic boolean operations on meshes with multi-threaded processing, structural integrity simulation, and network replication support. This plugin is ideal for shooters, military simulations, and any game featuring gunfire or blast-based destruction.
 
+## User Guide
+For detailed usage instructions, please refer to the online documentation below.
+EN: https://docs.google.com/document/d/1xrrT6ByFZl1jtfQgxyiKJN5vcLz9l5iu7JS1fOy-hQE/edit?usp=sharing
+KR: https://docs.google.com/document/d/1AWVUonKORoYfbyxlPbDfbiAah1fc8tr2CXmzJkdddF4/edit?usp=sharing
+
 ## Features
 
 ### Real-time Boolean Mesh Operations
@@ -96,16 +101,24 @@ RealtimeDestruction/
 ├── Source/
 │   ├── RealtimeDestruction/
 │   │   ├── Public/
-│   │   │   ├── Components/
+│   │   │   ├── Actors/
 │   │   │   ├── BooleanProcessor/
+│   │   │   ├── Components/
+│   │   │   ├── Data/
+│   │   │   ├── Debug/
+│   │   │   ├── Settings/
 │   │   │   ├── StructuralIntegrity/
-│   │   │   └── Subsystems/
+│   │   │   ├── Subsystems/
+│   │   │   └── Testing/
 │   │   └── Private/
 │   │       └── (mirrors Public structure)
 │   └── RealtimeDestructionEditor/
 │       ├── Public/
+│       │   └── AnchorMode/
 │       └── Private/
+│           └── AnchorMode/
 ├── Content/
+│   └── Decals/
 ├── Config/
 ├── Docs/
 └── RealtimeDestruction.uplugin
@@ -161,27 +174,6 @@ RealtimeDestruction/
 - Enable server-authoritative mode
 - Check RPC call frequency
 - Verify client has replicated mesh state
-
-## API Reference
-
-### Key Functions
-
-```cpp
-// Request destruction operation
-void RequestDestruction(const FVector& Location, UDynamicMesh* ToolMesh, bool bPenetration);
-
-// Get current hole count
-int32 GetHoleCount() const;
-
-// Cancel all pending operations
-void CancelAllOperations();
-
-// Reset mesh to original state
-void ResetMesh();
-
-// Check if chunk is busy processing
-bool IsChunkBusy(int32 ChunkIndex) const;
-```
 
 ## Version History
 
