@@ -1590,6 +1590,12 @@ void FRealtimeBooleanProcessor::AccumulateSubtractDuration(int32 ChunkIndex, dou
 
 void FRealtimeBooleanProcessor::UpdateSimplifyInterval(double CurrentSetMeshAvgCost, int32 ChunkIndex)
 {
+	// 범위 체크: 비동기 작업 중 청크가 제거될 수 있음
+	if (ChunkIndex < 0 || ChunkIndex >= SetMeshAvgCost.Num())
+	{
+		return;
+	}
+
 	if (FMath::IsNearlyZero(SetMeshAvgCost[ChunkIndex]))
 	{
 		SetMeshAvgCost[ChunkIndex] = CurrentSetMeshAvgCost;
