@@ -5990,18 +5990,6 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 	return true;
 }
 
-void URealtimeDestructibleMeshComponent::BuildGridCellsInEditor()
-{
-	if (BuildGridCells())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("BuildGridCellsInEditor: SUCCESS - Grid cells built. Save the level to persist!"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("BuildGridCellsInEditor: FAILED - Check if SourceStaticMesh is set"));
-	}
-}
-
 void URealtimeDestructibleMeshComponent::FindChunksAlongLineInternal(const FVector& WorldStart, const FVector& WorldEnd, TArray<int32>& OutChunkIndices)
 {
 	if (GridToChunkMap.Num() == 0 || SliceCount.X <= 0 || SliceCount.Y <= 0 || SliceCount.Z <= 0)

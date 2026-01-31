@@ -805,19 +805,6 @@ public:
 	bool IsChunkMeshesValid() const { return bChunkMeshesValid; }
 
 	/**
-	 * SourceStaticMesh로부터 격자 셀을 생성합니다.
-	 *
- 	 * [중요] Grid Cell 시스템은 월드 좌표계를 기준으로 생성됩니다.
- 	 * 런타임 중 이 컴포넌트의 월드 스케일을 변경하면 Grid Cell과 실제 메시 간의
- 	 * 불일치가 발생하여 파괴 판정이 정확하지 않게 됩니다.
-	 * 스케일 변경이 필요한 경우 BuildGridCells()를 다시 호출해야 합니다.
-	 *
-	 * @return 성공 여부
-	 */
-	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
-	bool BuildGridCells();
-
-	/**
 	 * Generates grid cells from SourceStaticMesh.
 	 *
 	 * @warning The Grid Cell system is generated based on world coordinates.
@@ -825,9 +812,9 @@ public:
 	 * a mismatch between grid cells and the actual mesh, causing inaccurate destruction detection.
 	 * If you need to change the scale, you must call BuildGridCells() again.
 	 */
-	UFUNCTION(CallInEditor, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Build Grid Cells"))
-	void BuildGridCellsInEditor();
-
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
+	bool BuildGridCells();
+	
 	/** 격자 셀 레이아웃 유효 여부 */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|GridCell")
 	bool IsGridCellLayoutValid() const { return GridCellLayout.IsValid(); }
@@ -896,7 +883,7 @@ public:
 
 	/** Supercell 이 임계치 비율이상 파괴 됐을 때*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DestroyRatioThresholdForDebris = 0.5f;
+	float DestroyRatioThresholdForDebris = 0.8f;
 
 	/**
 	 * Density of debris. (g/cm^3)
@@ -977,7 +964,7 @@ public:
 
 	/** 격자 셀 크기 (cm). 값이 작을수록 해상도가 높아지지만 성능 비용 증가 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "1.0"))
-	FVector GridCellSize = FVector(5.0f);
+	FVector GridCellSize = FVector(10.0f);
 	
 	/** 바닥 Anchor 감지 Z 높이 임계값 (cm, MeshBounds.Min.Z 기준 상대값) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "0.0"))
@@ -1038,7 +1025,7 @@ public:
 	 * Destroys all ChunkMeshComponents and reverts to the state before
 	 * GenerateDestructibleChunks was called.
 	 */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Revert Chunks"))
+	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Revert Chunks"))
 	void RevertChunksToSourceMesh();
 private:
 	/**

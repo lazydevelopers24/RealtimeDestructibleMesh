@@ -31,6 +31,7 @@ public:
 private:
 	FReply OnGenerateChunksClicked();
 	FReply OnRevertChunksClicked();
+	FReply OnBuildGridCellsClicked();
 	UBlueprint* GetBlueprintFromComponent(URealtimeDestructibleMeshComponent* Component);
 	void ForceCompileBlueprint(UBlueprint* Blueprint);
 

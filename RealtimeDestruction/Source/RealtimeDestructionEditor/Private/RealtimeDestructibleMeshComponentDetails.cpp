@@ -54,15 +54,15 @@ void FRealtimeDestructibleMeshComponentDetails::CustomizeDetails(IDetailLayoutBu
 		ECategoryPriority::Important
 	);
 
-	Category.AddCustomRow(FText::FromString("Chunk Generation"))
+	Category.AddCustomRow(FText::FromString("Editor Actions"))
 		.NameContent()
 		[
 			SNew(STextBlock)
-				.Text(FText::FromString("Chunk Actions"))
+				.Text(FText::FromString("Editor Actions"))
 				.Font(IDetailLayoutBuilder::GetDetailFont())
 		]
 		.ValueContent()
-		.MinDesiredWidth(300.f)
+		.MinDesiredWidth(400.f)
 		[
 			SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -80,6 +80,14 @@ void FRealtimeDestructibleMeshComponentDetails::CustomizeDetails(IDetailLayoutBu
 					SNew(SButton)
 						.Text(FText::FromString("Revert Chunks"))
 						.OnClicked(this, &FRealtimeDestructibleMeshComponentDetails::OnRevertChunksClicked)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.f)
+				[
+					SNew(SButton)
+						.Text(FText::FromString("Build Grid Cells"))
+						.OnClicked(this, &FRealtimeDestructibleMeshComponentDetails::OnBuildGridCellsClicked)
 				]
 		]; 
 }
@@ -152,6 +160,18 @@ FReply FRealtimeDestructibleMeshComponentDetails::OnRevertChunksClicked()
 			{
 				Comp->RevertChunksToSourceMesh();
 			}
+		}
+	}
+	return FReply::Handled();
+}
+
+FReply FRealtimeDestructibleMeshComponentDetails::OnBuildGridCellsClicked()
+{
+	for (TWeakObjectPtr<URealtimeDestructibleMeshComponent>& WeakComp : SelectedComponents)
+	{
+		if (URealtimeDestructibleMeshComponent* Comp = WeakComp.Get())
+		{
+			Comp->BuildGridCells();
 		}
 	}
 	return FReply::Handled();
