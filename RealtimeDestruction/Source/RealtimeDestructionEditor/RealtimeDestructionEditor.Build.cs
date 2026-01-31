@@ -64,7 +64,8 @@ public class RealtimeDestructionEditor : ModuleRules
 				
 				"UnrealEd",
 				"LevelEditor",
-				"InteractiveToolsFramework"
+				"InteractiveToolsFramework",
+				"Kismet"
 			}
 		);
 	}

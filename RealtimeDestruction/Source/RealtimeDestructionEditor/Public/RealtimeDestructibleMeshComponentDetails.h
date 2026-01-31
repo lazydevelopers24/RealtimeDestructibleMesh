@@ -14,6 +14,7 @@
 
 class IDetailLayoutBuilder;
 class URealtimeDestructibleMeshComponent;
+class UBlueprint;
 
 /**
  * RealtimeDestructibleMeshComponent의 디테일 패널 커스터마이징
@@ -28,6 +29,12 @@ public:
 	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override;
 
 private:
+	FReply OnGenerateChunksClicked();
+	FReply OnRevertChunksClicked();
+	UBlueprint* GetBlueprintFromComponent(URealtimeDestructibleMeshComponent* Component);
+	void ForceCompileBlueprint(UBlueprint* Blueprint);
+
+
 	/** 선택된 컴포넌트들 */
 	TArray<TWeakObjectPtr<URealtimeDestructibleMeshComponent>> SelectedComponents;
 };

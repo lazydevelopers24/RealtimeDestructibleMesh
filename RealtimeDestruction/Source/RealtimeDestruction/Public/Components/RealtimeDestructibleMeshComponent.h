@@ -307,6 +307,8 @@ class REALTIMEDESTRUCTION_API URealtimeDestructibleMeshComponent : public UDynam
 	GENERATED_BODY()
 
 	friend struct FRealtimeDestructibleMeshComponentInstanceData;
+	friend class FRealtimeDestructibleMeshComponentDetails;
+
 public:
 	URealtimeDestructibleMeshComponent();
 	URealtimeDestructibleMeshComponent(FVTableHelper& Helper);
@@ -629,6 +631,15 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Source")
 	TObjectPtr<UStaticMesh> SourceStaticMesh;
+
+	/**
+	 * 캐쉬된 GeometryCollection 에셋
+	 * Chunk 빌드에 사용됨
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ChunkMesh")
+	TObjectPtr<UGeometryCollection> CachedGeometryCollection;
+
+
 
 	//////////////////////////////////////////////////////////////////////////
 	// Destruction Settings
@@ -1017,7 +1028,6 @@ private:
 #if WITH_EDITOR
 public:
 	/** Creates a GeometryCollection from SourceStaticMesh and builds chunk meshes. */
-	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Genetrate Destructible Chunks", DisplayPriority = 1))
 	void GenerateDestructibleChunks();
 
 	/**
@@ -1026,7 +1036,6 @@ public:
 	 */
 	UFUNCTION(CallInEditor, BlueprintCallable, Category = "RealtimeDestructibleMesh", meta = (DisplayName = "Revert Chunks"))
 	void RevertChunksToSourceMesh();
-
 private:
 	/**
 	 * SourceStaticMesh로부터 GeometryCollection을 생성하고 슬라이싱합니다.

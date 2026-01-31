@@ -11,6 +11,14 @@
 
 #include "Components/RealtimeDestructibleMeshComponent.h"
 #include "DetailLayoutBuilder.h"
+#include "DetailCategoryBuilder.h"
+#include "DetailWidgetRow.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SimpleConstructionScript.h" 
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
 
 TSharedRef<IDetailCustomization> FRealtimeDestructibleMeshComponentDetails::MakeInstance()
 {
@@ -32,6 +40,7 @@ void FRealtimeDestructibleMeshComponentDetails::CustomizeDetails(IDetailLayoutBu
 		}
 	}
 
+
 	//////////////////////////////////////////////////////////////////////////
 	// 카테고리 순서 지정
 	// Transform 다음에 RealtimeDestructibleMesh 카테고리가 오도록 설정
@@ -39,5 +48,145 @@ void FRealtimeDestructibleMeshComponentDetails::CustomizeDetails(IDetailLayoutBu
 
 	// RealtimeDestructibleMesh 최상위 카테고리를 Important로 설정하여 상단 배치
 	// 하위 카테고리는 기본 순서 유지
-	DetailBuilder.EditCategory("RealtimeDestructibleMesh", FText::GetEmpty(), ECategoryPriority::Important);
+	IDetailCategoryBuilder& Category = DetailBuilder.EditCategory(
+		"RealtimeDestructibleMesh",
+		FText::GetEmpty(),
+		ECategoryPriority::Important
+	);
+
+	Category.AddCustomRow(FText::FromString("Chunk Generation"))
+		.NameContent()
+		[
+			SNew(STextBlock)
+				.Text(FText::FromString("Chunk Actions"))
+				.Font(IDetailLayoutBuilder::GetDetailFont())
+		]
+		.ValueContent()
+		.MinDesiredWidth(300.f)
+		[
+			SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.f)
+				[
+					SNew(SButton)
+						.Text(FText::FromString("Generate Chunks"))
+						.OnClicked(this, &FRealtimeDestructibleMeshComponentDetails::OnGenerateChunksClicked)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.f)
+				[
+					SNew(SButton)
+						.Text(FText::FromString("Revert Chunks"))
+						.OnClicked(this, &FRealtimeDestructibleMeshComponentDetails::OnRevertChunksClicked)
+				]
+		]; 
 }
+
+FReply FRealtimeDestructibleMeshComponentDetails::OnGenerateChunksClicked()
+{
+	for (TWeakObjectPtr<URealtimeDestructibleMeshComponent>& WeakComp : SelectedComponents)
+	{
+		if (URealtimeDestructibleMeshComponent * Comp = WeakComp.Get())
+		{
+			Comp->GenerateDestructibleChunks();
+
+			if (UBlueprint* Blueprint = GetBlueprintFromComponent(Comp))
+			{
+				ForceCompileBlueprint(Blueprint);
+			}
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply FRealtimeDestructibleMeshComponentDetails::OnRevertChunksClicked()
+{
+	for (TWeakObjectPtr<URealtimeDestructibleMeshComponent>& WeakComp : SelectedComponents)
+	{
+		if (URealtimeDestructibleMeshComponent* Comp = WeakComp.Get())
+		{
+			Comp->CachedGeometryCollection = nullptr;
+
+			// 현재 작업 공간이 blueprint라면 CDO 값 복구 
+			if (UBlueprint* Blueprint = GetBlueprintFromComponent(Comp))
+			{
+				if (Comp->SourceStaticMesh)
+				{
+					Comp->InitializeFromStaticMeshInternal(Comp->SourceStaticMesh, true);
+				}
+
+				if (AActor* PreviewActor = Blueprint->SimpleConstructionScript ?
+					Blueprint->SimpleConstructionScript->GetComponentEditorActorInstance() : nullptr)
+				{
+					TArray<URealtimeDestructibleMeshComponent*> PreviewComps;
+
+					PreviewActor->GetComponents<URealtimeDestructibleMeshComponent>(PreviewComps);
+
+					for (URealtimeDestructibleMeshComponent* PreviewComp : PreviewComps)
+					{
+						PreviewComp->CachedGeometryCollection = nullptr;
+
+						for (UDynamicMeshComponent* ChunkComp : PreviewComp->ChunkMeshComponents)
+						{
+							if (ChunkComp)
+							{
+								ChunkComp->DestroyComponent();
+							}
+						}
+						PreviewComp->ChunkMeshComponents.Empty();
+
+						if (PreviewComp->SourceStaticMesh)
+						{
+							PreviewComp->InitializeFromStaticMeshInternal(PreviewComp->SourceStaticMesh, true);
+						}
+					}
+				}
+
+				ForceCompileBlueprint(Blueprint);
+			}
+
+			else
+			{
+				Comp->RevertChunksToSourceMesh();
+			}
+		}
+	}
+	return FReply::Handled();
+}
+
+UBlueprint* FRealtimeDestructibleMeshComponentDetails::GetBlueprintFromComponent(URealtimeDestructibleMeshComponent* Component)
+{
+	if (!Component)
+	{
+		return nullptr;
+	}
+	UObject* Outer = Component->GetOuter();
+	while (Outer)
+	{
+		if (UBlueprint* Blueprint = Cast<UBlueprint>(Outer))
+		{
+			return Blueprint;
+		}
+		if (UBlueprintGeneratedClass* BPGC = Cast< UBlueprintGeneratedClass>(Outer))
+		{
+			return Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+		}
+		Outer = Outer->GetOuter();
+	}
+	return nullptr;
+}
+
+void FRealtimeDestructibleMeshComponentDetails::ForceCompileBlueprint(UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	Blueprint->Modify();
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+}
+

@@ -4757,6 +4757,13 @@ void URealtimeDestructibleMeshComponent::ProcessDecalRemoval(const FDestructionR
 void URealtimeDestructibleMeshComponent::OnRegister()
 {
 	Super::OnRegister();
+#if WITH_EDITOR
+	if (CachedGeometryCollection && ChunkMeshComponents.Num() == 0 && GetOwner() != nullptr)
+	{
+		BuildChunksFromGC(CachedGeometryCollection);
+		return; 
+	}
+#endif
 
 	if (ChunkMeshComponents.Num() > 0)
 	{
@@ -6517,6 +6524,7 @@ void URealtimeDestructibleMeshComponent::RevertChunksToSourceMesh()
 
 	ChunkMeshComponents.Empty();
 	GridToChunkMap.Reset();
+	CachedGeometryCollection = nullptr;
 
 	bChunkMeshesValid = false;
 	SetSourceMeshEnabled(true);
