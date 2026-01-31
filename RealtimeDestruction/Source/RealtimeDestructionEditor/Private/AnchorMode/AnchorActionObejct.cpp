@@ -42,6 +42,7 @@ void UAnchorActionObejct::SpawnAnchorPlane()
 			GEditor->SelectNone(true, true);
 			GEditor->SelectActor(NewPlane, true, true);
 			GLevelEditorModeTools().SetWidgetMode(UE::Widget::WM_Translate);
+			AnchorActors.Add(TWeakObjectPtr<AAnchorActor>(NewPlane));
 		}
 	}
 
@@ -69,6 +70,7 @@ void UAnchorActionObejct::SpawnAnchorVolume()
 			GEditor->SelectNone(true, true);
 			GEditor->SelectActor(NewVolume, true, true);
 			GLevelEditorModeTools().SetWidgetMode(UE::Widget::WM_Translate);
+			AnchorActors.Add(TWeakObjectPtr<AAnchorActor>(NewVolume));
 		}
 	}
 
@@ -90,14 +92,18 @@ void UAnchorActionObejct::ApplyAllAnchorPlanes()
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ApplyAnchorPlanes", "Apply Anchor Planes"));
 
+	ValidateAnchorArray();
+	
 	TArray<AAnchorPlaneActor*> Planes;
-	for (TActorIterator<AAnchorPlaneActor> PlaneIt(World); PlaneIt; ++PlaneIt)
+	for (auto AnchorActor : AnchorActors)
 	{
-		AAnchorPlaneActor* Plane = *PlaneIt;
+		if (AAnchorPlaneActor* Plane = Cast<AAnchorPlaneActor>(AnchorActor.Get()))
+		{
 		if (IsValid(Plane))
 		{
 			Planes.Add(Plane);
 		}
+	}
 	}
 
 	if (Planes.Num() == 0)
@@ -129,11 +135,7 @@ void UAnchorActionObejct::ApplyAllAnchorPlanes()
 
 		for (auto Plane : Planes)
 		{
-			FGridCellBuilder::SetAnchorsByFinitePlane(
-				Plane->GetActorTransform(),
-				Comp->GetComponentTransform(),
-				GridCellCache,
-				Plane->bIsEraser);
+			Plane->ApplyToAnchors(Comp->GetComponentTransform(), GridCellCache);
 		}
 
 		Comp->MarkRenderStateDirty();
@@ -159,14 +161,18 @@ void UAnchorActionObejct::ApplyAllAnchorVolumes()
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ApplyAnchorVolumes", "Apply Anchor Volumes"));
 
+	ValidateAnchorArray();
+
 	TArray<AAnchorVolumeActor*> Volumes;
-	for (TActorIterator<AAnchorVolumeActor> VolumeIt(World); VolumeIt; ++VolumeIt)
+	for (auto AnchorActor : AnchorActors)
 	{
-		AAnchorVolumeActor* Volume = *VolumeIt;
+		if (AAnchorVolumeActor* Volume = Cast<AAnchorVolumeActor>(AnchorActor.Get()))
+		{
 		if (IsValid(Volume))
 		{
 			Volumes.Add(Volume);
 		}
+	}
 	}
 
 	if (Volumes.Num() == 0)
@@ -198,25 +204,7 @@ void UAnchorActionObejct::ApplyAllAnchorVolumes()
 
 		for (auto Volume : Volumes)
 		{
-			if (Volume->Shape == EAnchorVolumeShape::Box)
-			{
-				FGridCellBuilder::SetAnchorsByFiniteBox(
-				   Volume->GetActorTransform(),
-				   Volume->BoxExtent,
-				   Comp->GetComponentTransform(),
-				   GridCellCache,
-				   Volume->bIsEraser);
-			}
-
-			if (Volume->Shape == EAnchorVolumeShape::Sphere)
-			{
-				FGridCellBuilder::SetAnchorsByFiniteSphere(
-				   Volume->GetActorTransform(),
-				   Volume->SphereRadius,
-				   Comp->GetComponentTransform(),
-				   GridCellCache,
-				   Volume->bIsEraser);
-			}
+			Volume->ApplyToAnchors(Comp->GetComponentTransform(), GridCellCache);
 		}
 
 		Comp->MarkRenderStateDirty();
@@ -242,13 +230,16 @@ void UAnchorActionObejct::RemoveAllAnchorPlanes()
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ClearAnchorPlanes", "Clear Anchor Planes"));
 
+	ValidateAnchorArray();
+	
 	GEditor->SelectNone(false, true, false);
 
 	UEditorActorSubsystem* ActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
 
-	for (TActorIterator<AAnchorPlaneActor> PlaneIt(World); PlaneIt; ++PlaneIt)
+	for (auto AnchorActor : AnchorActors)
 	{
-		AAnchorPlaneActor* Plane = *PlaneIt;
+		if (AAnchorPlaneActor* Plane = Cast<AAnchorPlaneActor>(AnchorActor.Get()))
+		{
 		if (!IsValid(Plane))
 		{
 			continue;
@@ -265,6 +256,7 @@ void UAnchorActionObejct::RemoveAllAnchorPlanes()
 		{
 			World->EditorDestroyActor(Plane, true);
 		}
+	}
 	}
 
 	UpdateCellCounts();
@@ -287,13 +279,16 @@ void UAnchorActionObejct::RemoveAllAnchorVolumes()
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ClearAnchorVolumes", "Clear Anchor Volumes"));
 
+	ValidateAnchorArray();
+	
 	GEditor->SelectNone(false, true, false);
 
 	UEditorActorSubsystem* ActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
 
-	for (TActorIterator<AAnchorVolumeActor> VolumeIt(World); VolumeIt; ++VolumeIt)
+	for (auto AnchorActor : AnchorActors)
 	{
-		AAnchorVolumeActor* Volume = *VolumeIt;
+		if(AAnchorVolumeActor* Volume = Cast<AAnchorVolumeActor>(AnchorActor.Get()))
+		{
 		if (!IsValid(Volume))
 		{
 			continue;
@@ -310,6 +305,7 @@ void UAnchorActionObejct::RemoveAllAnchorVolumes()
 		{
 			World->EditorDestroyActor(Volume, true);
 		}
+	}
 	}
 
 	UpdateCellCounts();
@@ -380,35 +376,18 @@ void UAnchorActionObejct::ApplyAnchors()
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ApplyAnchorsToSelectedComp", "Apply Anchors To Selected"));
 
+	ValidateAnchorArray();
+
 	FGridCellLayout& GridCellCache = TargetComp->GetGridCellLayout();
 	if (!GridCellCache.IsValid())
 	{
 		TargetComp->BuildGridCells();
 	}
 
-	TArray<AAnchorVolumeActor*> Volumes;
-	for (TActorIterator<AAnchorVolumeActor> VolumeIt(World); VolumeIt; ++VolumeIt)
+	const FTransform& MeshTransform = TargetComp->GetComponentTransform();
+	for (auto AnchorActor : AnchorActors)
 	{
-		AAnchorVolumeActor* Volume = *VolumeIt;
-		if (IsValid(Volume))
-		{
-			Volumes.Add(Volume);
-		}
-	}
-
-	TArray<AAnchorPlaneActor*> Planes;
-	for (TActorIterator<AAnchorPlaneActor> PlaneIt(World); PlaneIt; ++PlaneIt)
-	{
-		AAnchorPlaneActor* Plane = *PlaneIt;
-		if (IsValid(Plane))
-		{
-			Planes.Add(Plane);
-		}
-	}
-
-	for (auto Plane : Planes)
-	{
-		if (!IsValid(Plane))
+		if (!IsValid(AnchorActor.Get()))
 		{
 			continue;
 		}
@@ -418,44 +397,7 @@ void UAnchorActionObejct::ApplyAnchors()
 			return;
 		}
 
-		FGridCellBuilder::SetAnchorsByFinitePlane(
-			Plane->GetActorTransform(),
-			TargetComp->GetComponentTransform(),
-			GridCellCache,
-			Plane->bIsEraser);
-	}
-
-	for (auto Volume : Volumes)
-	{
-		if (!IsValid(Volume))
-		{
-			continue;
-		}
-
-		if (!IsValid(TargetComp))
-		{
-			return;
-		}
-
-		if (Volume->Shape == EAnchorVolumeShape::Box)
-		{
-			FGridCellBuilder::SetAnchorsByFiniteBox(
-				Volume->GetActorTransform(),
-				Volume->BoxExtent,
-				TargetComp->GetComponentTransform(),
-				GridCellCache,
-				Volume->bIsEraser);
-		}
-
-		if (Volume->Shape == EAnchorVolumeShape::Sphere)
-		{
-			FGridCellBuilder::SetAnchorsByFiniteSphere(
-				Volume->GetActorTransform(),
-				Volume->SphereRadius,
-				TargetComp->GetComponentTransform(),
-				GridCellCache,
-				Volume->bIsEraser);
-		}
+		AnchorActor->ApplyToAnchors(MeshTransform, GridCellCache);
 	}
 
 	UpdateCellCounts();
@@ -604,4 +546,33 @@ void UAnchorActionObejct::UpdateCellCounts()
 	ValidCellCount = Cache.GetValidCellCount();
 	AnchorCellCount = Cache.GetAnchorCount();
 	SelectedComponentName = TargetComp->GetOwner()->GetActorLabel();
+}
+
+void UAnchorActionObejct::ValidateAnchorArray()
+{
+	AnchorActors.RemoveAll([](const TWeakObjectPtr<AAnchorActor>& Ptr)
+	{
+		return !Ptr.IsValid();
+	});
+}
+
+void UAnchorActionObejct::CollectionExistingAnchorActors(UWorld* World)
+{
+	AnchorActors.Reset();
+
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<AAnchorActor> It(World); It; ++It)
+	{
+		AAnchorActor* AnchorActor = Cast<AAnchorActor>(*It);
+		if (IsValid(AnchorActor))
+		{
+			AnchorActors.Add(AnchorActor);
+		}
+	}
+
+	UpdateCellCounts();
 }

@@ -377,7 +377,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|Replication")
 	void ApplyOpsDeterministic(const TArray<FRealtimeDestructionOp>& Ops);
-	
+
 	/**
 	 * 서버 배칭: 요청을 대기열에 추가
 	 * 서버에서만 호출됨
@@ -562,6 +562,7 @@ public:
 	double GetSubtractDurationLimit() const { return SubtractDurationLimit; }
 	int32 GetInitInterval() const { return InitInterval; }
 	void SetCurrentHoleCount(int32 Count) { CurrentHoleCount = Count; }
+	bool IsHighDetailMode() const { return bEnableHighDetail;}
 
 	void ApplyRenderUpdate();
 	void ApplyCollisionUpdate(UDynamicMeshComponent* TargetComp);
@@ -684,6 +685,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean")
 	bool bEnableMultiWorkers = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean")
+	bool bEnableHighDetail = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|MeshBoolean", meta = (ClampMin = 0.001))
 	float AngleThreshold = 0.001f;
@@ -952,7 +956,7 @@ public:
 	UProceduralMeshComponent* FindAndRemoveLocalDebris(int32 InDebrisId);
 	
 	/** 작은 파편(고립된 Connected Component) 정리 */
-	void CleanupSmallFragments(const TSet<int32>& InDisconnectedCells);
+	void CleanupSmallFragments(const TSet<int32>& InDisconnectedCells); 
 
 	/** 작은 파편 정리 (분리된 셀을 내부에서 계산) */
 	void CleanupSmallFragments(); 

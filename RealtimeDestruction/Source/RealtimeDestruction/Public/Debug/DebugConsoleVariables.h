@@ -12,3 +12,7 @@
 #include "CoreMinimal.h"
 
 extern int32 Simplify_Toggle;
+extern int32 Triangle_Debug;
+
+extern int32 Simplify_Mat;
+

@@ -9,6 +9,7 @@
 
 #include "Actors/AnchorVolumeActor.h"
 
+#include "GridCellBuilder.h"
 #include "Components/BillboardComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
@@ -60,6 +61,31 @@ AAnchorVolumeActor::AAnchorVolumeActor()
 	}
 #endif
 
+}
+
+void AAnchorVolumeActor::ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache)
+{
+	Super::ApplyToAnchors(MeshTransform, CellCache);
+
+	if (this->Shape == EAnchorVolumeShape::Box)
+	{
+		FGridCellBuilder::SetAnchorsByFiniteBox(
+		   this->GetActorTransform(),
+		   this->BoxExtent,
+		   MeshTransform,
+		   CellCache,
+		   this->bIsEraser);
+	}
+
+	if (this->Shape == EAnchorVolumeShape::Sphere)
+	{
+		FGridCellBuilder::SetAnchorsByFiniteSphere(
+		   this->GetActorTransform(),
+		   this->SphereRadius,
+		   MeshTransform,
+		   CellCache,
+		   this->bIsEraser);
+	}
 }
 
 // Called when the game starts or when spawned

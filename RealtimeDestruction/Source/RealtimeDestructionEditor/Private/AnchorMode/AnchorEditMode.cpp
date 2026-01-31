@@ -38,6 +38,11 @@ void UAnchorEditMode::Enter()
 		ActionObject = NewObject<UAnchorActionObejct>(this);
 	}
 	
+	if (ActionObject)
+	{
+		ActionObject->CollectionExistingAnchorActors(GetWorld());
+	}
+	
 	GLevelEditorModeTools().SetShowWidget(true);
 
 	OnEditorSelectionChanged(nullptr);

@@ -10,11 +10,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Actors/AnchorActor.h"
 #include "AnchorPlaneActor.generated.h"
 
 UCLASS(ClassGroup = (RealtimeDestruction))
-class REALTIMEDESTRUCTION_API AAnchorPlaneActor : public AActor
+class REALTIMEDESTRUCTION_API AAnchorPlaneActor : public AAnchorActor
 {
 	GENERATED_BODY()
 	
@@ -22,9 +22,11 @@ public:
 	// Sets default values for this actor's properties
 	AAnchorPlaneActor();
 
+	virtual void ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache) override;
+
 #if WITH_EDITORONLY_DATA
 
-	UPROPERTY(VisibleAnywhere, Category = "AnchorActor|Plane")
+	UPROPERTY()
 	TObjectPtr<UStaticMeshComponent> PlaneMesh;
 
 	UPROPERTY(Transient)

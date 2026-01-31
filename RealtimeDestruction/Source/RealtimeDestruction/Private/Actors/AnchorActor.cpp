@@ -8,25 +8,33 @@
 // the use of this product.
 
 
-#include "Debug/DebugConsoleVariables.h"
+#include "Actors/AnchorActor.h"
 
-int32 Simplify_Toggle = 1;
-int32 Triangle_Debug = 0;
-int32 Simplify_Mat = 2;
 
-static FAutoConsoleVariableRef CVar_Simplify(
-	TEXT("RDM.Enable.Simplify"),
-	Simplify_Toggle,
-	TEXT("0=off, 1=on"),
-	ECVF_Cheat);
-static FAutoConsoleVariableRef CVar_CollectedTriangle(
-	TEXT("RDM.CollectedTri.Debug"),
-	Triangle_Debug,
-	TEXT("0=off, 1=on"),
-	ECVF_Cheat);
+// Sets default values
+AAnchorActor::AAnchorActor()
+{
+ 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	PrimaryActorTick.bCanEverTick = false;
+	bIsEditorOnlyActor = true;
 
-static FAutoConsoleVariableRef CVar_Simplify_Mat(
-	TEXT("RDM.Simplify.Mode"),
-	Simplify_Mat,
-	TEXT("0=Const1, 1=Const2"),
-	ECVF_Cheat);
+}
+
+// Called when the game starts or when spawned
+void AAnchorActor::BeginPlay()
+{
+	Super::BeginPlay();
+	
+}
+
+// Called every frame
+void AAnchorActor::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+}
+
+void AAnchorActor::ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache)
+{
+}
+

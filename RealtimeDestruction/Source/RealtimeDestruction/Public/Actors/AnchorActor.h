@@ -7,26 +7,31 @@
 // and warranties, express or implied, and assumes no responsibility or liability for any consequences arising from
 // the use of this product.
 
+#pragma once
 
-#include "Debug/DebugConsoleVariables.h"
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "AnchorActor.generated.h"
 
-int32 Simplify_Toggle = 1;
-int32 Triangle_Debug = 0;
-int32 Simplify_Mat = 2;
 
-static FAutoConsoleVariableRef CVar_Simplify(
-	TEXT("RDM.Enable.Simplify"),
-	Simplify_Toggle,
-	TEXT("0=off, 1=on"),
-	ECVF_Cheat);
-static FAutoConsoleVariableRef CVar_CollectedTriangle(
-	TEXT("RDM.CollectedTri.Debug"),
-	Triangle_Debug,
-	TEXT("0=off, 1=on"),
-	ECVF_Cheat);
+struct FGridCellLayout;
 
-static FAutoConsoleVariableRef CVar_Simplify_Mat(
-	TEXT("RDM.Simplify.Mode"),
-	Simplify_Mat,
-	TEXT("0=Const1, 1=Const2"),
-	ECVF_Cheat);
+UCLASS()
+class REALTIMEDESTRUCTION_API AAnchorActor : public AActor
+{
+	GENERATED_BODY()
+	
+public:	
+	// Sets default values for this actor's properties
+	AAnchorActor();
+
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
+public:	
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
+	virtual void ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache);
+};

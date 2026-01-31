@@ -9,6 +9,8 @@
 
 #include "Actors/AnchorPlaneActor.h"
 
+#include "GridCellBuilder.h"
+
 // Sets default values
 AAnchorPlaneActor::AAnchorPlaneActor()
 {
@@ -33,6 +35,17 @@ AAnchorPlaneActor::AAnchorPlaneActor()
 	PlaneMesh->SetRelativeScale3D(FVector(0.01f, 1.0f, 1.0f));
 	
 #endif
+}
+
+void AAnchorPlaneActor::ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache)
+{
+	Super::ApplyToAnchors(MeshTransform, CellCache);
+
+	FGridCellBuilder::SetAnchorsByFinitePlane(
+				this->GetActorTransform(),
+				MeshTransform,
+				CellCache,
+				this->bIsEraser);
 }
 
 // Called when the game starts or when spawned

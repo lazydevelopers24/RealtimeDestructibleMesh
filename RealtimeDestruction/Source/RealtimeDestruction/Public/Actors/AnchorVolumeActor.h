@@ -10,7 +10,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Actors/AnchorActor.h"
 #include "AnchorVolumeActor.generated.h"
 
 class USphereComponent;
@@ -25,7 +25,7 @@ enum class EAnchorVolumeShape : uint8
 };
 
 UCLASS(ClassGroup = (RealtimeDestruction))
-class REALTIMEDESTRUCTION_API AAnchorVolumeActor : public AActor
+class REALTIMEDESTRUCTION_API AAnchorVolumeActor : public AAnchorActor
 {
 	GENERATED_BODY()
 	
@@ -33,15 +33,16 @@ public:
 	// Sets default values for this actor's properties
 	AAnchorVolumeActor();
 
-#if WITH_EDITORONLY_DATA
+	virtual void ApplyToAnchors(const FTransform& MeshTransform, FGridCellLayout& CellCache) override;
 
-	UPROPERTY(VisibleAnywhere, Category="AnchorActor|Shape")
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
 	TObjectPtr<UBillboardComponent> Sprite;
 
-	UPROPERTY(VisibleAnywhere, Category="AnchorActor|Shape")
+	UPROPERTY()
 	TObjectPtr<UBoxComponent> Box;
 
-	UPROPERTY(VisibleAnywhere, Category="AnchorActor|Shape")
+	UPROPERTY()
 	TObjectPtr<USphereComponent> Sphere;	
 #endif
 

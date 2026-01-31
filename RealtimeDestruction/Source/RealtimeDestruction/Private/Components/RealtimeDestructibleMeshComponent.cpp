@@ -60,6 +60,7 @@
 #if WITH_EDITOR
 #include "Selection.h"
 #endif
+#include "DebugConsoleVariables.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Engine.h"
@@ -653,7 +654,7 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 	// 통합 API 사용: bEnableSupercell, bEnableSubcell 플래그에 따라 자동 선택
 	// Multiplayer: SubCell 상태는 Client에 동기화되지 않으므로 Standalone에서만 사용
 	//======================================================== 
-	  
+
 	//[depricated]
 	//TSet<int32> DisconnectedCells;
 	//{
@@ -671,8 +672,8 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 	//double BFSEndTime = FPlatformTime::Seconds();
 	//UE_LOG(LogTemp, Warning, TEXT("[BFS #%d] FindDisconnectedCells END - took %.3f ms, found %d disconnected"),
 	//	BFSCallCount, (BFSEndTime - BFSStartTime) * 1000.0, DisconnectedCells.Num());
-	 
-	TSet<int32> DisconnectedCells; 
+
+	TSet<int32> DisconnectedCells;
 	if (AffectedNeighborCells.Num() > 0)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindDisconnectedCellsFromAffected);
@@ -727,8 +728,8 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 		// 클라이언트에게 Detach 발생 신호만 전송 (클라이언트가 자체 BFS 실행)
 
 		// 분리된 셀의 삼각형 삭제 (데디서버: 렌더링 불필요, Cell Box만 업데이트)
- 		{  
-			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone;
+ 		{
+			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone; 
 			const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority();
 
 			TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_Phase4);
@@ -740,7 +741,7 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 				{
 					SpawnDebrisActorForDedicatedServer(Group);
 				}
-			} 
+			}
 			else if (bIsDedicatedServerClient)
 			{
 				// 크기가 작은 debris만 클라이언트가 자체 생성
@@ -908,17 +909,17 @@ void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 	{
 		RemoveTrianglesForDetachedCells(AllCellsInSupercell);
 		// Cleanup은 IslandRemoval 완료 콜백에서 처리 (비동기)
-	}
+	} 
 
 	// cell state 업데이트 
 	CellState.DestroyCells(AllCellsInSupercell);
 
-	// hit count 리셋
+	// hit count 리셋 
 	SupercellState.MarkSupercellBroken(SuperCellId);
 
 	if (SupercellState.DestroyedCellCounts.IsValidIndex(SuperCellId))
 	{
-		SupercellState.DestroyedCellCounts[SuperCellId] = 0;
+		SupercellState.DestroyedCellCounts[SuperCellId] = 0; 
 		SupercellState.InitialValidCellCounts[SuperCellId] = 0;
 	}
 
@@ -1482,7 +1483,7 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 		);
 		BaseCells.Add(GridPos);
 	}
-	
+
 
 	TArray<TArray<FIntVector>> FinalPieces;
 
@@ -2983,7 +2984,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 }
 
 void URealtimeDestructibleMeshComponent::CleanupSmallFragments(const TSet<int32>& InDisconnectedCells)
-{
+{ 
 	// 데디케이티드 서버에서는 파편 처리 스킵 (물리 NaN 오류 방지)
 	if (IsRunningDedicatedServer())
 	{
@@ -3099,13 +3100,6 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments(const TSet<int32>
 
 					TotalCellCount = ComponentCellIds.Num();
 
-					//// 디버그: 프래그먼트 좌표 정보
-					//UE_LOG(LogTemp, Warning, TEXT("Fragment: Local=(%.1f,%.1f,%.1f) GridOrigin=(%.1f,%.1f,%.1f) CellSize=(%.1f,%.1f,%.1f) GridSize=(%d,%d,%d)"),
-					//	Centroid.X, Centroid.Y, Centroid.Z,
-					//	GridCellLayout.GridOrigin.X, GridCellLayout.GridOrigin.Y, GridCellLayout.GridOrigin.Z,
-					//	GridCellLayout.CellSize.X, GridCellLayout.CellSize.Y, GridCellLayout.CellSize.Z,
-					//	GridCellLayout.GridSize.X, GridCellLayout.GridSize.Y, GridCellLayout.GridSize.Z);
-
 					// Anchor 연결성 검사: 컴포넌트의 셀 중 하나라도 Anchor에 연결되어 있는지 확인
 					int32 DisconnectedCount = 0;
 					int32 ConnectedCount = 0;
@@ -3134,9 +3128,6 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments(const TSet<int32>
 							bConnectedToAnchor = true;
 						}
 					}
-
-				//	UE_LOG(LogTemp, Warning, TEXT("Fragment: Total=%d, Invalid=%d, Destroyed=%d, Disconnected=%d, Connected=%d"),
-					//	TotalCellCount, InvalidCount, DestroyedCellCount, DisconnectedCount, ConnectedCount);
 
 					// 분리 조건:
 					// 1. 유효 셀이 하나도 없음 (Invalid=Total) → 무조건 떨어짐
@@ -3525,8 +3516,8 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 		// 분리된 셀의 삼각형 삭제 (시각적 처리)
 		if (!bIsDedicatedServerClient)
 		{
-			RemoveTrianglesForDetachedCells(Group);
-		}
+		RemoveTrianglesForDetachedCells(Group);		
+	}
 	}
 
 	// 분리된 셀들을 파괴됨 상태로 이동
@@ -3610,8 +3601,8 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 		else
 		{
 			// 큐잉 조건 불충족 시 기존처럼 호출 (BatchId 없이)
-			EnqueueRequestLocal(ModifiableRequest, Op.bIsPenetration, TempDecal);
-		}
+		EnqueueRequestLocal(ModifiableRequest, Op.bIsPenetration, TempDecal);
+	}
 	}
 
 	// === 배치 트래커 등록 ===
@@ -4179,7 +4170,7 @@ void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMes
 	// 수정된 청크 추적
 	ModifiedChunkIds.Add(ChunkIndex);
 #if !UE_BUILD_SHIPPING
-	// 디버그 텍스트 갱신 플래그는 기본적으로 구조적 무결성 갱신 후 업데이트되지만, 청크 없는 경우 여기에서 대신 갱신
+	// 디버그 텍스트 갱신 플래그는 기본적으로 구조적 무결성 갱신 후 업데이트되지만, 청크 없는 경우 여기에서 대신 갱신 
 		bShouldDebugUpdate = true;
 #endif
 	if (bDelayedCollisionUpdate)
@@ -4962,7 +4953,6 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Standalone: 타이머 기반 분리 셀 처리
 	UWorld* World = GetWorld();
 	if (bPendingCleanup && World && World->GetNetMode() == NM_Standalone )
 	{
@@ -6213,7 +6203,7 @@ int32 URealtimeDestructibleMeshComponent::GetMaterialIDFromFaceIndex(int32 FaceI
 	}
 
 	return 0;
-}
+} 
 void URealtimeDestructibleMeshComponent::CreateDebrisMeshSections(UProceduralMeshComponent* Mesh,
 	const TMap<int32, FMeshSectionData>& SectionDataByMaterial,
 	const TArray<UMaterialInterface*>& InMaterials)
@@ -6307,7 +6297,7 @@ void URealtimeDestructibleMeshComponent::ApplyDebrisPhysics(UBoxComponent* Colli
 	float FinalMassKg = FMath::Clamp(CalcMassKg, 0.001, MaxDebrisMass); 
 	float MassRatio = 1.0f - (FinalMassKg / MaxDebrisMass);
 	MassRatio = std::max(MassRatio, 0.1f);
-	
+
 	// 물리 설정
 	CollisionBox->SetEnableGravity(true);
 	CollisionBox->SetMassOverrideInKg(NAME_None, FinalMassKg, true);
@@ -6351,7 +6341,7 @@ void URealtimeDestructibleMeshComponent::GenerateDestructibleChunks()
 		if (GUnrealEd)
 		{
 			GUnrealEd->UpdateFloatingPropertyWindows();
-		}
+	}
 	}
 }
 
@@ -6540,7 +6530,7 @@ void URealtimeDestructibleMeshComponent::RevertChunksToSourceMesh()
 		if (GUnrealEd)
 		{
 			GUnrealEd->UpdateFloatingPropertyWindows();
-		}
+	}
 	}
 }
 #endif

@@ -432,7 +432,6 @@ private:
 	// ===============================================================
 	// Testing from default values.
 	float AngleThreshold = 0.001;
-	bool bEnableHighDetailMode = true;
 	
 	TArray<uint16> MaxInterval = {};
 	uint8 InitInterval = 0;
