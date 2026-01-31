@@ -248,9 +248,12 @@ void UBulletClusterComponent::ExecuteDestruction(const TArray<FBulletCluster>& C
 					Mesh->MulticastApplyOpsCompact(CompactOps);
 				}
 			}
-			 
+
 		}
 	}
+
+	// 파편 정리 예약
+	Mesh->bPendingCleanup = true;
 }
 
 void UBulletClusterComponent::ClearPendingRequests()

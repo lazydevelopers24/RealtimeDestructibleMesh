@@ -1097,8 +1097,10 @@ private:
 	/** 지연 파편 정리 타이머 핸들 */
 	FTimerHandle FragmentCleanupTimerHandle;
 
+public:
 	bool bPendingCleanup = false;
 
+private:
 	/** 마지막 파괴된 셀 영역 (CleanupSmallFragments용) */
 	TSet<FIntVector> LastOccupiedCells;
 	FVector LastCellSizeVec;

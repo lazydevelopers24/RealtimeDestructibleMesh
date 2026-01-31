@@ -907,14 +907,17 @@ void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 	// cell state 업데이트 
 	CellState.DestroyCells(AllCellsInSupercell);
 
-	// hit count 리셋 
+	// hit count 리셋
 	SupercellState.MarkSupercellBroken(SuperCellId);
 
 	if (SupercellState.DestroyedCellCounts.IsValidIndex(SuperCellId))
 	{
-		SupercellState.DestroyedCellCounts[SuperCellId] = 0; 
+		SupercellState.DestroyedCellCounts[SuperCellId] = 0;
 		SupercellState.InitialValidCellCounts[SuperCellId] = 0;
 	}
+
+	// 파편 정리 예약
+	bPendingCleanup = true;
 }
 
 void URealtimeDestructibleMeshComponent::MulticastForceRemoveSupercell_Implementation(int32 SuperCellId)
@@ -4947,10 +4950,10 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	if (bPendingCleanup && World && World->GetNetMode() == NM_Standalone )
 	{
 		StandaloneDetachTimer += DeltaTime;
-			DisconnectedCellStateLogic(PendingDestructionResults);
+			DisconnectedCellStateLogic(PendingDestructionResults, true);  // bForceRun = true
 			PendingDestructionResults.Empty();
 			StandaloneDetachTimer = 0.0f;
-		
+
 		bPendingCleanup = false;
 	}
 #if !UE_BUILD_SHIPPING

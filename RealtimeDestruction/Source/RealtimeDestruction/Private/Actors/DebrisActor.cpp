@@ -13,7 +13,8 @@
 #include "ProceduralMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
-#include "TimerManager.h" 
+#include "TimerManager.h"
+#include "DrawDebugHelpers.h" 
 
 #include "BoxTypes.h"
 #include "IndexTypes.h"
