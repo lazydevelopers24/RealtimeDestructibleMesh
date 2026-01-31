@@ -1076,7 +1076,7 @@ namespace HierarchicalBFSHelper
 		const FGridCellLayout& GridLayout,
 		const FCellState& CellState,
 		bool bEnableSubcell,
-		TQueue<FBFSNode>& Queue,
+		TQueue<FCellNode>& Queue,
 		TSet<int32>& ConnectedCells)
 	{
 		if (ConnectedCells.Contains(NeighborCellId))
@@ -1099,13 +1099,13 @@ namespace HierarchicalBFSHelper
 			if (SubCellBFSHelper::HasConnectedBoundary(BoundaryCellId, NeighborCellId, Dir, CellState))
 			{
 				ConnectedCells.Add(NeighborCellId);
-				Queue.Enqueue(FBFSNode::MakeCell(NeighborCellId));
+				Queue.Enqueue(FCellNode::MakeCell(NeighborCellId));
 			}
 		}
 		else
 		{
 			ConnectedCells.Add(NeighborCellId);
-			Queue.Enqueue(FBFSNode::MakeCell(NeighborCellId));
+			Queue.Enqueue(FCellNode::MakeCell(NeighborCellId));
 		}
 	}
 
@@ -1122,7 +1122,7 @@ namespace HierarchicalBFSHelper
 		FSuperCellState& SupercellState,
 		const FCellState& CellState,
 		bool bEnableSubcell,
-		TQueue<FBFSNode>& Queue,
+		TQueue<FCellNode>& Queue,
 		TSet<int32>& ConnectedCells,
 		TSet<int32>& VisitedSupercells)
 	{
@@ -1156,7 +1156,7 @@ namespace HierarchicalBFSHelper
 			{
 				// Intact SuperCell -> add as a SuperCell node
 				VisitedSupercells.Add(NeighborSupercellId);
-				Queue.Enqueue(FBFSNode::MakeSupercell(NeighborSupercellId));
+				Queue.Enqueue(FCellNode::MakeSupercell(NeighborSupercellId));
 				MarkAllCellsInSupercell(NeighborSupercellId, SupercellState, GridLayout, CellState, ConnectedCells); 
 			}
 			else
@@ -1383,7 +1383,7 @@ namespace HierarchicalBFSHelper
 		FSuperCellState& SupercellState,
 		const FCellState& CellState,
 		bool bEnableSubcell,
-		TQueue<FBFSNode>& Queue,
+		TQueue<FCellNode>& Queue,
 		TSet<int32>& ConnectedCells,
 		TSet<int32>& VisitedSupercells)
 	{
@@ -1441,14 +1441,14 @@ namespace HierarchicalBFSHelper
 			{
 				// Intact SuperCell -> expand to SuperCell node
 				VisitedSupercells.Add(NeighborSupercellId);
-				Queue.Enqueue(FBFSNode::MakeSupercell(NeighborSupercellId));
+				Queue.Enqueue(FCellNode::MakeSupercell(NeighborSupercellId));
 				MarkAllCellsInSupercell(NeighborSupercellId, SupercellState, GridLayout, CellState, ConnectedCells);
 			}
 			else
 			{
 				// Broken SuperCell or orphan -> add at cell level
 				ConnectedCells.Add(NeighborCellId);
-				Queue.Enqueue(FBFSNode::MakeCell(NeighborCellId));
+				Queue.Enqueue(FCellNode::MakeCell(NeighborCellId));
 			}
 		}
 	}
@@ -1461,7 +1461,7 @@ namespace HierarchicalBFSHelper
 		const FCellState& CellState,
 		bool bEnableSubcell,
 		FConnectivityContext& Context,
-		TArray<FBFSNode>& Stack)
+		TArray<FCellNode>& Stack)
 	{
 		if (!GridLayout.GetCellExists(NeighborCellId))
 		{
@@ -1485,7 +1485,7 @@ namespace HierarchicalBFSHelper
 		}
 
 		Context.SetCellConnected(NeighborCellId);
-		Stack.Push(FBFSNode::MakeCell(NeighborCellId));
+		Stack.Push(FCellNode::MakeCell(NeighborCellId));
 	}
 
 	void MarkAllCellsInSuperCell_Bit(
@@ -1521,7 +1521,7 @@ namespace HierarchicalBFSHelper
 		const FCellState& CellState,
 		bool bEnableSubcell,
 		FConnectivityContext& Context,
-		TArray<FBFSNode>& Stack
+		TArray<FCellNode>& Stack
 		)
 	{
 		const FSupercellCellRange Range(SupercellId, SupercellState, GridLayout);
@@ -1549,7 +1549,7 @@ namespace HierarchicalBFSHelper
 				}
 
 				Context.SetSuperCellVisited(NeighborSupercellId);
-				Stack.Push(FBFSNode::MakeSupercell(NeighborSupercellId));
+				Stack.Push(FCellNode::MakeSupercell(NeighborSupercellId));
 				MarkAllCellsInSuperCell_Bit(NeighborSupercellId, SupercellState, GridLayout, CellState, Context);
 				continue;
 			}
@@ -1741,120 +1741,7 @@ namespace HierarchicalBFSHelper
 			}
 		}		
 	}
-}  
-
-
-TSet<int32> FCellDestructionSystem::FindConnectedCellsHierarchical(
-	const FGridCellLayout& GridLayout,
-	FSuperCellState& SupercellState,
-	const FCellState& CellState,
-	bool bEnableSubcell)
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_lagacy);
-	using namespace HierarchicalBFSHelper;
-
-	TSet<int32> ConnectedCells;
-	TSet<int32> VisitedSupercells;
-	TQueue<FBFSNode> Queue;
-
-	//=========================================================================
-	// Step 1: Initialize anchors
-	// Performance optimization: use only IsSupercellIntact() (bitfield O(1))
-	//=========================================================================
-	{
-		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_lagacy_Anchor);
-	for (int32 CellId = 0; CellId < GridLayout.GetTotalCellCount(); ++CellId)
-	{
-		if (!GridLayout.GetCellExists(CellId))
-		{
-			continue;
-		}
-
-
-		if (!GridLayout.GetCellIsAnchor(CellId))
-		{
-			continue;
-		}
-
-		if (CellState.DestroyedCells.Contains(CellId))
-		{
-			continue;
-		}
-
-
-		// In subcell mode, must have an alive subcell
-		if (bEnableSubcell && !SubCellBFSHelper::HasAliveSubCell(CellId, CellState))
-		{
-			continue;
-		}
-
-		const int32 SupercellId = SupercellState.GetSupercellForCell(CellId);
-
-		// Intact check uses bitfield only (O(1))
-		if (SupercellId != INDEX_NONE &&
-		    !VisitedSupercells.Contains(SupercellId) &&
-		    SupercellState.IsSupercellIntact(SupercellId))
-		{
-			// Intact SuperCell -> add as a single node
-			VisitedSupercells.Add(SupercellId);
-			Queue.Enqueue(FBFSNode::MakeSupercell(SupercellId));
-			MarkAllCellsInSupercell(SupercellId, SupercellState, GridLayout, CellState, ConnectedCells);
-		}
-		else
-		{
-			// Broken SuperCell or orphan -> add at cell level
-			if (!ConnectedCells.Contains(CellId))
-			{
-				ConnectedCells.Add(CellId);
-				Queue.Enqueue(FBFSNode::MakeCell(CellId));
-			}
-		}
-	}
-	}
-
-	//=========================================================================
-	// Step 2: BFS traversal
-	//=========================================================================
-	{
-		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_lagacy_BFS);
-	while (!Queue.IsEmpty())
-	{
-		FBFSNode Current;
-		Queue.Dequeue(Current);
-
-		if (Current.bIsSupercell)
-		{
-				TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_lagacy_Intact);
-			// Case A: Intact SuperCell node
-			ProcessSupercellNode(
-				Current.Id,
-				GridLayout,
-				SupercellState,
-				CellState,
-				bEnableSubcell,
-				Queue,
-				ConnectedCells,
-				VisitedSupercells);
-		}
-		else
-		{
-				TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_lagacy_Cell);
-			// Case B: Individual cell node
-			ProcessCellNode(
-				Current.Id,
-				GridLayout,
-				SupercellState,
-				CellState,
-				bEnableSubcell,
-				Queue,
-				ConnectedCells,
-				VisitedSupercells);
-		}
-	}
-	}
-
-	return ConnectedCells;
-}
+}   
 
 TSet<int32> FCellDestructionSystem::FindDisconnectedCellsHierarchicalLevel(
 	const FGridCellLayout& GridLayout,
@@ -1918,7 +1805,7 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 	
 	Context.Reset(TotalCells, SupercellState.GetTotalSupercellCount());
 
-	TArray<FBFSNode>& Stack = Context.WorkStack;
+	TArray<FCellNode>& Stack = Context.WorkStack;
 
 	const int32 SizeX = Cache.GridSize.X;
 	const int32 SizeY = Cache.GridSize.Y;
@@ -1957,7 +1844,7 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 				!Context.IsSuperCellVisited(SupercellId))
 			{
 				Context.SetSuperCellVisited(SupercellId);
-				Stack.Push(FBFSNode::MakeSupercell(SupercellId));
+				Stack.Push(FCellNode::MakeSupercell(SupercellId));
 				MarkAllCellsInSuperCell_Bit(SupercellId, SupercellState, Cache, CellState, Context);
 			}
 			else
@@ -1965,7 +1852,7 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 				if (!Context.IsCellConnected(CellId))
 				{
 					Context.SetCellConnected(CellId);
-					Stack.Push(FBFSNode::MakeCell(CellId));
+					Stack.Push(FCellNode::MakeCell(CellId));
 				}
 			}
 		}
@@ -1975,7 +1862,7 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindConnectedCellsHierarchical_Opt_DFS);
 		while (Stack.Num() > 0)
 		{
-			const FBFSNode Current = Stack.Pop(EAllowShrinking::No);
+			const FCellNode Current = Stack.Pop(EAllowShrinking::No);
 
 			if (Current.bIsSupercell)
 			{
@@ -2063,13 +1950,13 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 						!Context.IsSuperCellVisited(NeighborSupercellId))
 					{
 						Context.SetSuperCellVisited(NeighborSupercellId);
-						Stack.Push(FBFSNode::MakeSupercell(NeighborSupercellId));
+						Stack.Push(FCellNode::MakeSupercell(NeighborSupercellId));
 						MarkAllCellsInSuperCell_Bit(NeighborSupercellId, SupercellState, Cache, CellState, Context);
 					}
 					else
 					{
 						Context.SetCellConnected(NeighborId);
-						Stack.Push(FBFSNode::MakeCell(NeighborId));
+						Stack.Push(FCellNode::MakeCell(NeighborId));
 					}
 				}
 			}
@@ -2079,4 +1966,418 @@ void FCellDestructionSystem::FindConnectedCellsHierarchical_Optimized(
 	// TSet<int32> ConnectedCells(Context.ConnectedCellIds);
 	//
 	// return ConnectedCells;
+} 
+
+TSet<int32> FCellDestructionSystem::FindDisconnectedCellsFromAffected(
+	const FGridCellLayout& Cache,
+	FSuperCellState& SupercellState,
+	const FCellState& CellState,
+	const TArray<int32>& AffectedNeighborCells,
+	FConnectivityContext& Context,
+	bool bEnableSupercell,
+	bool bEnableSubcell)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(DFSToAnchor_FindDisconnectedCellsFromAffected);
+	using namespace HierarchicalBFSHelper;
+
+	TSet<int32> DisconnectedCells;
+	TSet<int32> ConfirmedConnected;
+
+	const int32 TotalCells = Cache.GetTotalCellCount();
+	const int32 SizeX = Cache.GridSize.X;
+	const int32 SizeY = Cache.GridSize.Y;
+	const int32 SizeZ = Cache.GridSize.Z;
+	const int32 SizeXY = SizeX * SizeY;
+
+	// CellId = X + Y * SizeX + Z * SizeX * SizeY
+	// x축 이동 = 1, y축 이동 = sizeX, z축 이동 = sizeX * sizeY 
+	const int32 Stride[6] = { -1, 1, -SizeX, SizeX, -SizeXY, SizeXY };
+
+	for (int32 StartCellId : AffectedNeighborCells)
+	{
+		// 이미 정해진 Cell Id 
+		if (ConfirmedConnected.Contains(StartCellId) || DisconnectedCells.Contains(StartCellId))
+		{
+			continue;
+		}
+
+		// Skip Destroyed cells
+		if (CellState.DestroyedCells.Contains(StartCellId))
+		{
+			continue;
+		}
+
+		// Skip non-existent cells
+		if (!Cache.GetCellExists(StartCellId))
+		{
+			continue;	
+		}
+
+		// Reset context for this search
+		Context.Reset(TotalCells, SupercellState.GetTotalSupercellCount());
+		 
+		TArray<FCellNode>& Stack = Context.WorkStack;
+		bool bFoundAnchor = false;
+
+		if (bEnableSupercell)
+		{
+			const int32 SupercellId = SupercellState.GetSupercellForCell(StartCellId);
+
+			// Supercell 존재 && 손상 X 
+			if (SupercellId != INDEX_NONE && SupercellState.IsSupercellIntact(SupercellId))
+			{	
+				// 앵커가 있는 Supercell에 도착
+				if (SupercellContainsAnchor(SupercellId, Cache, SupercellState, CellState))
+				{
+					bFoundAnchor = true;
+				}
+
+				// ConfirmedConnected를 포함중
+				else if (SupercellContainsConfirmedConnected(SupercellId, Cache, SupercellState, ConfirmedConnected))
+				{
+					bFoundAnchor = true;
+				}
+				else
+				{
+					Context.SetSuperCellVisited(SupercellId);
+					Stack.Push(FCellNode::MakeSupercell(SupercellId));
+					MarkAllCellsInSuperCell_Bit(SupercellId, SupercellState, Cache, CellState, Context); // 이미 intact false 인데, 한번에 bit찍으면 되지 않나 ?
+
+				}
+			}
+			else
+			{
+				// Broken SuperCell 또는 Orphan → Cell로 Push
+				if (Cache.GetCellIsAnchor(StartCellId))
+				{
+					bFoundAnchor = true;
+				}
+				else if (ConfirmedConnected.Contains(StartCellId))
+				{
+					bFoundAnchor = true;
+				}
+				else
+				{
+					Context.SetCellConnected(StartCellId);
+					Stack.Push(FCellNode::MakeCell(StartCellId));
+				}
+			}
+		}
+		// Supercell을 안쓰는 경우
+		else
+		{
+			if (Cache.GetCellIsAnchor(StartCellId))
+			{
+				bFoundAnchor = true;
+			}
+			else if (ConfirmedConnected.Contains(StartCellId))
+			{
+				bFoundAnchor = true;
+			}
+			else
+			{
+				Context.SetCellConnected(StartCellId);
+				Stack.Push(FCellNode::MakeCell(StartCellId));
+			}
+		}
+
+		// DFS Loop
+		while (!bFoundAnchor && Stack.Num() > 0)
+		{
+			// EAllowShrinking: 원소를 제거할 때 메모리를(capacity) 줄이지 않기
+			const FCellNode Current = Stack.Pop(EAllowShrinking::No);
+
+			if (Current.bIsSupercell)
+			{
+				const int32 SupercellId = Current.Id;
+				const FSupercellCellRange Range(SupercellId, SupercellState, Cache);
+				const FIntVector SupercellCoord = SupercellState.SupercellIdToCoord(SupercellId);
+
+				for (int32 Dir = 0; Dir < 6 && !bFoundAnchor; ++Dir)
+				{
+					const FIntVector NeighborsSCCoord = SupercellCoord + FIntVector(
+					DIRECTION_OFFSETS[Dir][0] ,
+					DIRECTION_OFFSETS[Dir][1] ,
+					DIRECTION_OFFSETS[Dir][2]
+					);
+
+					if (!SupercellState.IsValidSupercellCoord(NeighborsSCCoord))
+					{
+						continue;
+					}
+
+					const int32 NeighborSupercellId = SupercellState.SupercellCoordToId(NeighborsSCCoord);
+
+					// Supercell이 손상이 안됐을 때
+					if (SupercellState.IsSupercellIntact(NeighborSupercellId))
+					{
+						// 이미 확인했으면 Pass
+						if (Context.IsSuperCellVisited(NeighborSupercellId))
+						{
+							continue;
+						}
+
+						// 앵커를 포함하는 Supercell인가 
+						if (SupercellContainsAnchor(NeighborSupercellId,  Cache, SupercellState, CellState))
+						{
+							bFoundAnchor = true;
+							break;
+						}
+
+						// ConfirmedConnected를 포함하는 Supercell 
+						if (SupercellContainsConfirmedConnected(NeighborSupercellId, Cache, SupercellState, ConfirmedConnected))
+						{
+							bFoundAnchor = true;
+							break;
+						}
+
+						Context.SetSuperCellVisited(NeighborSupercellId);
+						Stack.Push(FCellNode::MakeSupercell(NeighborSupercellId));
+						MarkAllCellsInSuperCell_Bit(NeighborSupercellId, SupercellState, Cache, CellState, Context);
+					}
+					else
+					{
+						// 이미 깨진 Supercell  
+						TArray<int32> BoundaryCellIds;
+						SupercellState.GetBoundaryCellsInDirection(SupercellId, Dir, Cache, BoundaryCellIds);
+
+						for (int32 BoundaryCellId : BoundaryCellIds)
+						{
+							// 존재하지 않거나, 파괴된 cell을 패스
+							if (!Cache.GetCellExists(BoundaryCellId) || CellState.DestroyedCells.Contains(BoundaryCellId))
+							{
+								continue;
+							}
+
+							const FIntVector BoundaryCoord = Cache.IdToCoord(BoundaryCellId);
+							const FIntVector NeighborCoord = BoundaryCoord + FIntVector(
+								DIRECTION_OFFSETS[Dir][0],
+								DIRECTION_OFFSETS[Dir][1],
+								DIRECTION_OFFSETS[Dir][2]
+							);
+						
+							if (!Cache.IsValidCoord(NeighborCoord))
+							{
+								continue;
+							}
+
+							const int32 NeighborCellId = Cache.CoordToId(NeighborCoord);
+
+							// 이미 방문했거나 파괴된 Cell은 스킵
+							if (!Cache.GetCellExists(NeighborCellId) || CellState.DestroyedCells.Contains(NeighborCellId) || Context.IsCellConnected(NeighborCellId))
+							{
+								continue;
+							}
+
+							if (bEnableSubcell && !SubCellBFSHelper::HasConnectedBoundary(BoundaryCellId, NeighborCellId, Dir, CellState))
+							{
+								continue;
+							}
+
+							if (Cache.GetCellIsAnchor(NeighborCellId))
+							{
+								bFoundAnchor = true;
+								break;
+							}
+
+							if (ConfirmedConnected.Contains(NeighborCellId))
+							{
+								bFoundAnchor = true;
+								break;
+							}
+
+							Context.SetCellConnected(NeighborCellId);
+							Stack.Push(FCellNode::MakeCell(NeighborCellId));
+						}
+
+					}
+
+				}
+
+			}
+			else
+			{
+				// Cell 노드 처리 
+				const int32 CurrentCellId = Current.Id;
+
+				//CellId = X + Y * SizeX + Z * SizeX * SizeY
+				const int32 Z = CurrentCellId / SizeXY;
+				const int32 RemXY = CurrentCellId - Z * SizeXY;
+				const int32 Y = RemXY / SizeX;
+				const int32 X = RemXY - Y * SizeX;
+
+				// 정방향 : -X, X, -Y, Y, -Z, Z 
+				for (int32 Dir = 5 ; Dir >= 0 && !bFoundAnchor; --Dir)
+				{
+					// 경계 체크
+					if (Dir == 0 && X == 0)
+					{
+						continue;
+					}
+					if (Dir == 1 && X == SizeX - 1)
+					{
+						continue;
+					}
+					if (Dir == 2 && Y == 0)
+					{
+						continue;
+					}
+					if (Dir == 3 && Y == SizeY - 1)
+					{
+						continue;
+					}
+					if (Dir == 4 && Z == 0)
+					{
+						continue;
+					}
+					if (Dir == 5 && Z == SizeZ - 1)
+					{
+						continue;
+					}
+
+					const int32 NeighborCellId = CurrentCellId + Stride[Dir];
+
+					// 기본 체크
+					if (!Cache.GetCellExists(NeighborCellId) ||
+						CellState.DestroyedCells.Contains(NeighborCellId) ||
+						Context.IsCellConnected(NeighborCellId))
+					{
+						continue;
+					}
+
+					// SubCell 경계 연결성 체크
+					if (bEnableSubcell &&
+						!SubCellBFSHelper::HasConnectedBoundary(CurrentCellId, NeighborCellId, Dir, CellState))
+					{
+						continue;
+					}
+
+					// 앵커 도달 체크
+					if (Cache.GetCellIsAnchor(NeighborCellId))
+					{
+						bFoundAnchor = true;
+						break;
+					}
+
+					// ConfirmedConnected 도달 체크
+					if (ConfirmedConnected.Contains(NeighborCellId))
+					{
+						bFoundAnchor = true;
+						break;
+					}
+
+					// 이웃이 Intact SuperCell에 속하는지 체크
+					if (bEnableSupercell)
+					{
+						const int32 NeighborSupercellId = SupercellState.GetSupercellForCell(NeighborCellId);
+
+						if (NeighborSupercellId != INDEX_NONE &&
+							SupercellState.IsSupercellIntact(NeighborSupercellId) &&
+							!Context.IsSuperCellVisited(NeighborSupercellId))
+						{
+							// Intact SuperCell -> 앵커/ConfirmedConnected 체크 후 SuperCell로 Push
+							if (SupercellContainsAnchor(NeighborSupercellId, Cache, SupercellState, CellState))
+							{
+								bFoundAnchor = true;
+								break;
+							}
+
+							if (SupercellContainsConfirmedConnected(NeighborSupercellId, Cache, SupercellState, ConfirmedConnected))
+							{
+								bFoundAnchor = true;
+								break;
+							}
+
+							Context.SetSuperCellVisited(NeighborSupercellId);
+							Stack.Push(FCellNode::MakeSupercell(NeighborSupercellId));
+							MarkAllCellsInSuperCell_Bit(NeighborSupercellId, SupercellState, Cache, CellState, Context);
+							continue;
+						}
+					}
+
+					// Broken SuperCell 또는 Orphan -> Cell로 Push
+					Context.SetCellConnected(NeighborCellId);
+					Stack.Push(FCellNode::MakeCell(NeighborCellId));
+				}
+			}
+
+		}
+
+		if (bFoundAnchor)
+		{
+			for (int32 CellId : Context.ConnectedCellIds)
+			{
+				ConfirmedConnected.Add(CellId);
+			}
+		}
+
+		else
+		{
+			for (int32 CellId : Context.ConnectedCellIds)
+			{
+				DisconnectedCells.Add(CellId);
+			}
+		}
+	}
+	 
+	return DisconnectedCells;
+}
+bool FCellDestructionSystem::SupercellContainsAnchor(
+	int32 SupercellId,
+	const FGridCellLayout& Cache,
+	const FSuperCellState& SupercellState,
+	const FCellState& CellState)
+{
+	using namespace HierarchicalBFSHelper;
+
+	const FSupercellCellRange Range(SupercellId, SupercellState, Cache);
+
+	for (int32 Z = Range.StartZ; Z < Range.EndZ; ++Z)
+	{
+		for (int32 Y = Range.StartY; Y < Range.EndY; ++Y)
+		{
+			for (int32 X = Range.StartX; X < Range.EndX; ++X)
+			{
+				const int32 CellId = Cache.CoordToId(X, Y, Z);
+
+				if (Cache.GetCellExists(CellId) &&
+					!CellState.DestroyedCells.Contains(CellId) &&
+					Cache.GetCellIsAnchor(CellId))
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+bool FCellDestructionSystem::SupercellContainsConfirmedConnected(
+	int32 SupercellId,
+	const FGridCellLayout& Cache,
+	const FSuperCellState& SupercellState,
+	const TSet<int32>& ConfirmedConnected
+)
+{
+	using namespace HierarchicalBFSHelper;
+
+	const FSupercellCellRange Range(SupercellId, SupercellState, Cache);
+
+	for (int32 Z = Range.StartZ; Z < Range.EndZ; ++Z)
+	{
+		for (int32 Y = Range.StartY; Y < Range.EndY; ++Y)
+		{
+			for (int32 X = Range.StartX; X < Range.EndX; ++X)
+			{
+				const int32 CellId = Cache.CoordToId(X, Y, Z);
+				if (ConfirmedConnected.Contains(CellId))
+				{
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
 }

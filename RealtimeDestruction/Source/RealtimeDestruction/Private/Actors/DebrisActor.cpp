@@ -36,6 +36,7 @@ ADebrisActor::ADebrisActor()
 	CollisionBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	CollisionBox->SetCollisionObjectType(ECC_PhysicsBody);
 	CollisionBox->SetCollisionResponseToAllChannels(ECR_Block);
+	CollisionBox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	
 	CollisionBox->SetSimulatePhysics(false); // 나중에 EnablePhysics에서 활성화
 	CollisionBox->SetEnableGravity(true);

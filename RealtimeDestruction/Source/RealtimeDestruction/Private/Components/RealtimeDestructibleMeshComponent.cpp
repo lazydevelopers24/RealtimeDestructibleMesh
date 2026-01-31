@@ -596,27 +596,94 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 		}
 	}
 
+	TArray<int32> AffectedNeighborCells;
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindAffectedNeighborCells);
+		TSet<int32> UniqueNeighbors;
 
+		for (const FDestructionResult& Result : AllResults)
+		{
+			for (int32 DestroyedCellId : Result.NewlyDestroyedCells)
+			{
+				const FIntArray& Neighbors = GridCellLayout.GetCellNeighbors(DestroyedCellId);
+				for (int32 NeighborId : Neighbors.Values)
+				{
+					// 파괴되지않고, 존재하는 이웃 Cell만 순회 
+					if (!CellState.DestroyedCells.Contains(NeighborId) &&
+						GridCellLayout.GetCellExists(NeighborId))
+					{
+						UniqueNeighbors.Add(NeighborId);
+					}
+				}
+			}
+			
+			if (bEnableSubcell)
+			{
+				for (int32 AffectedCellId : Result.AffectedCells)
+				{
+					const FIntArray& Neighbors = GridCellLayout.GetCellNeighbors(AffectedCellId);
+
+					for (int32 NeighborId : Neighbors)
+					{
+						// 파괴되지않고, 존재하는 이웃 Cell만 순회 
+						if (!CellState.DestroyedCells.Contains(NeighborId) &&
+							GridCellLayout.GetCellExists(NeighborId))
+						{
+							UniqueNeighbors.Add(NeighborId);
+						}
+
+					}
+					
+				}
+			}
+		}
+	
+		AffectedNeighborCells = UniqueNeighbors.Array();
+	}
 	//=====================================================================
-	// Phase 2: BFS로 앵커에서 분리된 셀 찾기
+	// Phase 2: DFS로 앵커에서 분리된 셀 찾기
 	// 통합 API 사용: bEnableSupercell, bEnableSubcell 플래그에 따라 자동 선택
 	// Multiplayer: SubCell 상태는 Client에 동기화되지 않으므로 Standalone에서만 사용
 	//======================================================== 
-
+	  
+	//[depricated]
+	//TSet<int32> DisconnectedCells;
+	//{
+	//	TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindDisconnectedCells);
+	//	const ENetMode NetMode = GetWorld()->GetNetMode();
+	//	DisconnectedCells = FCellDestructionSystem::FindDisconnectedCells(
+	//		GridCellLayout,
+	//		SupercellState,
+	//		CellState,
+	//		bEnableSupercell && SupercellState.IsValid(),
+	//		bEnableSubcell && (NetMode == NM_Standalone),
+	//		CellContext); // subcell 동기화 안 하므로 subcell은 standalone에서만 허용
+	//}
 	// Standalon용 BFS 성능 LOG
-	//int32 BFSCallCount = 0;
-	//BFSCallCount++;
-	//double BFSStartTime = FPlatformTime::Seconds();
-	//
-	//UE_LOG(LogTemp, Warning, TEXT("[BFS #%d] FindDisconnectedCells START (TotalCells: %d)"),
-	//	BFSCallCount, GridCellLayout.GetTotalCellCount()); 
-
-	// ===== 여기에 로그 추가 =====
-	UE_LOG(LogTemp, Warning, TEXT("    [Batch BFS] FindDisconnectedCells called"));
-	TSet<int32> DisconnectedCells;
+	//double BFSEndTime = FPlatformTime::Seconds();
+	//UE_LOG(LogTemp, Warning, TEXT("[BFS #%d] FindDisconnectedCells END - took %.3f ms, found %d disconnected"),
+	//	BFSCallCount, (BFSEndTime - BFSStartTime) * 1000.0, DisconnectedCells.Num());
+	 
+	TSet<int32> DisconnectedCells; 
+	if (AffectedNeighborCells.Num() > 0)
 	{
-		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindDisconnectedCells);
+		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindDisconnectedCellsFromAffected);
+
 		const ENetMode NetMode = GetWorld()->GetNetMode();
+		DisconnectedCells = FCellDestructionSystem::FindDisconnectedCellsFromAffected(
+			GridCellLayout,
+			SupercellState ,
+			CellState,
+			AffectedNeighborCells,
+			CellContext,
+			true && SupercellState.IsValid() ,
+			bEnableSubcell && (NetMode == NM_Standalone)
+		);
+	}
+	else if (bForceRun)
+	{
+		const ENetMode NetMode = GetWorld()->GetNetMode();
+
 		DisconnectedCells = FCellDestructionSystem::FindDisconnectedCells(
 			GridCellLayout,
 			SupercellState,
@@ -625,10 +692,6 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 			bEnableSubcell && (NetMode == NM_Standalone),
 			CellContext); // subcell 동기화 안 하므로 subcell은 standalone에서만 허용
 	}
-	// Standalon용 BFS 성능 LOG
-	//double BFSEndTime = FPlatformTime::Seconds();
-	//UE_LOG(LogTemp, Warning, TEXT("[BFS #%d] FindDisconnectedCells END - took %.3f ms, found %d disconnected"),
-	//	BFSCallCount, (BFSEndTime - BFSStartTime) * 1000.0, DisconnectedCells.Num());
 	 
 	UE_LOG(LogTemp, Log, TEXT("[Cell] Phase 2: %d Cells disconnected"), DisconnectedCells.Num()); 
 

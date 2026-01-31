@@ -135,24 +135,6 @@ public:
 		const FCellState& CellState);
 
 	/**
-	 * Find anchor-connected cells via 2-level hierarchical BFS.
-	 *
-	 * First traverses at the SuperCell level, then at the Cell level only for broken SuperCells.
-	 * Reduces BFS node count for large grids (e.g., 100x100x100).
-	 *
-	 * @param Cache - grid layout
-	 * @param SupercellState - SuperCell state
-	 * @param CellState - cell state
-	 * @param bEnableSubcell - whether subcell mode is enabled
-	 * @return Set of cell IDs connected to anchors
-	 */
-	static TSet<int32> FindConnectedCellsHierarchical(
-		const FGridCellLayout& Cache,
-		FSuperCellState& SupercellState,
-		const FCellState& CellState,
-		bool bEnableSubcell);
-
-	/**
 	 * Find detached cells via hierarchical BFS.
 	 *
 	 * Calls FindConnectedCellsHierarchical() and returns unconnected cells.
@@ -177,6 +159,28 @@ public:
 		const FCellState& CellState,
 		FConnectivityContext& Context,
 		bool bEnableSubcell);
+
+	static TSet<int32> FindDisconnectedCellsFromAffected(
+		const FGridCellLayout& Cache,
+		FSuperCellState& SupercellState,
+		const FCellState& CellState,
+		const TArray<int32>& AffectedNeighborCells,
+		FConnectivityContext& Context,
+		bool bEnableSupercell,
+		bool bEnableSubcell );
+
+	static bool SupercellContainsAnchor(
+		int32 SupercellId,
+		const FGridCellLayout& Cache,
+		const FSuperCellState& SupercellState,
+		const FCellState& CellState);
+
+	static bool SupercellContainsConfirmedConnected(
+		int32 SupercellId,
+		const FGridCellLayout& Cache,
+		const FSuperCellState& SupercellState,
+		const TSet<int32>& ConfirmedConnected
+	);
 
 	//=========================================================================
 	// Grouping detached cells

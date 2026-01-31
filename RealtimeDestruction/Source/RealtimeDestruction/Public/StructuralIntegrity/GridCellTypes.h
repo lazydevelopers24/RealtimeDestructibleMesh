@@ -924,7 +924,7 @@ struct REALTIMEDESTRUCTION_API FBatchedDestructionEvent
  * - bIsSupercell = true: Id is a SuperCell ID
  * - bIsSupercell = false: Id is a Cell ID
  */
-struct REALTIMEDESTRUCTION_API FBFSNode
+struct REALTIMEDESTRUCTION_API FCellNode
 {
 	/** Node ID (SuperCell ID or Cell ID). */
 	int32 Id = INDEX_NONE;
@@ -932,27 +932,27 @@ struct REALTIMEDESTRUCTION_API FBFSNode
 	/** Whether this is a SuperCell node. */
 	bool bIsSupercell = false;
 
-	FBFSNode() = default;
+	FCellNode() = default;
 
-	FBFSNode(int32 InId, bool bInIsSupercell)
+	FCellNode(int32 InId, bool bInIsSupercell)
 		: Id(InId), bIsSupercell(bInIsSupercell)
 	{}
 
 	/** Create a SuperCell node. */
-	static FBFSNode MakeSupercell(int32 SupercellId)
+	static FCellNode MakeSupercell(int32 SupercellId)
 	{
-		return FBFSNode(SupercellId, true);
+		return FCellNode(SupercellId, true);
 	}
 
 	/** Create a Cell node. */
-	static FBFSNode MakeCell(int32 CellId)
+	static FCellNode MakeCell(int32 CellId)
 	{
-		return FBFSNode(CellId, false);
+		return FCellNode(CellId, false);
 	}
 
 	bool IsValid() const { return Id != INDEX_NONE; }
 
-	bool operator==(const FBFSNode& Other) const
+	bool operator==(const FCellNode& Other) const
 	{
 		return Id == Other.Id && bIsSupercell == Other.bIsSupercell;
 	}
@@ -1215,7 +1215,7 @@ struct FConnectivityContext
 
 	TArray<int32> ConnectedCellIds = {};
 
-	TArray<FBFSNode> WorkStack = {};
+	TArray<FCellNode> WorkStack = {};
 
 	FConnectivityContext() = default;
 	~FConnectivityContext()
