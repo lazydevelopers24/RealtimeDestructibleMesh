@@ -7,7 +7,7 @@ parent: 한국어
 
 # **심화기능: 앵커 에디터**
 
-  메시에 파괴가 누적되다보면 하부에 지지받지 못하고 공중에 뜬 조각이 생길 수 있습니다. 이를 mesh island라고 합니다. Realtime Destructible Mesh 플러그인에는 mesh island를 감지하고 별도의 조각으로 스폰해주거나 삭제해주는 구조적 무결성(structural integrity) 시스템이 탑재되어 있습니다.
+메시에 파괴가 누적되다보면 하부에 지지받지 못하고 공중에 뜬 조각이 생길 수 있습니다. 이를 mesh island라고 합니다. Realtime Destructible Mesh 플러그인에는 mesh island를 감지하고 별도의 조각으로 스폰해주거나 삭제해주는 구조적 무결성(structural integrity) 시스템이 탑재되어 있습니다.
 
 메시는 mesh island를 탐지하기 위해 내부적으로 수많은 직육면체 셀(cell)로 근사되며, 그 중 일부가 메시 구조를 지지하는 앵커(anchor)가 됩니다. 구조적 무결성 시스템은 기본적으로 메시의 최하단(-z 방향) 몇 개의 층을 이루는 셀들을 앵커로 가정합니다. (설정값에 따라 달라집니다.)  
 ![][image19]![][image20]  
@@ -22,16 +22,13 @@ Spawn Anchor Plane 또는 Spawn Anchor Volume 버튼을 누르면 앵커 영역�
 아래 사진은 Spawn Anchor Volume 후 앵커 박스를 메시 측면과 겹치도록 옮기고 Apply All Anchor Volumes를 적용한 결과입니다. 2945개의 셀이 앵커로 지정되었습니다.  
 ![][image22]
 
-◀ Grid Cell 디버그를 켜서 앵커가 제대로 설정된 것을 확인할 수 있습니다.
+![][image23]
+▲ Grid Cell 디버그를 켜서 앵커가 제대로 설정된 것을 확인할 수 있습니다.
 
 
 
 [image22]: ../images/image22.png
 [image19]: ../images/image19.png
-
-
 [image20]: ../images/image20.png
-
-
 [image21]: ../images/image21.png
-
+[image23]: ../images/image23.png

@@ -7,9 +7,9 @@ parent: English
 
 # **Advanced: Anchor Editor**
 
-  As destruction accumulates on a mesh, fragments that are not supported underneath can float in the air. These are called mesh islands. The Realtime Destructible Mesh plugin includes a structural integrity system that detects mesh islands and either spawns them as separate fragments or deletes them.
+As destruction accumulates on a mesh, fragments that are not supported underneath can float in the air. These are called mesh islands. The Realtime Destructible Mesh plugin includes a structural integrity system that detects mesh islands and either spawns them as separate fragments or deletes them.
 
-  To detect mesh islands, the mesh is internally approximated by numerous rectangular prism-shaped cells, some of which become anchors that support the mesh structure. The structural integrity system basically assumes that the cells forming the bottommost layers (in the \-z direction) of the mesh are anchors. (This varies depending on the settings.)  
+To detect mesh islands, the mesh is internally approximated by numerous rectangular prism-shaped cells, some of which become anchors that support the mesh structure. The structural integrity system basically assumes that the cells forming the bottommost layers (in the \-z direction) of the mesh are anchors. (This varies depending on the settings.)  
 ![][image19]![][image20]  
 ▲ A view showing the cells of the Realtime Destructible Mesh. Light green cells are anchor cells.
 
@@ -21,7 +21,8 @@ Pressing the Spawn Anchor Plane or Spawn Anchor Volume button creates a plane or
 The picture below shows the result of spawning an Anchor Volume, moving the anchor box to overlap with the side of the mesh, and applying Apply All Anchor Volumes. 2945 cells have been designated as anchors.  
 ![][image22]
 
-◀ You can confirm that the anchors are set correctly by turning on Grid Cell Debug.
+![][image23]
+▲ You can confirm that the anchors are set correctly by turning on Grid Cell Debug.
 
 
 
@@ -33,4 +34,6 @@ The picture below shows the result of spawning an Anchor Volume, moving the anch
 
 
 [image21]: ../images/image21.png
+
+[image23]: ../images/image23.png
 
