@@ -20,7 +20,7 @@ class FImpactProfileViewportClient;
 class FAdvancedPreviewScene;
 
 /**
- * DecalSize 편집용 프리뷰 뷰포트
+ * Preview viewport for DecalSize editing
  */
 class SImpactProfileEditorViewport : public SEditorViewport, public FGCObject
 {
@@ -36,17 +36,17 @@ public:
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 	virtual FString GetReferencerName() const override { return TEXT("SImpactProfileEditorViewport"); };
 
-	/** 타겟 컴포넌트 설정 */
+	/** Set target component */
 	void SetTargetComponent(UDestructionProjectileComponent* InComponent);
 
-	/** 프리뷰 갱신 */
+	/** Refresh preview */
 	void RefreshPreview();
 
-	/** Decal Transform 설정 */
+	/** Set Decal Transform */
 	void SetDecalTransform(const FTransform& InTransform);
 	FTransform GetDecalTransform() const { return DecalTransform; }
 	
-	/** ToolShape 크기 설정 */
+	/** Set ToolShape transform */
 	void SetToolShapeLocation(const FVector& InLocation);
 	void SetToolShapeRotation(const FRotator& InRotation);
 
@@ -71,7 +71,7 @@ public:
 	FVector GetPreviewMeshLocation() const { return PreviewMeshLocation; }
 	FRotator GetPreviewMeshRotation() const { return PreviewMeshRotation; }
 	
-	/** 프리뷰 메시만 업데이트 (전체 Refresh 없이) */ 
+	/** Update preview mesh only (without full Refresh) */ 
 	void UpdateDecalMesh();   
 	void UpdateDecalWireframe();
 	
@@ -97,25 +97,25 @@ protected:
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override; 
 
 private:
-	/** 타겟 컴포넌트 */
+	/** Target component */
 	TWeakObjectPtr<UDestructionProjectileComponent> TargetComponent;
 
-	/** 프리뷰 씬 */
+	/** Preview scene */
 	TSharedPtr<FAdvancedPreviewScene> PreviewScene;
 
-	/** 뷰포트 클라이언트 */
+	/** Viewport client */
 	TSharedPtr<FImpactProfileViewportClient> ViewportClient;
 	
-	/** 프리뷰용 액터들 */
+	/** Preview actors */
 	TObjectPtr<AActor> PreviewActor = nullptr;
 	TObjectPtr<class UDecalComponent> DecalPreviewComponent = nullptr;
-	TObjectPtr<class UStaticMeshComponent> DecalTargetSurface = nullptr;  // 데칼 투영용 표면
+	TObjectPtr<class UStaticMeshComponent> DecalTargetSurface = nullptr;  // Surface for decal projection
 	TObjectPtr<class ULineBatchComponent> DecalWireframe = nullptr;
 	TObjectPtr<class UStaticMeshComponent> ProjectileMesh = nullptr;
 	TObjectPtr<class ULineBatchComponent> ToolShapeWireframe = nullptr;
 	TObjectPtr<UStaticMesh> PreviewMesh = nullptr;
 
-	/** Decal Preview Tranform */
+	/** Decal Preview Transform */
 	FTransform DecalTransform; 
 	FVector DecalSize = FVector(1.0f, 50.0f, 50.0f);
 
@@ -141,7 +141,7 @@ private:
 	bool bShowToolShape = true;
 	bool bShowPreviewMesh = true;
 
-	/** 저장을 위한 함수 */
+	/** Function for saving state */
 	void SaveState();
 };
 

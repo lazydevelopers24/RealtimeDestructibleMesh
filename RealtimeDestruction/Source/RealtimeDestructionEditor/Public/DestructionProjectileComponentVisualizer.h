@@ -13,15 +13,15 @@
 #include "ComponentVisualizer.h"
 
 /**
- * DestructProjectileComponent용 Visualizer
- * 에디터 뷰포트에서 ToolShape을 wireframe으로 그려준다.
+ * Visualizer for DestructProjectileComponent
+ * Draws ToolShape as wireframe in editor viewport.
  */
 
 class FDestructionProjectileComponentVisualizer : public FComponentVisualizer
 {
 public:
 	/**
-	 * 컴포넌트 시각화
+	 * Component visualization
 	 */
 	virtual void DrawVisualization(
 		const UActorComponent* Component,
@@ -31,14 +31,14 @@ public:
 
 
 private:
-	/** Sphere 시각화 */
+	/** Sphere visualization */
 	void DrawSphere(
 		const class UDestructionProjectileComponent* Component,
 		FPrimitiveDrawInterface* PDI,
 		const FLinearColor& Color
 		);
 
-	/** Cylinder 시각화 */
+	/** Cylinder visualization */
 	void DrawCylinder(
 		const class UDestructionProjectileComponent* Component,
 		FPrimitiveDrawInterface* PDI,

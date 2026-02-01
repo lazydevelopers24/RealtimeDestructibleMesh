@@ -21,7 +21,7 @@ class IDetailsView;
 struct FImpactProfileConfig;
 struct FImpactProfileConfigArray;
 /**
- * Decal Size 편집 전용 에디터 윈도우  
+ * Editor window dedicated to Decal Size editing
  */
 
 class UImpactProfileDataAsset; 
@@ -36,10 +36,10 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
-	/** 타겟 컴포넌트 설정 */
+	/** Set target component */
 	void SetTargetComponent(UDestructionProjectileComponent* InComponent);
 	
-	/** 위도우를 탭으로 여는 static 함수 */
+	/** Static function to open window as tab */
 	static void OpenWindow(UDestructionProjectileComponent* Component);
 
 	static void OpenWindowForDataAsset(UImpactProfileDataAsset* DataAsset);
@@ -47,7 +47,7 @@ private:
 	
 	TArray<TSharedPtr<FString>> ToolShapeOptions;
 private:
-	/** propert 변경 콜백 */ 
+	/** Property change callback */ 
 	virtual void NotifyPostChange(const FPropertyChangedEvent& PropertyChangedEvent, FProperty* PropertyThatChanged) override;
 
 	void SaveToComponent();
@@ -78,7 +78,7 @@ private:
 	void RenameCurrentConfigID(FName NewName);
 	void RenameCurrentSurfaceType(FName NewName);
 
-	/** UI 생성 헬퍼 */
+	/** UI creation helpers */
 	TSharedRef<SWidget> CreateToolShapeSection();
 	TSharedRef<SWidget> CreateConfigSelectionSection();
 	TSharedRef<SWidget> CreatePreviewMeshSection();
@@ -101,19 +101,19 @@ private:
 	EEditMode CurrentEditMode = EEditMode::Component;
     
 	
-	/** 현재 선택된 SurfaceType (표면 재질) */
+	/** Currently selected SurfaceType (surface material) */
 	FName CurrentSurfaceType = NAME_None;
    
-	/** ConfigID 목록 (콤보박스용) */
+	/** ConfigID list (for combobox) */
 	TArray<TSharedPtr<FName>> ConfigIDList;
 
-	/** SurfaceType 목록 (콤보박스용) - 현재 선택된 ConfigID의 Surface들 */
+	/** SurfaceType list (for combobox) - Surfaces of currently selected ConfigID */
 	TArray<TSharedPtr<FName>> SurfaceTypeList;
 
-	/** 현재 선택된 Surface Type에 맞는 Variant Index 목록 */
+	/** Variant Index list matching currently selected Surface Type */
 	TArray<TSharedPtr<FString>> VariantIndexList;
 	
-	/** 현재 편집중인 matrial 인덱스 */
+	/** Currently editing material index */
 	int32 CurVariantIndex = 0;
 
 	

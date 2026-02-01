@@ -17,8 +17,8 @@ class URealtimeDestructibleMeshComponent;
 class UBlueprint;
 
 /**
- * RealtimeDestructibleMeshComponent의 디테일 패널 커스터마이징
- * GeometryCollection 기반 Cell Mesh 안내 표시
+ * Detail panel customization for RealtimeDestructibleMeshComponent
+ * Displays GeometryCollection-based Cell Mesh guide
  */
 class FRealtimeDestructibleMeshComponentDetails : public IDetailCustomization
 {
@@ -36,6 +36,6 @@ private:
 	void ForceCompileBlueprint(UBlueprint* Blueprint);
 
 
-	/** 선택된 컴포넌트들 */
+	/** Selected components */
 	TArray<TWeakObjectPtr<URealtimeDestructibleMeshComponent>> SelectedComponents;
 };
