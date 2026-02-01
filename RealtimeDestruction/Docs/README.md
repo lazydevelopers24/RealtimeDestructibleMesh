@@ -1,12 +1,14 @@
 # RealtimeDestruction Plugin Documentation
 
+---
+
 ## Overview
-The RealtimeDestruction plugin provides a high-performance, real-time mesh destruction system for Unreal Engine, specializing in projectile and explosive damage. It enables dynamic boolean operations on meshes with multi-threaded processing, structural integrity simulation, and network replication support. This plugin is ideal for shooters, military simulations, and any game featuring gunfire or blast-based destruction.
+RealtimeDestruction delivers production-ready mesh destruction for Unreal Engine. Shoot and blast through meshes in real-time using optimized boolean operations running on background threads. Key features include adaptive batch processing, structural integrity with grid cell approximation, automatic mesh simplification, and full multiplayer replication.
+Ideal for placing destructible cover or obstacles such as pillars, walls, crates, and furniture throughout your levels. This solution is a perfect fit for FPS games, destruction simulators, or any project that demands high-performance, dynamic mesh deformation.
 
 ## User Guide
-For detailed usage instructions, please refer to the online documentation below.
-EN: https://docs.google.com/document/d/1xrrT6ByFZl1jtfQgxyiKJN5vcLz9l5iu7JS1fOy-hQE/edit?usp=sharing
-KR: https://docs.google.com/document/d/1AWVUonKORoYfbyxlPbDfbiAah1fc8tr2CXmzJkdddF4/edit?usp=sharing
+Online documentation: https://lazydevelopers24.github.io/RealtimeDestructibleMesh/
+Youtube: https://www.youtube.com/@LazyDevelopers-y5k
 
 ## Features
 
