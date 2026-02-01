@@ -1,0 +1,8 @@
+title: RealTime Destructible Mesh
+description: User Guide for RealTime Destructible Mesh Plugin
+remote_theme: just-the-docs/just-the-docs
+
+# 목차 설정
+toc:
+  enabled: true
+  heading_selectors: "h1, h2, h3"
