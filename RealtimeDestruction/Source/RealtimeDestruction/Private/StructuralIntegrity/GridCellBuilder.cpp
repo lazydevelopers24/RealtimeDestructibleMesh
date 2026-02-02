@@ -104,7 +104,7 @@ bool FGridCellBuilder::BuildFromStaticMesh(
 	 //	}
 	 //}
 	
-	VoxelizeWithTriangles(SourceMesh, OutLayout);
+	VoxelizeWithTriangles(SourceMesh, OutLayout); 
 
 	 FillInsideVoxels(OutLayout);
 
@@ -661,7 +661,10 @@ bool FGridCellBuilder::TriangleIntersectsAABB(const FVector& V0, const FVector& 
 	 
 	// Compute box center and half size
 	const FVector BoxCenter = (BoxMin + BoxMax) * 0.5f;
-	const FVector BoxHalfSize = (BoxMax - BoxMin) * 0.5f;
+
+	const FVector BoxEpsilon = (BoxMax - BoxMin) * 0.5f + FVector(0.01f);
+
+	const FVector BoxHalfSize = (BoxMax - BoxMin) * 0.5f + BoxEpsilon;
 
 	// Move the triangle relative to the box center
 	const FVector T0 = V0 - BoxCenter;
@@ -776,7 +779,7 @@ void FGridCellBuilder::FillInsideVoxels(FGridCellLayout& OutLayout)
 	TQueue<int32> Queue;
 
 	const FIntVector GridSize = OutLayout.GridSize;
-
+	 
 	// 1. Initialize: enqueue the 6 boundary faces of the grid (always outside air)
 	for (int32 Z = 0; Z < GridSize.Z; ++Z)
 	{
@@ -800,8 +803,8 @@ void FGridCellBuilder::FillInsideVoxels(FGridCellLayout& OutLayout)
 				}
 			}
 		}
-	}
-
+	} 
+	  
 	// For 6-direction traversal
 	static const FIntVector Directions[6] = {
 		{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
@@ -848,8 +851,8 @@ void FGridCellBuilder::FillInsideVoxels(FGridCellLayout& OutLayout)
 			OutLayout.SetCellExists(i, true); // Fill
 			OutLayout.RegisterValidCell(i); 
 		}
-	}
-	 
+	} 
+
 }
 bool FGridCellBuilder::IsPointInsideConvex(
 	const FKConvexElem& ConvexElem,

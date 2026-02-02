@@ -170,6 +170,7 @@ FRealtimeDestructionRequest FCompactDestructionOp::Decompress() const
 #include "BooleanProcessor/RealtimeBooleanProcessor.h"
 #include "Components/DecalComponent.h"
 #include "StructuralIntegrity/GridCellBuilder.h"
+#include <Selection/MeshTopologySelectionMechanic.h>
 
 URealtimeDestructibleMeshComponent::URealtimeDestructibleMeshComponent()
 {
@@ -863,6 +864,8 @@ float URealtimeDestructibleMeshComponent::CalculateDebrisBoundsExtent(const TArr
 	}
 
 	FVector BoxExtent = CellBounds.GetExtent();
+	BoxExtent *= GetComponentTransform().GetScale3D(); 
+
 	return BoxExtent.GetMax();
 }
 void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
@@ -1471,15 +1474,8 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 	// 1. 모든 분리된 셀들의 3D 점유 맵 생성
 	TSet<FIntVector> BaseCells;
 	for (int32 CellId : DetachedCellIds)
-	{
-		const FVector LocalMin = GridCellLayout.IdToLocalMin(CellId);
-		const FVector Origin = GridCellLayout.GridOrigin;
-
-		FIntVector GridPos(
-			FMath::FloorToInt((LocalMin.X - Origin.X)/ CellSizeVec.X),
-			FMath::FloorToInt((LocalMin.Y - Origin.Y)/ CellSizeVec.Y),
-			FMath::FloorToInt((LocalMin.Z - Origin.Z) / CellSizeVec.Z)
-		);
+	{ 
+		FIntVector GridPos = GridCellLayout.IdToCoord(CellId);   
 		BaseCells.Add(GridPos);
 	}
 
@@ -1688,16 +1684,11 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 			}
 		}
 
-		// Smoothing 
-		{
-			TRACE_CPUPROFILER_EVENT_SCOPE(Debris_Smooth); 
-			ApplyHCLaplacianSmoothing(ToolMesh);
-		}
-
 		FDynamicMesh3 DebrisToolMesh;
 		DebrisToolMesh.EnableAttributes();
 		DebrisToolMesh.EnableTriangleGroups();
 		DebrisToolMesh = ToolMesh;
+
 
 		// Subtract용만 Scaling 
 		{
@@ -1722,6 +1713,13 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 				DebrisToolMesh.SetVertex(Vid, Centroid + (Pos - Centroid) * DebrisScaleRatio);
 			}
 		}
+
+		// Smoothing 
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(Debris_Smooth);
+			//ApplyHCLaplacianSmoothing(DebrisToolMesh);
+		}
+
 		ToolMesh.ReverseOrientation();
 		DebrisToolMesh.ReverseOrientation();
 
@@ -2360,6 +2358,7 @@ void URealtimeDestructibleMeshComponent::SpawnDebrisActor(FDynamicMesh3&& Source
 		}
 	}
 	FVector BoxExtent = DebrisBounds.GetExtent(); 
+	//BoxExtent *= GetComponentTransform().GetScale3D();
 	BoxExtent = BoxExtent.ComponentMax(FVector(1.0f, 1.0f, 1.0f));
 
 	const bool bShouldSync = BoxExtent.GetMax() >= MinDebrisSyncSize; 
@@ -2709,7 +2708,10 @@ void URealtimeDestructibleMeshComponent::SpawnDebrisActorForDedicatedServer(cons
 		FVector LocalCenter = CellBounds.GetCenter();
 		FVector SpawnLocation = ComponentTransform.TransformPosition(LocalCenter);
 		FVector BoxExtent = CellBounds.GetExtent();
+
+		BoxExtent *= ComponentTransform.GetScale3D();
 		BoxExtent = BoxExtent.ComponentMax(FVector(1.0f, 1.0f, 1.0f));
+		//BoxExtent = BoxExtent.ComponentMax(FVector(1.0f, 1.0f, 1.0f));
 
 		// 동기화 여부 판정 (작은 조각은 스킵)
 		if (BoxExtent.GetMax() < MinDebrisSyncSize)
@@ -4868,7 +4870,7 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 	ChunkSubtractBusyBits.Init(0ULL, NumBits);
 
 	// 런타임 시작 시 GridCellLayout가 유효하지 않으면 구축
-	if (SourceStaticMesh && !GridCellLayout.IsValid())
+	if ( ( SourceStaticMesh && !GridCellLayout.IsValid()) || CachedRDMScale != GetRelativeScale3D())
 	{
 		BuildGridCells();
 	}
@@ -5945,7 +5947,8 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 	}
 
 	// 2. 컴포넌트 스케일 가져오기
-	const FVector WorldScale = GetComponentScale();
+	//const FVector WorldScale = GetComponentScale();
+	const FVector WorldScale = GetRelativeScale3D();
 
 	// 3. GridCellBuilder를 사용하여 캐시 생성
 	// - GridCellSize: 월드 좌표계 기준 (사용자 설정값)
@@ -5973,6 +5976,7 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 	// 4. 캐시된 정보 저장
 	// CachedMeshBounds = SourceStaticMesh->GetBoundingBox();
 	CachedCellSize = GridCellLayout.CellSize;  // 빌더가 저장한 로컬 스페이스 셀 크기
+	CachedRDMScale = GetRelativeScale3D();
 
 	UE_LOG(LogTemp, Log, TEXT("BuildGridCells: WorldCellSize=(%.1f, %.1f, %.1f), Scale=(%.2f, %.2f, %.2f), LocalCellSize=(%.2f, %.2f, %.2f), Grid %dx%dx%d, Valid cells: %d, Anchors: %d"),
 		GridCellSize.X, GridCellSize.Y, GridCellSize.Z,
@@ -6747,12 +6751,12 @@ TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::
 }	
 
 void URealtimeDestructibleMeshComponent::ApplyHCLaplacianSmoothing(FDynamicMesh3& Mesh)
-{
+{ 
 	if (SmoothingIterations <= 0 || Mesh.TriangleCount() == 0)
 	{
 		return;
 	}
-
+	 
 	// 원본 위치 저장 (HC Laplacian 보정용)
 	TMap<int32, FVector3d> OriginalPositions;
 	for (int32 Vid : Mesh.VertexIndicesItr())

@@ -940,7 +940,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|ChunkMesh")
 	int32 GetChunkMeshCount() const { return ChunkMeshComponents.Num(); }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ChunkMesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|ChunkMesh", meta = (ClampMin = "1" , ClampMax="10"))
 	FIntVector SliceCount = FIntVector(2.0f, 2.0f, 2.0f);
 
 	/** Grid cell size (cm). Smaller values increase resolution but cost more performance */
@@ -950,6 +950,9 @@ public:
 	/** Floor anchor detection Z height threshold (cm, relative to MeshBounds.Min.Z) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "0.0"))
 	float FloorHeightThreshold = 10.0f;
+
+	UPROPERTY()
+	FVector CachedRDMScale = FVector(1.0f, 1.0f, 1.0f);
 
 	//////////////////////////////////////////////////////////////////////////
 	// Detached Cell Smoothing (Staircase Artifact Reduction)
