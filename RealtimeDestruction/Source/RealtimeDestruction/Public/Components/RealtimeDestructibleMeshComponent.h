@@ -1040,6 +1040,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowCellSpawnPosition = false;
 
+
 	/** Server collision box debug visualization (for listen server) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bShowServerCollisionDebug = false;
@@ -1051,6 +1052,14 @@ protected:
 	/** Show small non-synced debris as red boxes */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
 	bool bDebugDrawDebris = false;
+
+	/** SuperCell debug display */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowSupercellDebug = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
+	bool bShowSubCellDebug = false;
+
 	UPROPERTY()
 	float DebugDrawDuration = 5.0f;
 
@@ -1065,12 +1074,12 @@ protected:
 	/** Grid cell debug visualization */
 	void DrawGridCellDebug();
 
-	/** SuperCell debug display */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debug")
-	bool bShowSupercellDebug = false;
 
 	/** SuperCell debug visualization */
 	void DrawSupercellDebug();
+
+	/** SubCell Dbug */
+	void DrawSubCellDebug();
 
 	/** Server collision box debug visualization */
 	void DrawServerCollisionDebug();

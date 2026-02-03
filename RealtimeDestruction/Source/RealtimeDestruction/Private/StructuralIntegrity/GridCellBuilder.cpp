@@ -26,7 +26,8 @@ bool FGridCellBuilder::BuildFromStaticMesh(
 	const FVector& MeshScale,
 	const FVector& CellSize,
 	float AnchorHeightThreshold,
-	FGridCellLayout& OutLayout)
+	FGridCellLayout& OutLayout,
+	TMap<int32, FSubCell>* OutSubCellStates)
 {
 	if (!SourceMesh)
 	{
@@ -104,7 +105,7 @@ bool FGridCellBuilder::BuildFromStaticMesh(
 	 //	}
 	 //}
 	
-	VoxelizeWithTriangles(SourceMesh, OutLayout); 
+	VoxelizeWithTriangles(SourceMesh, OutLayout, OutSubCellStates);
 
 	 FillInsideVoxels(OutLayout);
 
@@ -170,6 +171,35 @@ bool FGridCellBuilder::BuildFromDynamicMesh(
 		OutLayout.GetValidCellCount());
 
 	return true;
+}
+
+void FGridCellBuilder::MarkIntersectingSubCellsAlive(
+	const FVector& V0, const FVector& V1, const FVector& V2,
+	const FVector& CellMin, const FVector& CellSize,
+	FSubCell& OutSubCellState)
+{
+	const FVector SubCellSize = CellSize / static_cast<float>(SUBCELL_DIVISION);
+
+	for (int32 SubCellId = 0; SubCellId < SUBCELL_COUNT; ++SubCellId)
+	{
+		if (OutSubCellState.IsSubCellAlive(SubCellId))
+		{
+			continue;
+		}
+
+		const FIntVector SubCoord = SubCellIdToCoord(SubCellId);
+		const FVector SubCellMin = CellMin + FVector(
+			SubCoord.X * SubCellSize.X,
+			SubCoord.Y * SubCellSize.Y,
+			SubCoord.Z * SubCellSize.Z);
+
+		const FVector SubCellMax = SubCellMin + SubCellSize;
+
+		if (TriangleIntersectsAABB(V0, V1, V2, SubCellMin, SubCellMax))
+		{
+			OutSubCellState.Bits |= (1 << SubCellId);
+		}
+	}
 }
 
 void FGridCellBuilder::SetAnchorsByFinitePlane(
@@ -553,7 +583,8 @@ void FGridCellBuilder::VoxelizeWithConvex(
 
   void FGridCellBuilder::VoxelizeWithTriangles(
       const UStaticMesh* SourceMesh,
-      FGridCellLayout& OutLayout)
+      FGridCellLayout& OutLayout,
+	  TMap<int32, FSubCell>* OutSubCellStates)
   {
       // Get MeshDescription (contains detailed mesh data)
       UStaticMeshDescription* StaticMeshDesc = const_cast<UStaticMesh*>(SourceMesh)->GetStaticMeshDescription(0);
@@ -626,13 +657,7 @@ void FGridCellBuilder::VoxelizeWithConvex(
                   for (int32 X = MinCellX; X <= MaxCellX; X++)
                   {
 					  const int32 CellId = OutLayout.CoordToId(X, Y, Z);
-
-					  // Skip if already included
-					  if (OutLayout.GetCellExists(CellId))
-					  {
-						  continue;
-					  }
-
+					   
 					  // Only test intersection when not already included
 					  FVector CellMin(
 						  OutLayout.GridOrigin.X + X * OutLayout.CellSize.X,
@@ -641,11 +666,36 @@ void FGridCellBuilder::VoxelizeWithConvex(
 					  );
 					  FVector CellMax = CellMin + OutLayout.CellSize;
 
-					  if (TriangleIntersectsAABB(V0, V1, V2, CellMin, CellMax))
+					  if (!OutLayout.GetCellExists(CellId))
 					  {
-						  OutLayout.SetCellExists(CellId, true);
-						  OutLayout.RegisterValidCell(CellId);
+						  if (TriangleIntersectsAABB(V0, V1, V2, CellMin, CellMax))
+						  {
+							  OutLayout.SetCellExists(CellId, true);
+							  OutLayout.RegisterValidCell(CellId);
+
+							  if (OutSubCellStates)
+							  { 
+								  FSubCell& SubCellState = OutSubCellStates->FindOrAdd(CellId);
+								  SubCellState.Bits = 0x00;
+								  MarkIntersectingSubCellsAlive(V0, V1, V2, CellMin, OutLayout.CellSize, SubCellState);
+							  }
+						  }
 					  }
+					  // Cell이 이미 존재하는경우 
+					  else if (OutSubCellStates)
+					  {
+						  FSubCell* SubCellState = OutSubCellStates->Find(CellId);
+						  // 아직 모든 subcell이 alive가 아니면, 한 번 더 체크
+						  if (SubCellState && SubCellState->Bits != 0xFF)
+						  {
+							  if (TriangleIntersectsAABB(V0, V1, V2, CellMin, CellMax))
+							  {
+								  MarkIntersectingSubCellsAlive(V0, V1, V2, CellMin, OutLayout.CellSize, *SubCellState);
+							  }
+						  }
+
+					  }
+					  
                   }
               }
           }

@@ -247,8 +247,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Destruction|Decal")
 	void GetCalculateDecalSize(FName SurfaceType,FVector& LocationOffset,  FRotator& RotatorOffset, FVector& SizeOffset) const;
 
-	void UpdateCachedDecalDataAssetIfNeeded();
-
 	/** Collision event handler */
 
 	// Blueprint-exposed function that can be directly bound to collision shape's OnComponentHit event
@@ -262,6 +260,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
 	void ProcessSphereDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FVector& ExplosionCenter );
+	 
+	UFUNCTION(BlueprintCallable, Category = "Destruction")
+	void UpdateCachedDecalDataAssetIfNeeded();
 
 protected:
 	virtual void BeginPlay() override;

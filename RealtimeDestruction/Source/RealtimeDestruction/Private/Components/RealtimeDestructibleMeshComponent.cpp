@@ -4515,6 +4515,49 @@ void URealtimeDestructibleMeshComponent::DrawSupercellDebug()
 	}
 }
 
+void URealtimeDestructibleMeshComponent::DrawSubCellDebug()
+{
+#if !UE_BUILD_SHIPPING
+	if (!GridCellLayout.IsValid() && !bEnableSubcell)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	} 
+
+	const FTransform& ComponentTransform = GetComponentTransform();
+	const FVector SubCellSize = GridCellLayout.GetSubCellSize(); 
+	const FVector HalfExtent = SubCellSize * 0.5f * ComponentTransform.GetScale3D();
+	 
+
+	for (int32 CellId : GridCellLayout.GetValidCellIds())
+	{
+		for (int32 SubCellId = 0; SubCellId < SUBCELL_COUNT; ++SubCellId)
+		{
+			const bool bAlive = CellState.IsSubCellAlive(CellId, SubCellId);
+			const FColor SubCellColor = bAlive ? FColor::Green : FColor::Red;
+
+			const FVector LocalCenter = GridCellLayout.GetSubCellLocalCenter(CellId, SubCellId);
+			const FVector WorldCenter = ComponentTransform.TransformPosition(LocalCenter);
+
+
+			DrawDebugBox(World, WorldCenter, HalfExtent,
+				ComponentTransform.GetRotation(),
+				SubCellColor,
+				false, 0.0f, SDPG_World, 1.0f);
+		}
+		  
+	}
+
+	static bool bFirstDraw = true;
+#endif
+
+}
+
 void URealtimeDestructibleMeshComponent::DrawServerCollisionDebug()
 {
 	if (!bServerCellCollisionInitialized)
@@ -4870,7 +4913,7 @@ void URealtimeDestructibleMeshComponent::BeginPlay()
 	ChunkSubtractBusyBits.Init(0ULL, NumBits);
 
 	// 런타임 시작 시 GridCellLayout가 유효하지 않으면 구축
-	if ( ( SourceStaticMesh && !GridCellLayout.IsValid()) || CachedRDMScale != GetRelativeScale3D())
+	if ( ( SourceStaticMesh && !GridCellLayout.IsValid()) || CachedRDMScale != GetComponentTransform().GetScale3D())
 	{
 		BuildGridCells();
 	}
@@ -4997,6 +5040,12 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	if (bShowSupercellDebug)
 	{
 		DrawSupercellDebug();
+	}
+	
+	// Draw SubCell Debug
+	if (bShowSubCellDebug)
+	{
+		DrawSubCellDebug();
 	}
 
 	// 서버/클라이언트 Cell Box Collision: 지연 초기화 (BeginPlay에서 GridCellLayout이 유효하지 않았던 경우)
@@ -5948,7 +5997,7 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 
 	// 2. 컴포넌트 스케일 가져오기
 	//const FVector WorldScale = GetComponentScale();
-	const FVector WorldScale = GetRelativeScale3D();
+	const FVector WorldScale = GetComponentTransform().GetScale3D();
 
 	// 3. GridCellBuilder를 사용하여 캐시 생성
 	// - GridCellSize: 월드 좌표계 기준 (사용자 설정값)
@@ -5964,7 +6013,8 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 		WorldScale,           // MeshScale (새 파라미터)
 		GridCellSize,         // 월드 스페이스 셀 크기 (빌더가 내부에서 로컬로 변환)
 		LocalFloorThreshold,  // 앵커 높이 (빌더 내부가 로컬 스페이스이므로 변환 필요)
-		GridCellLayout
+		GridCellLayout,
+		&CellState.SubCellStates
 	);
 
 	if (!bSuccess)
@@ -5976,7 +6026,7 @@ bool URealtimeDestructibleMeshComponent::BuildGridCells()
 	// 4. 캐시된 정보 저장
 	// CachedMeshBounds = SourceStaticMesh->GetBoundingBox();
 	CachedCellSize = GridCellLayout.CellSize;  // 빌더가 저장한 로컬 스페이스 셀 크기
-	CachedRDMScale = GetRelativeScale3D();
+	CachedRDMScale = GetComponentTransform().GetScale3D();
 
 	UE_LOG(LogTemp, Log, TEXT("BuildGridCells: WorldCellSize=(%.1f, %.1f, %.1f), Scale=(%.2f, %.2f, %.2f), LocalCellSize=(%.2f, %.2f, %.2f), Grid %dx%dx%d, Valid cells: %d, Anchors: %d"),
 		GridCellSize.X, GridCellSize.Y, GridCellSize.Z,
@@ -6247,6 +6297,7 @@ AActor* URealtimeDestructibleMeshComponent::CreateLocalOnlyDebrisActor(UWorld* W
 	CollisionBox->SetCollisionObjectType(ECC_PhysicsBody);
 	CollisionBox->SetCollisionResponseToAllChannels(ECR_Block);
 	CollisionBox->SetHiddenInGame(true);
+	CollisionBox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	LocalActor->SetRootComponent(CollisionBox);
 	CollisionBox->RegisterComponent();
 

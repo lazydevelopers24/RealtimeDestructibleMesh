@@ -44,7 +44,9 @@ public:
 		const FVector& MeshScale,
 		const FVector& CellSize,
 		float AnchorHeightThreshold,
-		FGridCellLayout& OutLayout);
+		FGridCellLayout& OutLayout,
+		TMap<int32, FSubCell>* OutSubCellStates = nullptr
+		);
 
 	/**
 	 * Build a grid cell layout from a dynamic mesh.
@@ -60,6 +62,21 @@ public:
 		const FVector& CellSize,
 		float AnchorHeightThreshold,
 		FGridCellLayout& OutLayout);
+
+	/**
+	* Mark subcells as alive if they intersect with the given triangle.
+	*
+	* @param V0, V1, V2 - Triangle vertices (local space)
+	* @param CellMin - Cell minimum corner (local space)
+	* @param CellSize - Cell size (local space)
+	* @param OutSubCellState - SubCell state to update (bits set to 1 for alive)
+	*/
+
+	static void MarkIntersectingSubCellsAlive(
+		const FVector& V0, const FVector& V1, const FVector& V2,
+		const FVector& CellMin, const FVector& CellSIze,
+		FSubCell& OutSubCellState
+	);
 
 	static void SetAnchorsByFinitePlane(
 		const FTransform& PlaneTransform,
@@ -135,7 +152,8 @@ private:
 	/** Voxelize using StaticMesh render triangles. */
 	static void VoxelizeWithTriangles(
 		const UStaticMesh* SourceMesh,
-		FGridCellLayout& OutLayout);
+		FGridCellLayout& OutLayout,
+		TMap<int32, FSubCell>* OutSubCellStates);
 	
 	static bool TriangleIntersectsAABB(
 		const FVector& V0, const FVector& V1, const FVector& V2,
