@@ -8,6 +8,8 @@
 // the use of this product.
 
 #include "Components/DestructionProjectileComponent.h"
+
+#include "DebugConsoleVariables.h"
 #include "Components/RealtimeDestructibleMeshComponent.h"
 #include "Components/DestructionNetworkComponent.h"
 #include "Engine/GameInstance.h"
@@ -159,11 +161,12 @@ void UDestructionProjectileComponent::ProcessProjectileHit(
 		if (ChunkNum == 0)
 		{
 			//UE_LOG(LogTemp, Warning, TEXT("%s : No chunk. Make chunk"), *DestructComp->GetName());
-			if (bDestroyOnHit)
-			{
-				GetOwner()->Destroy();
+			// if (bDestroyOnHit)
+			// {
+			// 	GetOwner()->Destroy();
+			// }
+			BooleanSourceMesh(DestructComp, Hit);
 			}
-		}
 		else
 		{
 			//UE_LOG(LogTemp, Warning, TEXT("ProcessDestructionRequestForCell %d"), ChunkNum);
@@ -957,7 +960,6 @@ void UDestructionProjectileComponent::GetCalculateDecalSize(FName SurfaceType, F
 	float FinalSize	 = BaseSize * DecalSizeMultiplier;
 	SizeOffset = FVector(FinalSize,FinalSize,FinalSize);
 }
-
 void UDestructionProjectileComponent::UpdateCachedDecalDataAssetIfNeeded()
 {
 	// ConfigID가 변경된 경우에만 업데이트
@@ -972,5 +974,102 @@ void UDestructionProjectileComponent::UpdateCachedDecalDataAssetIfNeeded()
 				CachedDecalDataAsset = Subsystem->FindDataAssetByConfigID(DecalConfigID);
 			}
 		}
+	}
+}
+
+void UDestructionProjectileComponent::BooleanSourceMesh(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit)
+{
+	if (!DestructComp)
+	{
+		return;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	FName SurfaceTypeForShape = DestructComp->SurfaceType;
+	bool bHasDecalConfig = false;
+	FImpactProfileConfig OverrideDecalConfig;
+
+	if (CachedDecalDataAsset)
+	{
+		bHasDecalConfig = CachedDecalDataAsset->GetConfigRandom(SurfaceTypeForShape, OverrideDecalConfig);
+		if (bHasDecalConfig)
+		{
+			bool bShapeChanged = (CylinderRadius != OverrideDecalConfig.CylinderRadius ||
+				CylinderHeight != OverrideDecalConfig.CylinderHeight ||
+				SphereRadius != OverrideDecalConfig.SphereRadius ||
+				ToolShape != OverrideDecalConfig.ToolShape);
+
+			SurfaceMargin = OverrideDecalConfig.CylinderRadius;
+			CylinderRadius = OverrideDecalConfig.CylinderRadius;
+			CylinderHeight = OverrideDecalConfig.CylinderHeight;
+			SphereRadius = OverrideDecalConfig.SphereRadius;
+			ToolShape = OverrideDecalConfig.ToolShape;
+
+			if (bShapeChanged && ToolMeshPtr.IsValid())
+			{
+				ToolMeshPtr.Reset();
+				if (!EnsureToolMesh())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("DestructionProjectileComponent: Tool mesh is invalid."));
+				}
+			}
+		}
+	}
+
+
+	APawn* InstigatorPawn = Owner->GetInstigator();
+	APlayerController* PC = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
+	UDestructionNetworkComponent* NetworkComp = PC ? PC->FindComponentByClass<UDestructionNetworkComponent>() : nullptr;
+
+	FRealtimeDestructionRequest Request;
+	Request.ImpactPoint = Hit.ImpactPoint;
+	Request.ImpactNormal = Hit.ImpactNormal;
+	Request.ChunkIndex = 1;
+	Request.ToolForwardVector = GetToolDirection(Hit, Owner);
+
+	Request.ToolMeshPtr = ToolMeshPtr;
+	Request.ToolShape = ToolShape;
+
+	Request.bSpawnDecal = false;
+
+	FName SurfaceType = DestructComp->SurfaceType;
+	Request.SurfaceType = SurfaceType;
+	Request.DecalConfigID = DecalConfigID; // 네트워크 전송용
+
+	if (bHasDecalConfig)
+	{
+		Request.DecalSize = OverrideDecalConfig.DecalSize;
+		Request.DecalLocationOffset = OverrideDecalConfig.LocationOffset;
+		Request.DecalRotationOffset = OverrideDecalConfig.RotationOffset;
+		Request.DecalMaterial = OverrideDecalConfig.DecalMaterial;
+		Request.bRandomRotation = OverrideDecalConfig.bRandomDecalRotation;
+	}
+
+	SetShapeParameters(Request);
+
+	if (NetworkComp)
+	{
+		// NetworkComp가 서버/클라이언트/스탠드얼론 모두 처리
+		NetworkComp->RequestDestruction(DestructComp, Request);
+	}
+	else
+	{
+		// NetworkComp가 없으면 로컬에서 직접 처리 (스탠드얼론 또는 설정 오류)
+		DestructComp->RequestDestruction(Request);
+	}
+
+
+	// 이벤트 브로드캐스트
+	OnDestructionRequested.Broadcast(Hit.ImpactPoint, Hit.ImpactNormal);
+
+	// 투사체 제거
+	if (bDestroyOnHit)
+	{
+		Owner->Destroy();
 	}
 }

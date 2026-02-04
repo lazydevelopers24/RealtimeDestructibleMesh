@@ -260,7 +260,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
 	void ProcessSphereDestructionRequestForChunk(URealtimeDestructibleMeshComponent* DestructComp, const FVector& ExplosionCenter );
-	 
+
 	UFUNCTION(BlueprintCallable, Category = "Destruction")
 	void UpdateCachedDecalDataAssetIfNeeded();
 
@@ -288,6 +288,8 @@ private:
 	FVector GetToolDirection(const FHitResult& Hit, AActor* Owner) const;
 
 	TSharedPtr<FDynamicMesh3, ESPMode::ThreadSafe> ToolMeshPtr = nullptr;
+
+	void BooleanSourceMesh(URealtimeDestructibleMeshComponent* DestructComp, const FHitResult& Hit);
 
 
 	float SurfaceMargin = 0.0f;

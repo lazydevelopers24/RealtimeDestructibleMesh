@@ -292,7 +292,15 @@ FDestructionOpId URealtimeDestructibleMeshComponent::EnqueueRequestLocal(const F
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[EnqueueRequestLocal] ChunkIndex=%d → BooleanProcessor->EnqueueOp 호출"),
 			Op.Request.ChunkIndex);
+		if (FRDMCVarHelper::EnableAsyncBooleanOp())
+		{
 		BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal, ChunkMeshComponents[Op.Request.ChunkIndex].Get(), BatchId);
+	}
+	else
+	{
+			UE_LOG(LogTemp, Display, TEXT("BooleanSync"));
+			BooleanProcessor->EnqueueOp(MoveTemp(Op), TemporaryDecal, this, BatchId);
+		}
 	}
 	else
 	{
@@ -654,7 +662,7 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 	// 통합 API 사용: bEnableSupercell, bEnableSubcell 플래그에 따라 자동 선택
 	// Multiplayer: SubCell 상태는 Client에 동기화되지 않으므로 Standalone에서만 사용
 	//======================================================== 
-
+	  
 	//[depricated]
 	//TSet<int32> DisconnectedCells;
 	//{
@@ -672,8 +680,8 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 	//double BFSEndTime = FPlatformTime::Seconds();
 	//UE_LOG(LogTemp, Warning, TEXT("[BFS #%d] FindDisconnectedCells END - took %.3f ms, found %d disconnected"),
 	//	BFSCallCount, (BFSEndTime - BFSStartTime) * 1000.0, DisconnectedCells.Num());
-
-	TSet<int32> DisconnectedCells;
+	 
+	TSet<int32> DisconnectedCells; 
 	if (AffectedNeighborCells.Num() > 0)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_FindDisconnectedCellsFromAffected);
@@ -728,8 +736,8 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 		// 클라이언트에게 Detach 발생 신호만 전송 (클라이언트가 자체 BFS 실행)
 
 		// 분리된 셀의 삼각형 삭제 (데디서버: 렌더링 불필요, Cell Box만 업데이트)
- 		{
-			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone; 
+ 		{  
+			const ENetMode NetMode = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone;
 			const bool bIsDedicatedServerClient = bServerIsDedicatedServer && !GetOwner()->HasAuthority();
 
 			TRACE_CPUPROFILER_EVENT_SCOPE(CellStructure_Phase4);
@@ -741,7 +749,7 @@ void URealtimeDestructibleMeshComponent::DisconnectedCellStateLogic(const TArray
 				{
 					SpawnDebrisActorForDedicatedServer(Group);
 				}
-			}
+			} 
 			else if (bIsDedicatedServerClient)
 			{
 				// 크기가 작은 debris만 클라이언트가 자체 생성
@@ -911,17 +919,17 @@ void URealtimeDestructibleMeshComponent::ForceRemoveSupercell(int32 SuperCellId)
 	{
 		RemoveTrianglesForDetachedCells(AllCellsInSupercell);
 		// Cleanup은 IslandRemoval 완료 콜백에서 처리 (비동기)
-	} 
+	}
 
 	// cell state 업데이트 
 	CellState.DestroyCells(AllCellsInSupercell);
 
-	// hit count 리셋 
+	// hit count 리셋
 	SupercellState.MarkSupercellBroken(SuperCellId);
 
 	if (SupercellState.DestroyedCellCounts.IsValidIndex(SuperCellId))
 	{
-		SupercellState.DestroyedCellCounts[SuperCellId] = 0; 
+		SupercellState.DestroyedCellCounts[SuperCellId] = 0;
 		SupercellState.InitialValidCellCounts[SuperCellId] = 0;
 	}
 
@@ -1474,11 +1482,11 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 	// 1. 모든 분리된 셀들의 3D 점유 맵 생성
 	TSet<FIntVector> BaseCells;
 	for (int32 CellId : DetachedCellIds)
-	{ 
+	{
 		FIntVector GridPos = GridCellLayout.IdToCoord(CellId);   
 		BaseCells.Add(GridPos);
 	}
-
+	
 
 	TArray<TArray<FIntVector>> FinalPieces;
 
@@ -2985,7 +2993,7 @@ void URealtimeDestructibleMeshComponent::CleanupSmallFragments()
 }
 
 void URealtimeDestructibleMeshComponent::CleanupSmallFragments(const TSet<int32>& InDisconnectedCells)
-{ 
+{
 	// 데디케이티드 서버에서는 파편 처리 스킵 (물리 NaN 오류 방지)
 	if (IsRunningDedicatedServer())
 	{
@@ -3517,8 +3525,8 @@ void URealtimeDestructibleMeshComponent::MulticastDetachSignal_Implementation()
 		// 분리된 셀의 삼각형 삭제 (시각적 처리)
 		if (!bIsDedicatedServerClient)
 		{
-		RemoveTrianglesForDetachedCells(Group);		
-	}
+			RemoveTrianglesForDetachedCells(Group);
+		}
 	}
 
 	// 분리된 셀들을 파괴됨 상태로 이동
@@ -3602,8 +3610,8 @@ void URealtimeDestructibleMeshComponent::ApplyOpsDeterministic(const TArray<FRea
 		else
 		{
 			// 큐잉 조건 불충족 시 기존처럼 호출 (BatchId 없이)
-		EnqueueRequestLocal(ModifiableRequest, Op.bIsPenetration, TempDecal);
-	}
+			EnqueueRequestLocal(ModifiableRequest, Op.bIsPenetration, TempDecal);
+		}
 	}
 
 	// === 배치 트래커 등록 ===
@@ -4170,7 +4178,7 @@ void URealtimeDestructibleMeshComponent::ApplyBooleanOperationResult(FDynamicMes
 	// 수정된 청크 추적
 	ModifiedChunkIds.Add(ChunkIndex);
 #if !UE_BUILD_SHIPPING
-	// 디버그 텍스트 갱신 플래그는 기본적으로 구조적 무결성 갱신 후 업데이트되지만, 청크 없는 경우 여기에서 대신 갱신 
+	// 디버그 텍스트 갱신 플래그는 기본적으로 구조적 무결성 갱신 후 업데이트되지만, 청크 없는 경우 여기에서 대신 갱신
 		bShouldDebugUpdate = true;
 #endif
 	if (bDelayedCollisionUpdate)
@@ -4797,12 +4805,17 @@ void URealtimeDestructibleMeshComponent::OnRegister()
 		BuildChunksFromGC(CachedGeometryCollection);
 		return; 
 	}
+
+	if (!bAutoSetUpDone && !SourceStaticMesh && ChunkMeshComponents.Num() == 0)
+	{
+		TryAutoSetupFromParentStaticMesh();
+	}
 #endif
 
-	if (ChunkMeshComponents.Num() > 0)
-	{
-		return;  // Cell 모드에서 이미 셀이 있으면 스킵
-	}
+	// if (ChunkMeshComponents.Num() > 0)
+	// {
+	// 	return;  // Cell 모드에서 이미 셀이 있으면 스킵
+	// }
 
 	if (SourceStaticMesh && !bIsInitialized)
 	{
@@ -5041,7 +5054,7 @@ void URealtimeDestructibleMeshComponent::TickComponent(float DeltaTime, ELevelTi
 	{
 		DrawSupercellDebug();
 	}
-	
+
 	// Draw SubCell Debug
 	if (bShowSubCellDebug)
 	{
@@ -6223,6 +6236,69 @@ void URealtimeDestructibleMeshComponent::PostEditChangeProperty(FPropertyChanged
 		}
 	}
 }
+
+void URealtimeDestructibleMeshComponent::TryAutoSetupFromParentStaticMesh()
+{
+	if (!(GIsEditor && GetWorld() && !GetWorld()->IsGameWorld()))
+	{
+		return;
+	}
+	
+	if (SourceStaticMesh)
+	{
+		return;
+	}
+
+	if (HasAnyFlags(RF_ClassDefaultObject) || IsTemplate() || IsRunningCommandlet())
+	{
+		return;
+	}
+
+	UStaticMeshComponent* ParentStaticMeshComp = Cast<UStaticMeshComponent>(GetAttachParent());
+	if (!ParentStaticMeshComp || !ParentStaticMeshComp->GetStaticMesh())
+	{
+		return;
+	}
+	SetRelativeTransform(FTransform::Identity);
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RDM", "Auto Setup", "Setup From ParentSMC"));
+	Owner->Modify();
+	Modify();
+	ParentStaticMeshComp->Modify();
+
+	SourceStaticMesh = ParentStaticMeshComp->GetStaticMesh();
+	
+	const FVector LocalSize = SourceStaticMesh->GetBoundingBox().GetSize();
+	const FVector ParentSizeAbs = ParentStaticMeshComp->GetComponentTransform().GetScale3D().GetAbs();
+	const FVector ScaledSize = LocalSize * ParentSizeAbs;
+	
+	ParentStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ParentStaticMeshComp->SetGenerateOverlapEvents(false);
+	ParentStaticMeshComp->SetStaticMesh(nullptr);
+	ParentStaticMeshComp->MarkRenderStateDirty();
+
+	if (ChunkMeshComponents.Num() <= 0)
+	{
+		int32 SliceX = FMath::Clamp(FMath::FloorToInt(ScaledSize.X / 300), 2, 10);
+		int32 SliceY = FMath::Clamp(FMath::FloorToInt(ScaledSize.Y / 300), 2, 10);
+		int32 SliceZ = FMath::Clamp(FMath::FloorToInt(ScaledSize.Z / 300), 2, 10);
+		SliceCount = FIntVector(SliceX, SliceY, SliceZ);
+		UE_LOG(LogTemp, Display, TEXT("AutoSetup %s"), *SliceCount.ToString());
+		GenerateDestructibleChunks();
+	}
+
+	Owner->MarkPackageDirty();
+	MarkPackageDirty();
+
+	bAutoSetUpDone = true;
+}
+
 #endif // WITH_EDITOR
 
 int32 URealtimeDestructibleMeshComponent::GetMaterialIDFromFaceIndex(int32 FaceIndex)
@@ -6338,7 +6414,7 @@ void URealtimeDestructibleMeshComponent::ApplyDebrisPhysics(UBoxComponent* Colli
 	float FinalMassKg = FMath::Clamp(CalcMassKg, 0.001, MaxDebrisMass); 
 	float MassRatio = 1.0f - (FinalMassKg / MaxDebrisMass);
 	MassRatio = std::max(MassRatio, 0.1f);
-
+	
 	// 물리 설정
 	CollisionBox->SetEnableGravity(true);
 	CollisionBox->SetMassOverrideInKg(NAME_None, FinalMassKg, true);
@@ -6382,7 +6458,7 @@ void URealtimeDestructibleMeshComponent::GenerateDestructibleChunks()
 		if (GUnrealEd)
 		{
 			GUnrealEd->UpdateFloatingPropertyWindows();
-	}
+		}
 	}
 }
 
@@ -6571,7 +6647,7 @@ void URealtimeDestructibleMeshComponent::RevertChunksToSourceMesh()
 		if (GUnrealEd)
 		{
 			GUnrealEd->UpdateFloatingPropertyWindows();
-	}
+		}
 	}
 }
 #endif
@@ -6802,12 +6878,12 @@ TStructOnScope<FActorComponentInstanceData> URealtimeDestructibleMeshComponent::
 }	
 
 void URealtimeDestructibleMeshComponent::ApplyHCLaplacianSmoothing(FDynamicMesh3& Mesh)
-{ 
+{
 	if (SmoothingIterations <= 0 || Mesh.TriangleCount() == 0)
 	{
 		return;
 	}
-	 
+
 	// 원본 위치 저장 (HC Laplacian 보정용)
 	TMap<int32, FVector3d> OriginalPositions;
 	for (int32 Vid : Mesh.VertexIndicesItr())

@@ -29,7 +29,27 @@ void UAnchorActionObejct::SpawnAnchorPlane()
 	}
 
 	FEditorViewportClient* ViewportClient = (FEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+
 	FVector SpawnLocation = ViewportClient->GetViewLocation() + (ViewportClient->GetViewRotation().Vector() * 300.0f);
+	if (IsValid(TargetComp))
+	{
+		FVector ToCamera = (ViewportClient->GetViewLocation() - TargetComp->GetComponentLocation());
+		float Dist = ToCamera.Length();
+		ToCamera.Normalize();
+		
+		FVector TargetForward = TargetComp->GetForwardVector();
+		FVector TargetRight = TargetComp->GetRightVector();
+
+		float AngleForward=  ToCamera.Dot(TargetForward);
+		float AngleRight = ToCamera.Dot(TargetRight);
+		float Scale = 1.0f;
+		if (AngleForward >= 0.0f)
+		{
+			
+		}		
+		
+		SpawnLocation = TargetComp->GetComponentLocation() + (ToCamera * Dist * 0.3f * TargetComp->GetComponentScale());
+	}	
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "SpawnAnchorPlane", "Spawn Plane"));
 
@@ -99,11 +119,11 @@ void UAnchorActionObejct::ApplyAllAnchorPlanes()
 	{
 		if (AAnchorPlaneActor* Plane = Cast<AAnchorPlaneActor>(AnchorActor.Get()))
 		{
-		if (IsValid(Plane))
-		{
-			Planes.Add(Plane);
+			if (IsValid(Plane))
+			{
+				Planes.Add(Plane);
+			}
 		}
-	}
 	}
 
 	if (Planes.Num() == 0)
@@ -160,7 +180,7 @@ void UAnchorActionObejct::ApplyAllAnchorVolumes()
 	}	
 
 	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ApplyAnchorVolumes", "Apply Anchor Volumes"));
-
+	
 	ValidateAnchorArray();
 
 	TArray<AAnchorVolumeActor*> Volumes;
@@ -168,11 +188,11 @@ void UAnchorActionObejct::ApplyAllAnchorVolumes()
 	{
 		if (AAnchorVolumeActor* Volume = Cast<AAnchorVolumeActor>(AnchorActor.Get()))
 		{
-		if (IsValid(Volume))
-		{
-			Volumes.Add(Volume);
+			if (IsValid(Volume))
+			{
+				Volumes.Add(Volume);
+			}
 		}
-	}
 	}
 
 	if (Volumes.Num() == 0)
@@ -240,23 +260,23 @@ void UAnchorActionObejct::RemoveAllAnchorPlanes()
 	{
 		if (AAnchorPlaneActor* Plane = Cast<AAnchorPlaneActor>(AnchorActor.Get()))
 		{
-		if (!IsValid(Plane))
-		{
-			continue;
-		}
-		Plane->Modify();
+			if (!IsValid(Plane))
+			{
+				continue;
+			}
+			Plane->Modify();
 
-		GEditor->SelectActor(Plane, false, false);
+			GEditor->SelectActor(Plane, false, false);
 		
-		if (ActorSubsystem)
-		{
-			ActorSubsystem->DestroyActor(Plane);
+			if (ActorSubsystem)
+			{
+				ActorSubsystem->DestroyActor(Plane);
+			}
+			else
+			{
+				World->EditorDestroyActor(Plane, true);
+			}
 		}
-		else
-		{
-			World->EditorDestroyActor(Plane, true);
-		}
-	}
 	}
 
 	UpdateCellCounts();
@@ -289,70 +309,27 @@ void UAnchorActionObejct::RemoveAllAnchorVolumes()
 	{
 		if(AAnchorVolumeActor* Volume = Cast<AAnchorVolumeActor>(AnchorActor.Get()))
 		{
-		if (!IsValid(Volume))
-		{
-			continue;
-		}
-		Volume->Modify();
+			if (!IsValid(Volume))
+			{
+				continue;
+			}
+			Volume->Modify();
 
-		GEditor->SelectActor(Volume, false, false);
+			GEditor->SelectActor(Volume, false, false);
 		
-		if (ActorSubsystem)
-		{
-			ActorSubsystem->DestroyActor(Volume);
+			if (ActorSubsystem)
+			{
+				ActorSubsystem->DestroyActor(Volume);
+			}
+			else
+			{
+				World->EditorDestroyActor(Volume, true);
+			}
 		}
-		else
-		{
-			World->EditorDestroyActor(Volume, true);
-		}
-	}
 	}
 
 	UpdateCellCounts();
 	GEditor->NoteSelectionChange();
-	GEditor->RedrawLevelEditingViewports(true);
-}
-
-void UAnchorActionObejct::RemoveAllAnchors()
-{
-	if (!GEditor)
-	{
-		return;
-	}
-	
-	UWorld* World = GEditor->GetEditorWorldContext().World();
-	if (!World)
-	{
-		return;
-	}	
-
-	const FScopedTransaction Transaction(NSLOCTEXT("Anchor", "ClearAnchors", "Clear Anchors"));
-	
-	for (TObjectIterator<URealtimeDestructibleMeshComponent> It; It; ++It)
-	{
-		URealtimeDestructibleMeshComponent* Comp = *It;
-
-		if (!IsValid(Comp) || Comp->GetWorld() != World || Comp->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
-		{
-			continue;
-		}
-
-		if (Comp->IsTemplate())
-		{
-			continue;
-		}
-
-		Comp->Modify();
-
-		FGridCellLayout& GridCellCache = Comp->GetGridCellLayout();
-		if (GridCellCache.IsValid())
-		{
-			FGridCellBuilder::ClearAllAnchors(GridCellCache);;
-			Comp->MarkRenderStateDirty();
-		}
-	}
-
-	UpdateCellCounts();
 	GEditor->RedrawLevelEditingViewports(true);
 }
 

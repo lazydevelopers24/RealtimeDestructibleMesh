@@ -74,7 +74,7 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 	/** Tool Shape Parameters (for network serialization) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	FDestructionToolShapeParams ShapeParams;
-
+	  
 	/** Client send time for RTT measurement (set only on client) */
 	UPROPERTY()
 	double ClientSendTime = 0.0;
@@ -97,13 +97,13 @@ struct REALTIMEDESTRUCTION_API FRealtimeDestructionRequest
 	/** Decal Material (retrieved from Projectile or ImpactProfile) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh")
 	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
-
+	
 	UPROPERTY(EditAnywhere, Category = "RealtimeDestructibleMesh")
 	FName SurfaceType = FName("Default");
 
 	UPROPERTY()
 	bool bRandomRotation = false;
-
+	
 	/** Decal config lookup ID (for network transmission) */
 	UPROPERTY()
 	FName DecalConfigID = FName("Default");
@@ -220,7 +220,7 @@ public:
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> SavedSourceStaticMesh;
-	
+
 	UPROPERTY()
 	bool bSavedIsInitialized = false;
 
@@ -539,7 +539,7 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|StructuralIntegrity")
 	bool bEnableSupercell = true;
-
+	
 	/** Function for preserving data */
 	virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
 
@@ -589,7 +589,7 @@ public:
 	// Bit operations are not atomic, logic modification needed when calling outside GT
 	void ClearChunkBusy(int32 ChunkIndex);
 
-	void ClearAllChunkBusyBits();
+	void ClearAllChunkBusyBits(); 
 
 	void SetChunkBits(int32 ChunkIndex, int32& BitIndex, int32& BitOffset);
 
@@ -601,7 +601,7 @@ public:
 
 	/** Increment batch counter when Boolean operation completes */
 	void NotifyBooleanCompleted(int32 BatchId);
-
+	
 	// Function to update collision async with target mesh idle or desired delay
 	void RequestDelayedCollisionUpdate(UDynamicMeshComponent* TargetComp);		
 
@@ -654,7 +654,7 @@ protected:
 	TMap<int32, FManagedDecal> ActiveDecals;
 
 	TMap<int32, TArray<int32>> CellToDecalMap;
-	
+ 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RealtimeDestructibleMesh|Status")
 	bool bIsInitialized = false;
 
@@ -795,7 +795,7 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "RealtimeDestructibleMesh|GridCell")
 	bool BuildGridCells();
-	
+
 	/** Whether grid cell layout is valid */
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|GridCell")
 	bool IsGridCellLayoutValid() const { return GridCellLayout.IsValid(); }
@@ -842,8 +842,8 @@ public:
 	 * Function used for arbitrary destruction (currently called based on bullet count in Supercell)
 	 */
 	void ForceRemoveSupercell(int32 SuperCellId);
-
-	UFUNCTION(NetMulticast, Reliable)
+	
+	UFUNCTION(NetMulticast, Reliable)  
 	void MulticastForceRemoveSupercell(int32 SuperCellId);
 
 	/**
@@ -910,24 +910,24 @@ public:
 	 *  Requires valid BooleanProcessor and ChunkMesh
 	 */
 	bool CanExtractDebrisForClient() const;
-
+	 
 	/** Generate DebrisId */
 	int32 GenerateDebrisId() { return NextDebrisId++; }
 
 	/** Register local debris (client) */
 	void RegisterLocalDebris(int32 InDebrisId, UProceduralMeshComponent* Mesh);
-
+	
 	/** Register to pending queue when Actor arrives first */
 	void RegisterPendingDebrisActor(int32 InDebrisId, ADebrisActor* Actor);
-
+	
 	/** Find and remove local debris (client) */
 	UProceduralMeshComponent* FindAndRemoveLocalDebris(int32 InDebrisId);
-
+	
 	/** Cleanup small fragments (isolated Connected Components) */
-	void CleanupSmallFragments(const TSet<int32>& InDisconnectedCells);
+	void CleanupSmallFragments(const TSet<int32>& InDisconnectedCells); 
 
 	/** Cleanup small fragments (calculates detached cells internally) */
-	void CleanupSmallFragments();
+	void CleanupSmallFragments(); 
 
 	/**
 	 * Spawn detached cells as debris actors
@@ -946,7 +946,7 @@ public:
 	/** Grid cell size (cm). Smaller values increase resolution but cost more performance */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "1.0"))
 	FVector GridCellSize = FVector(10.0f);
-
+	
 	/** Floor anchor detection Z height threshold (cm, relative to MeshBounds.Min.Z) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|GridCell", meta = (ClampMin = "0.0"))
 	float FloorHeightThreshold = 10.0f;
@@ -975,7 +975,7 @@ public:
 
 	/** Apply HC Laplacian Smoothing (Vollmer et al., 1999) when removing detached cells (staircase artifact reduction)
 	 * @param Mesh - ToolMesh to smooth
-	 */
+ */
 	void ApplyHCLaplacianSmoothing(FDynamicMesh3& Mesh);
 private:
 	/** Create mesh sections on ProceduralMeshComponent */
@@ -983,7 +983,7 @@ private:
 		UProceduralMeshComponent* Mesh,
         const TMap<int32, FMeshSectionData>& SectionDataByMaterial,
         const TArray<UMaterialInterface*>& InMaterials);
-
+	
 	/** Create local-only Debris Actor (no sync) */
 	AActor* CreateLocalOnlyDebrisActor(
 		UWorld* World,
@@ -992,7 +992,7 @@ private:
 		const TMap<int32, FMeshSectionData>& SectionDataByMaterial,
 		const TArray<UMaterialInterface*>& InMaterials
 	);
-
+	
 	/** Apply physics and initial velocity to Debris */
 	void ApplyDebrisPhysics(
 		 UBoxComponent* CollisionBox,
@@ -1065,7 +1065,7 @@ protected:
 
 	/** Recently directly destroyed cell IDs (for debug highlighting) */
 	TSet<int32> RecentDirectDestroyedCellIds;
-
+	
 	/** Update debug text. Controls update frequency by only performing on mesh update */
 	void UpdateDebugText();
 
@@ -1091,6 +1091,10 @@ protected:
 protected:
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+
+	void TryAutoSetupFromParentStaticMesh();
+
+	bool bAutoSetUpDone = false;
 #endif
 
 private:
@@ -1193,12 +1197,12 @@ private:
 	TMap<int32, TWeakObjectPtr<AActor>> ActiveDebrisActors;
 
 	/** Local Debris mesh map (for client) */
-	TMap<int32, TObjectPtr<UProceduralMeshComponent>> LocalDebrisMeshMap;
+	TMap<int32, TObjectPtr<UProceduralMeshComponent>> LocalDebrisMeshMap; 
 
 	/** Pending queue when Actor arrives before local mesh */
 	UPROPERTY()
 	TMap<int32, TObjectPtr<ADebrisActor>> PendingDebrisActors;
-
+	
 	/** Debris physics sync timer */
 	FTimerHandle DebrisPhysicsSyncTimerHandle;
 
