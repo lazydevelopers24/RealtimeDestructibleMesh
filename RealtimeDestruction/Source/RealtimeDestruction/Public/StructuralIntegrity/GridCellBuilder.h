@@ -154,7 +154,22 @@ private:
 		const UStaticMesh* SourceMesh,
 		FGridCellLayout& OutLayout,
 		TMap<int32, FSubCell>* OutSubCellStates);
-	
+
+	/** Voxelize a single triangle (with optional SubCell support). */
+	static void VoxelizeTriangle(
+		const FVector& V0,
+		const FVector& V1,
+		const FVector& V2,
+		FGridCellLayout& OutLayout,
+		TMap<int32, FSubCell>* OutSubCellStates);
+
+	/** Voxelize from vertex/index arrays (for cached data). */
+	static void VoxelizeFromArrays(
+		const TArray<FVector>& Vertices,
+		const TArray<uint32>& Indices,
+		FGridCellLayout& OutLayout,
+		TMap<int32, FSubCell>* OutSubCellStates);
+
 	static bool TriangleIntersectsAABB(
 		const FVector& V0, const FVector& V1, const FVector& V2,
 		const FVector& BoxMin, const FVector& BoxMax
