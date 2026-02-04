@@ -1725,7 +1725,7 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 		// Smoothing 
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(Debris_Smooth);
-			//ApplyHCLaplacianSmoothing(DebrisToolMesh);
+			ApplyHCLaplacianSmoothing(DebrisToolMesh);
 		}
 
 		ToolMesh.ReverseOrientation();

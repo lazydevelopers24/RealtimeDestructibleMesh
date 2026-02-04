@@ -959,15 +959,15 @@ public:
 	//////////////////////////////////////////////////////////////////////////
 
 	/** Laplacian Smoothing iterations when removing detached cells (0 to disable) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity", meta = (ClampMin = "0", ClampMax = "10"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|Debris", meta = (ClampMin = "0", ClampMax = "5"))
 	int32 SmoothingIterations = 4;
 
 	/** Laplacian Smoothing strength (0~1) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|Debris", meta = (ClampMin = "0.0", ClampMax = "0.5"))
 	float SmoothingStrength = 0.2f;
 
 	/** HC Laplacian correction strength (0~1, prevents shrinkage) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|Debris", meta = (ClampMin = "0.1", ClampMax = "0.8"))
 	float HCBeta = 0.5f;
 
 	UFUNCTION(BlueprintPure, Category = "RealtimeDestructibleMesh|ChunkMesh")
