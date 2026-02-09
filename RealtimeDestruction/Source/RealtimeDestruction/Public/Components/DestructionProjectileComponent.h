@@ -205,7 +205,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decal")
 	FName DecalConfigID = FName("Default");
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY()
 	FName CachedConfigID;
 
 
