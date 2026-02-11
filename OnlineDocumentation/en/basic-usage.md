@@ -24,7 +24,7 @@ The Realtime Destructible Mesh plugin manages the original mesh by splitting it 
 
 ![][image6]![][image7]  
 ▲ The source mesh, a rectangular prism, split into 2x2x2 chunk meshes  
-  The **Destruction Projectile Component** is responsible for triggering the destruction of the set-up Realtime Destructible Mesh Component. Destruction can be performed by passing the Realtime Destructible Mesh Component you wish to destroy as an argument to the OtherComp parameter of the UDesturctionProjectileComponent::ProcessProjectileHit method.
+  The **Destruction Projectile Component** is responsible for triggering the destruction of the set-up Realtime Destructible Mesh Component.
 
 The most common method of use is to add the Destruction Projectile Component as a child of the bullet's collision component and call it through the On Component Hit event, as shown below.  
 ![][image8]
