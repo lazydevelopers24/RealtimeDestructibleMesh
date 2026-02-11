@@ -9,8 +9,9 @@ RealtimeDestruction delivers production-ready mesh destruction for Unreal Engine
 Ideal for placing destructible cover or obstacles such as pillars, walls, crates, and furniture throughout your levels. This solution is a perfect fit for FPS games, destruction simulators, or any project that demands high-performance, dynamic mesh deformation.
 
 ## User Guide
-Online documentation: https://lazydevelopers24.github.io/RealtimeDestructibleMesh/
-Youtube: https://www.youtube.com/@LazyDevelopers-y5k
+- Online documentation: https://lazydevelopers24.github.io/RealtimeDestructibleMesh/
+- Youtube: https://www.youtube.com/@LazyDevelopers-y5k
+- Changelog: Docs/CHANGELOG.md (included in project)
 
 ## Features
 
@@ -19,6 +20,7 @@ Youtube: https://www.youtube.com/@LazyDevelopers-y5k
 - Support for multiple tool shapes (Sphere, Cylinder)
 - Automatic mesh simplification to maintain performance
 - Hole filling and edge welding for clean geometry
+<img width="1280" height="760" alt="image" src="https://github.com/user-attachments/assets/2b461949-e332-4b8f-a96b-bdf7c2c7e5e0" />
 
 ### Multi-threaded Processing
 - Asynchronous boolean operations on background threads
@@ -38,6 +40,8 @@ Youtube: https://www.youtube.com/@LazyDevelopers-y5k
 - Automatic mesh island detection and removal
 - Subcell subdivision for fine-grained destruction detection
 - Supercell grouping for accelerated connectivity analysis
+<img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/868ba0b2-a167-4847-bf25-eb8b3c281889" />
+<img width="1920" height="1030" alt="image" src="https://github.com/user-attachments/assets/d6616425-5306-4539-9399-560fdb3ee73a" />
 
 ### Network Replication
 - Client-server destruction synchronization
