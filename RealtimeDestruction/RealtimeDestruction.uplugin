@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"Version": 2,
+	"Version": 3,
 	"VersionName": "1.1",
 	"EngineVersion": "5.7.0",
 	"FriendlyName": "Realtime Destructible Mesh",
