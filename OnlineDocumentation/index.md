@@ -5,9 +5,11 @@ nav_order: 0
 permalink: /
 ---
 
-# RealTime Destructible Mesh
+# Realtime Destructible Mesh
 
-Welcome to the RealTime Destructible Mesh Plugin documentation.
+Welcome to the Realtime Destructible Mesh Plugin documentation.
+- Version: 1.1.1
+- Last Updated: 2026-02-14
 
 ## Select Language / 언어 선택
 

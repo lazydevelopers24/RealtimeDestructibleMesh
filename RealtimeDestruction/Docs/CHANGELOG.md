@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1
+## v1.1.0
 February 9, 2026
 
 ### New Features
@@ -53,6 +53,7 @@ February 9, 2026
 
 --- 
 
+## v1.1.1
 February 12, 2026 (Patch)
 
 ### New Features
