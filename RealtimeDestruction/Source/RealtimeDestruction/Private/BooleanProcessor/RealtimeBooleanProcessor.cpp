@@ -1451,7 +1451,7 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 			bool bSubtractSuccess = false;
 			if (bCombinedValid && CombinedToolMesh.TriangleCount() > 0)
 			{
-				double CurrentSubDuration = FPlatformTime::Seconds();
+				const double SubtractStartTime = FPlatformTime::Seconds();
 
 				FDynamicMesh3 ResultMesh;
 				{
@@ -1484,7 +1484,7 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 				}
 				++Processor->ChunkGenerations[ChunkIndex];
 
-				CurrentSubDuration = FPlatformTime::Seconds() - CurrentSubDuration;
+				const double CurrentSubDurationMs = (FPlatformTime::Seconds() - SubtractStartTime) * 1000.0;
 
 				if (bSubtractSuccess)
 				{
@@ -1492,7 +1492,7 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 					AppliedCount = UnionCount;
 					WorkMesh = MoveTemp(ResultMesh);
 
-					Processor->AccumulateSubtractDuration(ChunkIndex, CurrentSubDuration);
+					Processor->AccumulateSubtractDuration(ChunkIndex, CurrentSubDurationMs);
 
 					{
 						// Mesh simplification.
@@ -1504,7 +1504,7 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 				}
 
 					
-					Processor->UpdateUnionSize(ChunkIndex, CurrentSubDuration * 1000.0);
+					Processor->UpdateUnionSize(ChunkIndex, CurrentSubDurationMs);
 				}
 				else
 				{ 
@@ -1546,14 +1546,14 @@ void FRealtimeBooleanProcessor::StartBooleanWorkerAsyncForChunk(FBulletHoleBatch
 
 					if (AppliedCount > 0)
 					{
-						double CurrentSetMeshAvgCost = FPlatformTime::Seconds();
+						const double SetMeshStartTime = FPlatformTime::Seconds();
 						{
 #if !UE_BUILD_SHIPPING
 							TRACE_CPUPROFILER_EVENT_SCOPE("ChunkBooleanAsync_SetMesh");
 #endif
 							OwnerComponent->ApplyBooleanOperationResult(MoveTemp(Result), ChunkIndex, false);
 						}
-						CurrentSetMeshAvgCost = CurrentSetMeshAvgCost - FPlatformTime::Seconds();
+						const double CurrentSetMeshAvgCost = (FPlatformTime::Seconds()- SetMeshStartTime) * 1000.0;
 
 						Processor->UpdateSimplifyInterval(CurrentSetMeshAvgCost, ChunkIndex);
 

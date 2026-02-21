@@ -82,3 +82,10 @@ February 21, 2026 (Patch)
 
 ---
 
+## v1.1.3
+February 22, 2026 (Patch)
+
+### Bug Fixes
+***Async Boolean operation load management('StartBooleanWorkerAsyncForChunk')***
+- Fix incorrect sign calculation for SetMesh and Subtract cost metrics
+- Normalized timing units to milliseconds (ms) across the async boolean pipeline
