@@ -74,3 +74,11 @@ February 12, 2026 (Patch)
 
 ---
 
+## v1.1.2
+February 21, 2026 (Patch)
+
+### Improvements
+- Enhanced property tooltips and reorganize categories in URealtimeDestructibleMeshComponent.
+
+---
+
