@@ -1,0 +1,250 @@
+name: Release Validation
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  # 태그 ref 기준으로 그룹 키 생성
+  # 예시) refs/tags/v1.1.2 -> 그룹 이름 release-refs/tags/v1.1.2
+  group: release-${{ github.ref }}
+  # 같은 그룹에서 새 실행 요청이 와도 기존 실행 취소 X. 기존 실행 끝나야 다음 실행 시작.
+  cancel-in-progress: false
+
+jobs:
+  validate-build:
+    name: Validate and Build
+    # Route this job to the pusher's runner by requiring github.actor label.
+    # Each teammate runner should include label set:
+    # self-hosted,windows,buildplugin,ue5_7,{github-username}
+    runs-on: [self-hosted, windows, buildplugin, ue5_7, "${{ github.actor }}"]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TAG_NAME: ${{ github.ref_name }}
+      CHANGELOG_PATH: RealtimeDestruction/Docs/CHANGELOG.md
+      DOC_INDEX_PATH: OnlineDocumentation/index.md
+      RELEASE_NOTES_PATH: release_notes.md
+    steps:
+      # 현재 태그 기준 코드를 runner 작업 폴더(GITHUB_WORKSPACE)로 내려받습니다.
+      # fetch-depth: 0으로 전체 이력을 받아 브랜치 포함 여부 검증에 사용합니다.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 태그 형식이 릴리즈 규칙(vX.Y.Z)인지 먼저 검사합니다.
+      # 형식이 다르면 이후 빌드/릴리즈 단계로 진행하지 않습니다.
+      - name: Validate tag format
+        run: |
+          if ($env:TAG_NAME -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Invalid tag format: $env:TAG_NAME. Expected format is vX.Y.Z"
+          }
+
+      # 태그가 main 브랜치에 포함된 커밋인지 확인합니다.
+      # main 외 브랜치에서 잘못 태깅한 경우를 차단합니다.
+      - name: Validate tag commit is on main
+        run: |
+          git fetch origin main --no-tags
+          $containsMain = git branch -r --contains $env:GITHUB_SHA |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -eq "origin/main" }
+
+          if (-not $containsMain) {
+            throw "Tag commit ($env:GITHUB_SHA) is not contained in origin/main"
+          }
+
+      # runner 환경에 UE_ROOT가 설정되어 있는지 확인합니다.
+      # RunUAT.bat 실파일 존재까지 검증해 빌드 실패 원인을 초기에 잡습니다.
+      - name: Validate UE_ROOT and RunUAT.bat
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:UE_ROOT)) {
+            throw "UE_ROOT is not set on this runner."
+          }
+          if (-not (Test-Path $env:UE_ROOT)) {
+            throw "UE_ROOT path does not exist: $env:UE_ROOT"
+          }
+
+          $uatPath = Join-Path $env:UE_ROOT "Engine\Build\BatchFiles\RunUAT.bat"
+          if (-not (Test-Path $uatPath)) {
+            throw "RunUAT.bat not found: $uatPath"
+          }
+
+          "UAT_PATH=$uatPath" >> $env:GITHUB_ENV
+
+      # CHANGELOG에 태그와 동일한 섹션(## vX.Y.Z)이 있는지 검증합니다.
+      # 해당 섹션부터 구분선(---) 직전까지를 Release Note 파일로 추출합니다.
+      - name: Validate changelog section and extract release notes
+        run: |
+          if (-not (Test-Path $env:CHANGELOG_PATH)) {
+            throw "CHANGELOG not found: $env:CHANGELOG_PATH"
+          }
+
+          $lines = Get-Content $env:CHANGELOG_PATH
+          $targetHeader = "## $env:TAG_NAME"
+          $startIndex = [Array]::IndexOf($lines, $targetHeader)
+
+          if ($startIndex -lt 0) {
+            throw "Missing changelog section header: $targetHeader"
+          }
+
+          $separatorIndex = -1
+          for ($i = $startIndex + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim() -eq "---") {
+              $separatorIndex = $i
+              break
+            }
+          }
+
+          if ($separatorIndex -lt 0) {
+            throw "Missing section separator '---' after $targetHeader"
+          }
+
+          $sectionLines = $lines[$startIndex..($separatorIndex - 1)]
+          Set-Content -Path $env:RELEASE_NOTES_PATH -Value ($sectionLines -join "`n") -NoNewline
+
+      # 온라인 문서 첫 페이지의 Version 값이 태그와 일치하는지 확인합니다.
+      # v 접두사 유무(예: 1.1.1 / v1.1.1)는 둘 다 허용합니다.
+      - name: Validate online documentation version
+        run: |
+          if (-not (Test-Path $env:DOC_INDEX_PATH)) {
+            throw "Online documentation index not found: $env:DOC_INDEX_PATH"
+          }
+
+          $docLine = Get-Content $env:DOC_INDEX_PATH | Where-Object { $_ -match '^\s*-\s*Version:\s*' } | Select-Object -First 1
+          if (-not $docLine) {
+            throw "Missing '- Version:' line in $env:DOC_INDEX_PATH"
+          }
+
+          $docVersion = ($docLine -replace '^\s*-\s*Version:\s*', '').Trim()
+          $tagWithoutV = $env:TAG_NAME.TrimStart('v')
+          if (($docVersion -ne $env:TAG_NAME) -and ($docVersion -ne $tagWithoutV)) {
+            throw "Version mismatch. Tag=$env:TAG_NAME, DocVersion=$docVersion"
+          }
+
+      # UAT BuildPlugin으로 Win64 패키징을 수행합니다.
+      # 산출물 경로를 동적으로 잡고, 이전 실행 잔여물은 먼저 정리합니다.
+      - name: Build plugin (UAT BuildPlugin)
+        run: |
+          $pluginUplugin = Join-Path $env:GITHUB_WORKSPACE "RealtimeDestruction\RealtimeDestruction.uplugin"
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE "_package\RealtimeDestruction"
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE ("RealtimeDestruction_{0}.zip" -f $env:TAG_NAME)
+
+          if (-not (Test-Path $pluginUplugin)) {
+            throw "Plugin file not found: $pluginUplugin"
+          }
+
+          if (Test-Path $packageDir) { Remove-Item $packageDir -Recurse -Force }
+          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+
+          & "$env:UAT_PATH" BuildPlugin `
+            -Plugin="$pluginUplugin" `
+            -Package="$packageDir" `
+            -TargetPlatforms=Win64
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "UAT BuildPlugin failed with exit code $LASTEXITCODE"
+          }
+
+          "PACKAGE_DIR=$packageDir" >> $env:GITHUB_ENV
+          "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
+
+      # 배포 불필요 폴더를 제거해 릴리즈 용량을 줄입니다.
+      # SOP 기준으로 Binary/Binaries/Intermediate를 정리합니다.
+      - name: Remove Binary/Binaries/Intermediate folders
+        run: |
+          $removeTargets = @(
+            (Join-Path $env:PACKAGE_DIR "Binary"),
+            (Join-Path $env:PACKAGE_DIR "Binaries"),
+            (Join-Path $env:PACKAGE_DIR "Intermediate")
+          )
+          foreach ($target in $removeTargets) {
+            if (Test-Path $target) {
+              Remove-Item $target -Recurse -Force
+            }
+          }
+
+      # 정리된 패키징 결과를 릴리즈 업로드용 zip으로 압축합니다.
+      # 파일 생성 여부를 확인해 누락을 방지합니다.
+      - name: Create release zip
+        run: |
+          if (-not (Test-Path $env:PACKAGE_DIR)) {
+            throw "Package directory not found: $env:PACKAGE_DIR"
+          }
+
+          Compress-Archive -Path (Join-Path $env:PACKAGE_DIR "*") -DestinationPath $env:ZIP_PATH -Force
+
+          if (-not (Test-Path $env:ZIP_PATH)) {
+            throw "Zip file was not created: $env:ZIP_PATH"
+          }
+
+      # 다음 job(create-release)에서 사용할 파일을 아티팩트로 전달합니다.
+      # zip 파일과 추출한 release_notes.md를 함께 업로드합니다.
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle-${{ env.TAG_NAME }}
+          path: |
+            ${{ env.ZIP_PATH }}
+            ${{ env.RELEASE_NOTES_PATH }}
+          if-no-files-found: error
+
+      # 작업 종료 시 임시 패키징 산출물을 항상 삭제합니다.
+      # 실패 시에도 실행(if: always())되어 runner 워크스페이스 오염을 막습니다.
+      - name: Cleanup package outputs in workspace
+        if: always()
+        run: |
+          $cleanupTargets = @($env:PACKAGE_DIR, $env:ZIP_PATH)
+          foreach ($target in $cleanupTargets) {
+            if ($target -and (Test-Path $target)) {
+              Remove-Item $target -Recurse -Force
+            }
+          }
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: validate-build
+    if: ${{ needs.validate-build.result == 'success' }}
+    permissions:
+      contents: write
+    steps:
+      # 이전 job에서 업로드한 릴리즈 번들(zip, release_notes)을 내려받습니다.
+      # 릴리즈 생성 job은 이 아티팩트를 입력으로만 동작합니다.
+      - name: Download release bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-bundle-${{ github.ref_name }}
+          path: release-bundle
+
+      # 다운받은 파일이 기대한 이름/경로로 존재하는지 사전 확인합니다.
+      # 누락 시 즉시 실패시켜 잘못된 릴리즈 생성을 막습니다.
+      - name: Validate downloaded files
+        run: |
+          ls -la release-bundle
+          test -f "release-bundle/RealtimeDestruction_${GITHUB_REF_NAME}.zip"
+          test -f "release-bundle/release_notes.md"
+
+      # 태그명으로 GitHub Release를 발행하고 zip 파일을 첨부합니다.
+      # 본문은 CHANGELOG에서 추출한 release_notes.md를 그대로 사용합니다.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-bundle/release_notes.md
+          files: release-bundle/RealtimeDestruction_${{ github.ref_name }}.zip
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+
+      # 릴리즈 작업이 끝나면 다운로드한 임시 파일을 정리합니다.
+      # 실패해도 실행(if: always())되어 작업 폴더를 깨끗하게 유지합니다.
+      - name: Cleanup downloaded artifacts
+        if: always()
+        run: rm -rf release-bundle
