@@ -281,8 +281,8 @@ struct REALTIMEDESTRUCTION_API FGridCellLayout
 	/** Grid size (cell counts in X, Y, Z). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GridLayout")
 	FIntVector GridSize = FIntVector::ZeroValue;
-
-	/** Cell size in world space (cm). */
+	
+	/** Cell size in local space (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GridLayout")
 	FVector CellSize = FVector(5.0f, 5.0f, 5.0f);
 

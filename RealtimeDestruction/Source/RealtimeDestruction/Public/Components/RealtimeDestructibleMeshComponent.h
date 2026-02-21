@@ -1,4 +1,4 @@
-// Copyright (c) 2026 LazyDevelopers <lazydeveloper24@gmail.com>. All rights reserved.
+﻿// Copyright (c) 2026 LazyDevelopers <lazydeveloper24@gmail.com>. All rights reserved.
 // This plugin is distributed under the Fab Standard License.
 //
 // This product was independently developed by us while participating in the Epic Project, a developer-support
@@ -504,22 +504,36 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "RealtimeDestructibleMesh|Events")
 	FOnDestructionRejected OnDestructionRejected;
 
-	/** Clustering variables */
+	/**
+	 * Runtime helper component for impact clustering.
+	 * If this reference is null, it is auto-created on authority in BeginPlay
+	 * when 'bEnableClustering' is enabled.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	TObjectPtr<UBulletClusterComponent> BulletClusterComponent;
-	
+
+	/**
+	 * Enables impact clustering for focused fire.
+	 * If multiple hits are concentrated in a small area within a short time window,
+	 * the system adds an extra, slightly larger hole that covers the clustered region.
+	 * This helps reinforce the player's intent to break through by sustained fire.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	bool bEnableClustering = true;
 	
+	/** Maximum distance between impacts to be merged into the same cluster. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float MaxMergeDistance = 10.0f;
 	
+	/** Minimum number of impacts required to form and execute a cluster. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	int  MinClusterCount = 3;
 
+	/** Upper bound for cluster radius growth while aggregating impacts. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float MaxClusterRadius = 20.0f;
 
+	/** Scale factor applied to cluster radius when generating the final destruction radius. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Clustering")
 	float ClusterRaidusOffset = 1.0f;
 
@@ -711,7 +725,7 @@ protected:
 	bool bChunkMeshesValid = false;
 
 	/** Grid cell cache (created in editor, no runtime changes) */
-	UPROPERTY(EditInstanceOnly, Category = "RealtimeDestructibleMesh|GridCell");
+	UPROPERTY()
 	FGridCellLayout GridCellLayout;
 
 	/** Runtime cell state */
@@ -727,7 +741,7 @@ protected:
 	//=========================================================================
 
 	/** Whether structural integrity system is enabled */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Advanced|StructuralIntegrity")
 	bool bEnableStructuralIntegrity = true;
 
 	/** Quantized destruction input history (for NarrowPhase) */
@@ -887,8 +901,11 @@ public:
 
 	FDynamicMesh3 GenerateGreedyMeshFromVoxels(const TArray<FIntVector>& InVoxels, FVector InCellOrigin, FVector InCellSize, double InBoxExpand = 1.0f );
 
-	/** When Supercell is destroyed beyond threshold ratio */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|StructuralIntegrity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	/**
+     * If the ratio of destroyed cells within a SuperCell exceeds this threshold,
+     * the region occupied by that SuperCell collapses naturally.
+     */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RealtimeDestructibleMesh|Debris", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DestroyRatioThresholdForDebris = 0.8f;
 
 	/**
