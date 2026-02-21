@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted, windows, buildplugin, ue5_7, "${{ github.actor }}"]
     defaults:
       run:
-        shell: pwsh
+        shell: powershell
     env:
       TAG_NAME: ${{ github.ref_name }}
       CHANGELOG_PATH: RealtimeDestruction/Docs/CHANGELOG.md
