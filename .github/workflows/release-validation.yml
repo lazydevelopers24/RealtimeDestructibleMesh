@@ -133,7 +133,7 @@ jobs:
       - name: Build plugin (UAT BuildPlugin)
         run: |
           $pluginUplugin = Join-Path $env:GITHUB_WORKSPACE "RealtimeDestruction\RealtimeDestruction.uplugin"
-          $packageDir = Join-Path $env:GITHUB_WORKSPACE "_package\RealtimeDestruction"
+          $packageDir = "C:\_pkg\RDM"
           $zipPath = Join-Path $env:GITHUB_WORKSPACE ("RealtimeDestruction_{0}.zip" -f $env:TAG_NAME)
 
           if (-not (Test-Path $pluginUplugin)) {
