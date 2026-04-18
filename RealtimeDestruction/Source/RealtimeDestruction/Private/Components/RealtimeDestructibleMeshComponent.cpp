@@ -5463,6 +5463,9 @@ void URealtimeDestructibleMeshComponent::FlushServerBatch()
 		// 비압축 데이터로 전파
 		MulticastApplyOps(PendingServerBatchOps);
 
+		// 클라이언트에게 분리 셀 처리 신호 전송 (compact 경로와 동일)
+		MulticastDetachSignal();
+
 		// 대기열 비우기
 		PendingServerBatchOps.Empty();
 	}
