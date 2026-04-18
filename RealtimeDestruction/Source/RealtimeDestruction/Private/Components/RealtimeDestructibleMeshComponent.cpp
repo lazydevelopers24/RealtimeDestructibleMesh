@@ -106,10 +106,10 @@ FRealtimeDestructionRequest FCompactDestructionOp::Decompress() const
 {
 	FRealtimeDestructionRequest Request;
 
-	// FVector_NetQuantize → FVector 자동 변환
+	// FVector 그대로 사용 (full precision, 정규화만 보정)
 	Request.ImpactPoint = ImpactPoint;
-	Request.ImpactNormal = FVector(ImpactNormal).GetSafeNormal();
-	Request.ToolForwardVector = FVector(ToolForwardVector).GetSafeNormal();
+	Request.ImpactNormal = ImpactNormal.GetSafeNormal();
+	Request.ToolForwardVector = ToolForwardVector.GetSafeNormal();
 
 	// ToolShape와 ShapeParams 복원
 	Request.ToolShape = ToolShape;

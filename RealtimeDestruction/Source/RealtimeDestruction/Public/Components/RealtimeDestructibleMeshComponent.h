@@ -141,21 +141,21 @@ struct REALTIMEDESTRUCTION_API FCompactDestructionOp
 {
 	GENERATED_BODY()
 
-	// Position: 1cm precision (~6 bytes when serialized)
+	// Position (full precision: 서버-클라 결정론 보장)
 	UPROPERTY()
-	FVector_NetQuantize ImpactPoint;
+	FVector ImpactPoint = FVector::ZeroVector;
 
-	// Normal: 0.1cm precision - higher precision for direction (~6 bytes when serialized)
+	// Normal (full precision)
 	UPROPERTY()
-	FVector_NetQuantize10 ImpactNormal;
+	FVector ImpactNormal = FVector::UpVector;
 
-	// Tool mesh origin
+	// Tool mesh origin (full precision)
 	UPROPERTY()
-	FVector_NetQuantize10 ToolOriginWorld;
+	FVector ToolOriginWorld = FVector::ZeroVector;
 
-	// Bullet direction (~6 bytes when serialized)
+	// Bullet direction (full precision)
 	UPROPERTY()
-	FVector_NetQuantize10 ToolForwardVector;
+	FVector ToolForwardVector = FVector::ForwardVector;
 
 	// Radius: 1-255 cm (1 byte)
 	UPROPERTY()
@@ -178,7 +178,7 @@ struct REALTIMEDESTRUCTION_API FCompactDestructionOp
 	uint8 ChunkIndex = 0;
 
 	UPROPERTY()
-	FVector_NetQuantize DecalSize;
+	FVector DecalSize = FVector::ZeroVector;
 
 	// Decal config lookup ID
 	UPROPERTY()
