@@ -56,6 +56,9 @@ struct FIslandRemovalContext
 
 	/** For cleanup: Disconnected cell IDs (passed to CleanupSmallFragments when all tasks complete) */
 	TSet<int32> DisconnectedCellsForCleanup;
+
+	/** Late-join: skip local debris spawn; server ADebrisActor replication handles large debris */
+	bool bSkipDebrisSpawn = false;
 };
 
 /** Union result payload for a chunk, including the combined tool mesh and decals. */

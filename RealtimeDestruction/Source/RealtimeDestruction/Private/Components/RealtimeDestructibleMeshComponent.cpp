@@ -1477,7 +1477,7 @@ void URealtimeDestructibleMeshComponent::UpdateDirtyCollisionChunks()
 	}
 }
 
-bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const TArray<int32>& DetachedCellIds, ADebrisActor* TargetDebrisActor, TArray<int32>* OutToolMeshOverlappingCellIds)
+bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const TArray<int32>& DetachedCellIds, ADebrisActor* TargetDebrisActor, TArray<int32>* OutToolMeshOverlappingCellIds, bool bSkipDebrisSpawn)
 {
 		TRACE_CPUPROFILER_EVENT_SCOPE(Debris_RemoveTrianglesForDetachedCells);
 	using namespace UE::Geometry;
@@ -1753,6 +1753,9 @@ bool URealtimeDestructibleMeshComponent::RemoveTrianglesForDetachedCells(const T
 			{
 				Context->TargetDebrisActor = TargetDebrisActor;
 			}
+
+			// Late-join: 서버 replicate된 ADebrisActor가 debris를 대신 처리하므로 로컬 스폰 스킵
+			Context->bSkipDebrisSpawn = bSkipDebrisSpawn;
 
 			// Cleanup용 분리된 셀 저장 (모든 작업 완료 시 사용)
 			Context->DisconnectedCellsForCleanup.Append(DetachedCellIds);
@@ -5293,7 +5296,8 @@ void URealtimeDestructibleMeshComponent::ApplyLateJoinData()
 	if (LateJoinDestroyedCells.Num() > 0)
 	{
 		// 파괴된 모든 셀의 삼각형을 청크 메시에서 제거
-		RemoveTrianglesForDetachedCells(LateJoinDestroyedCells);
+		// bSkipDebrisSpawn=true: 서버 ADebrisActor replicate가 debris를 대신 보내줌 → 로컬 중복 스폰 방지
+		RemoveTrianglesForDetachedCells(LateJoinDestroyedCells, nullptr, nullptr, /*bSkipDebrisSpawn=*/true);
 
 		// 잔여 소형 파편 정리
 		TSet<int32> DestroyedCellSet(LateJoinDestroyedCells);

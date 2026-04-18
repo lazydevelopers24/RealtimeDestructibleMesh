@@ -713,7 +713,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 			          {
 				          if (Context->RemainingTaskCount.fetch_sub(1) == 1)
 				          {
-					          if (Context->AccumulatedDebrisMesh.TriangleCount() > 0)
+					          if (Context->AccumulatedDebrisMesh.TriangleCount() > 0 && !Context->bSkipDebrisSpawn)
 					          {
 						          TArray<UMaterialInterface*> Materials;
 						          if (auto ChunkMesh = Owner->GetChunkMeshComponent(ChunkIndex))
@@ -983,7 +983,7 @@ void FRealtimeBooleanProcessor::ProcessSlotSubtractWork(int32 SlotIndex, FUnionR
 
 				          if (Context->RemainingTaskCount.fetch_sub(1) == 1)
 				          {
-					          if (Context->AccumulatedDebrisMesh.TriangleCount() > 0)
+					          if (Context->AccumulatedDebrisMesh.TriangleCount() > 0 && !Context->bSkipDebrisSpawn)
 					          {
 						          TArray<UMaterialInterface*> Materials;
 						          if (auto ChunkMesh = WeakOwner->GetChunkMeshComponent(1))

@@ -881,7 +881,7 @@ public:
 	 * @param OutRemovedMeshIsland - On success, the portion cut from original mesh (OriginalMesh ∩ ToolMesh)
 	 * @return Whether removal succeeded
 	 */
-	bool RemoveTrianglesForDetachedCells(const TArray<int32>& DetachedCellIds, ADebrisActor* TargetDebrisActor = nullptr, TArray<int32>* OutToolMeshOverlappingCellIds = nullptr);
+	bool RemoveTrianglesForDetachedCells(const TArray<int32>& DetachedCellIds, ADebrisActor* TargetDebrisActor = nullptr, TArray<int32>* OutToolMeshOverlappingCellIds = nullptr, bool bSkipDebrisSpawn = false);
 
 	/**
 	 * Collect grid cell IDs that overlap with the ToolMesh shape (smoothed + DebrisExpandRatio scaled).
