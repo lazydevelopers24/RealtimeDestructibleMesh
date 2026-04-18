@@ -1,0 +1,25 @@
+# Unreal Engine Plugin - Build artifacts
+Binaries/
+Intermediate/
+
+# Docs (local only)
+Docs/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.sln
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Saved / Logs
+Saved/
+*.log
